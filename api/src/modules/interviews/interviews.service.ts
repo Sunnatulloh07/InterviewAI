@@ -465,7 +465,15 @@ export class InterviewsService {
         OPENROUTER_MODELS['gpt-5-nano'] || 'openai/gpt-4o-mini',
       );
 
-      const completion = await this.openai.chat.completions.create({
+      // Check if using OpenRouter
+      const apiKey = this.configService.get<string>('OPENAI_API_KEY');
+      const isOpenRouter = apiKey?.startsWith('sk-or-v1-') ||
+                          this.configService.get<string>('OPENROUTER_ENABLED') === 'true';
+
+      this.logger.debug(`Using model: ${model}, OpenRouter: ${isOpenRouter}`);
+
+      // Create completion request parameters
+      const completionParams: any = {
         model,
         messages: [
           {
@@ -478,6 +486,7 @@ CRITICAL RULES:
 3. NEVER add explanatory text before or after the JSON
 4. The JSON must be directly parseable
 5. Each question must be a string in the "questions" array
+6. Return EXACTLY ${count} questions
 
 Example of correct response:
 {"questions": ["Question 1?", "Question 2?", "Question 3?"]}
@@ -496,8 +505,14 @@ Your response must be valid JSON that can be parsed directly.`,
         ],
         max_tokens: 2000,
         temperature: 0.8, // Higher temperature for more variety
-        response_format: { type: 'json_object' },
-      });
+      };
+
+      // Only add response_format for OpenAI (not supported by OpenRouter)
+      if (!isOpenRouter) {
+        completionParams.response_format = { type: 'json_object' };
+      }
+
+      const completion = await this.openai.chat.completions.create(completionParams);
 
       const responseText = completion.choices[0]?.message?.content || '{}';
       
@@ -567,7 +582,10 @@ Your response must be valid JSON that can be parsed directly.`,
       if (questions.length === 0) {
         this.logger.error(`No valid questions found in AI response. Parsed object keys: ${Object.keys(parsed).join(', ')}`);
         this.logger.error(`Full response: ${JSON.stringify(parsed, null, 2).substring(0, 2000)}`);
-        throw new Error('No valid questions generated from AI response');
+
+        // Use fallback questions instead of throwing error
+        this.logger.warn('Using fallback questions due to AI generation failure');
+        return this.getFallbackQuestions(domain, technology, difficulty, count);
       }
 
       this.logger.log(`Successfully extracted ${questions.length} questions from AI response`);
@@ -599,11 +617,74 @@ Your response must be valid JSON that can be parsed directly.`,
         );
       }
 
-      // Generic error
-      throw new BadRequestException(
-        `Failed to generate interview questions: ${error.message || 'Unknown error'}. Please try again later.`,
-      );
+      // Use fallback questions for other errors
+      this.logger.warn('Using fallback questions due to AI error', { error: error.message });
+      return this.getFallbackQuestions(domain, technology, difficulty, count);
     }
+  }
+
+  /**
+   * Get fallback questions when AI generation fails
+   */
+  private getFallbackQuestions(
+    domain: string,
+    technology: string,
+    difficulty: string,
+    count: number,
+  ): string[] {
+    const fallbackQuestions: Record<string, string[]> = {
+      backend: [
+        'Tell me about your experience with RESTful API design and best practices.',
+        'How do you handle database optimization and query performance?',
+        'Explain your approach to implementing authentication and authorization.',
+        'Describe a challenging bug you fixed in a backend system.',
+        'How do you ensure API security and prevent common vulnerabilities?',
+        'What is your experience with microservices architecture?',
+        'How do you handle data validation and error handling in APIs?',
+        'Explain your approach to logging and monitoring in production.',
+        'What strategies do you use for database schema design?',
+        'How do you handle API versioning and backward compatibility?',
+      ],
+      frontend: [
+        'Describe your experience with modern frontend frameworks and libraries.',
+        'How do you optimize frontend performance and reduce load times?',
+        'Explain your approach to responsive design and cross-browser compatibility.',
+        'What is your experience with state management in large applications?',
+        'How do you ensure accessibility in your web applications?',
+        'Describe your approach to component architecture and reusability.',
+        'How do you handle form validation and user input?',
+        'What testing strategies do you use for frontend code?',
+        'Explain your approach to styling and CSS architecture.',
+        'How do you optimize bundle size and improve build performance?',
+      ],
+      fullstack: [
+        'Describe your experience working across the full technology stack.',
+        'How do you approach building a new feature from frontend to backend?',
+        'Explain your experience with both SQL and NoSQL databases.',
+        'How do you ensure data consistency between frontend and backend?',
+        'Describe your approach to API design and frontend integration.',
+        'What is your experience with deployment and DevOps practices?',
+        'How do you handle authentication across the entire stack?',
+        'Explain your approach to error handling in full-stack applications.',
+        'What testing strategies do you use for full-stack development?',
+        'How do you optimize performance across the entire application?',
+      ],
+      devops: [
+        'Describe your experience with CI/CD pipelines and automation.',
+        'How do you approach infrastructure as code?',
+        'Explain your experience with containerization and orchestration.',
+        'How do you handle monitoring and alerting in production?',
+        'Describe your approach to security and compliance in DevOps.',
+        'What is your experience with cloud platforms (AWS, Azure, GCP)?',
+        'How do you handle incident response and troubleshooting?',
+        'Explain your approach to database backups and disaster recovery.',
+        'What strategies do you use for scaling applications?',
+        'How do you ensure high availability and fault tolerance?',
+      ],
+    };
+
+    const questions = fallbackQuestions[domain.toLowerCase()] || fallbackQuestions.backend;
+    return questions.slice(0, count);
   }
 
   /**
