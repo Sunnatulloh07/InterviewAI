@@ -10,7 +10,7 @@ import { firstValueFrom } from 'rxjs';
  */
 @Injectable()
 export class OpenAIHealthIndicator extends HealthIndicator {
-  private readonly apiKey: string;
+  private readonly apiKey: string | undefined;
   private readonly isOpenRouter: boolean;
   private readonly baseUrl: string;
 
@@ -20,7 +20,7 @@ export class OpenAIHealthIndicator extends HealthIndicator {
   ) {
     super();
     this.apiKey = this.configService.get<string>('OPENAI_API_KEY');
-    this.isOpenRouter = this.apiKey?.startsWith('sk-or-v1-');
+    this.isOpenRouter = !!this.apiKey?.startsWith('sk-or-v1-');
     this.baseUrl = this.isOpenRouter
       ? this.configService.get<string>('OPENROUTER_BASE_URL') || 'https://openrouter.ai/api/v1'
       : 'https://api.openai.com/v1';

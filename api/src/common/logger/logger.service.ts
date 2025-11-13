@@ -10,7 +10,7 @@ import { logger, AuditEventType, AuditLogMetadata } from './winston.config';
  * - Performance tracking
  * - Error tracking with stack traces
  */
-@Injectable({ scope: Scope.TRANSIENT })
+@Injectable({ scope: Scope.DEFAULT })
 export class LoggerService implements NestLoggerService {
   private context?: string;
   private userId?: string;

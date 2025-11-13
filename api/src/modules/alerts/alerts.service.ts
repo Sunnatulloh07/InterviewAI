@@ -31,7 +31,7 @@ export interface Alert {
  */
 @Injectable()
 export class AlertsService {
-  private readonly webhookUrl: string;
+  private readonly webhookUrl: string | undefined;
   private readonly enableAlerts: boolean;
 
   constructor(
@@ -123,6 +123,10 @@ export class AlertsService {
    * Send to generic webhook
    */
   private async sendToWebhook(alert: Alert): Promise<void> {
+    if (!this.webhookUrl) {
+      throw new Error('Webhook URL not configured');
+    }
+
     try {
       // Detect webhook type by URL
       if (this.webhookUrl.includes('slack.com')) {
@@ -174,7 +178,7 @@ export class AlertsService {
             },
             {
               title: 'Timestamp',
-              value: alert.timestamp.toISOString(),
+              value: alert.timestamp?.toISOString() || new Date().toISOString(),
               short: true,
             },
             ...(alert.metadata
@@ -186,11 +190,14 @@ export class AlertsService {
               : []),
           ],
           footer: 'InterviewAI Pro',
-          ts: Math.floor(alert.timestamp.getTime() / 1000),
+          ts: Math.floor((alert.timestamp || new Date()).getTime() / 1000),
         },
       ],
     };
 
+    if (!this.webhookUrl) {
+      throw new Error('Webhook URL not configured');
+    }
     await firstValueFrom(this.httpService.post(this.webhookUrl, payload));
   }
 
@@ -220,7 +227,7 @@ export class AlertsService {
             },
             {
               name: 'Timestamp',
-              value: alert.timestamp.toISOString(),
+              value: alert.timestamp?.toISOString() || new Date().toISOString(),
               inline: true,
             },
             ...(alert.metadata
@@ -234,11 +241,14 @@ export class AlertsService {
           footer: {
             text: 'InterviewAI Pro',
           },
-          timestamp: alert.timestamp.toISOString(),
+          timestamp: alert.timestamp?.toISOString() || new Date().toISOString(),
         },
       ],
     };
 
+    if (!this.webhookUrl) {
+      throw new Error('Webhook URL not configured');
+    }
     await firstValueFrom(this.httpService.post(this.webhookUrl, payload));
   }
 

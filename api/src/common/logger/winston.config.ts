@@ -1,5 +1,5 @@
 import * as winston from 'winston';
-import * as DailyRotateFile from 'winston-daily-rotate-file';
+import DailyRotateFile from 'winston-daily-rotate-file';
 import * as path from 'path';
 
 /**
@@ -29,8 +29,9 @@ const consoleFormat = winston.format.combine(
   customFormat,
   winston.format.colorize({ all: true }),
   winston.format.printf(({ timestamp, level, message, context, metadata }) => {
-    const metaStr = Object.keys(metadata).length
-      ? `\n${JSON.stringify(metadata, null, 2)}`
+    const metaObj = metadata && typeof metadata === 'object' ? metadata : {};
+    const metaStr = Object.keys(metaObj).length
+      ? `\n${JSON.stringify(metaObj, null, 2)}`
       : '';
     const ctx = context ? `[${context}]` : '';
     return `${timestamp} ${level} ${ctx} ${message}${metaStr}`;

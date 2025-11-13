@@ -21,7 +21,7 @@ export class StorageHealthIndicator extends HealthIndicator {
 
     this.isConfigured = !!(accessKeyId && secretAccessKey && region);
 
-    if (this.isConfigured) {
+    if (this.isConfigured && accessKeyId && secretAccessKey && region) {
       this.s3Client = new S3Client({
         region,
         credentials: {

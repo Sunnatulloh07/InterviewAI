@@ -1,5 +1,5 @@
-import { Injectable, ExecutionContext } from '@nestjs/common';
-import { ThrottlerGuard, ThrottlerException } from '@nestjs/throttler';
+import { Injectable, ExecutionContext, CanActivate } from '@nestjs/common';
+import { ThrottlerException } from '@nestjs/throttler';
 import { InjectRedis } from '@nestjs-modules/ioredis';
 import Redis from 'ioredis';
 import { LoggerService } from '../logger/logger.service';
@@ -15,16 +15,26 @@ import { AuditEventType } from '../logger/winston.config';
  * - Redis-based distributed rate limiting
  */
 @Injectable()
-export class AdvancedThrottleGuard extends ThrottlerGuard {
+export class AdvancedThrottleGuard implements CanActivate {
   constructor(
     @InjectRedis() private readonly redis: Redis,
     private readonly logger: LoggerService,
   ) {
-    super();
     this.logger.setContext('AdvancedThrottleGuard');
   }
 
-  async handleRequest(
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest();
+    const { ip, user, url, method } = request;
+
+    // Default limits (can be overridden via decorators)
+    const limit = 100; // requests
+    const ttl = 60; // seconds
+
+    return await this.handleRequest(context, limit, ttl);
+  }
+
+  private async handleRequest(
     context: ExecutionContext,
     limit: number,
     ttl: number,

@@ -500,7 +500,7 @@ Your response must be valid JSON that can be parsed directly.`,
       });
 
       const responseText = completion.choices[0]?.message?.content || '{}';
-      
+
       // Log raw response for debugging (first 500 chars)
       this.logger.debug(`AI response (first 500 chars): ${responseText.substring(0, 500)}`);
 
@@ -523,7 +523,7 @@ Your response must be valid JSON that can be parsed directly.`,
 
       // Try to extract questions from various possible JSON structures
       let questions: string[] = [];
-      
+
       // Check if response is directly an array
       if (Array.isArray(parsed)) {
         questions = parsed;
@@ -565,7 +565,9 @@ Your response must be valid JSON that can be parsed directly.`,
         .map((q) => q.trim());
 
       if (questions.length === 0) {
-        this.logger.error(`No valid questions found in AI response. Parsed object keys: ${Object.keys(parsed).join(', ')}`);
+        this.logger.error(
+          `No valid questions found in AI response. Parsed object keys: ${Object.keys(parsed).join(', ')}`,
+        );
         this.logger.error(`Full response: ${JSON.stringify(parsed, null, 2).substring(0, 2000)}`);
         throw new Error('No valid questions generated from AI response');
       }

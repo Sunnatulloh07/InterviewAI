@@ -42,6 +42,12 @@ export class MongooseHealthIndicator extends HealthIndicator {
    */
   private async getDatabaseStats() {
     try {
+      if (!this.connection.db) {
+        return {
+          collections: Object.keys(this.connection.collections).length,
+          error: 'Database not available',
+        };
+      }
       const admin = this.connection.db.admin();
       const serverStatus = await admin.serverStatus();
 
