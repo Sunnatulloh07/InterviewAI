@@ -132,11 +132,15 @@ export const OPENAI_MAX_TOKENS_FEEDBACK = 1500;
 export const OPENAI_MAX_TOKENS_OPTIMIZATION = 3000;
 export const OPENAI_TEMPERATURE = 0.7;
 
-// AI Models
+// AI Models (OpenRouter format)
 export const AI_MODELS = {
-  GPT4: 'gpt-4-turbo-preview',
-  GPT35: 'gpt-3.5-turbo',
-  CLAUDE: 'claude-3-sonnet',
+  GPT4: 'openai/gpt-4-turbo',
+  GPT35: 'openai/gpt-3.5-turbo',
+  WHISPER: 'openai/whisper-1',
+  CLAUDE: 'anthropic/claude-3-sonnet',
+  // Add more OpenRouter models as needed
+  GPT4_VISION: 'openai/gpt-4-vision-preview',
+  CLAUDE_OPUS: 'anthropic/claude-3-opus',
 } as const;
 
 // Redis Keys
