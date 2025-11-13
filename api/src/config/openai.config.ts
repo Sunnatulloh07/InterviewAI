@@ -3,10 +3,14 @@ import { registerAs } from '@nestjs/config';
 export const openaiConfig = registerAs('openai', () => ({
   apiKey: process.env.OPENAI_API_KEY,
   organization: process.env.OPENAI_ORGANIZATION,
+  // OpenRouter configuration
+  baseURL: process.env.OPENAI_BASE_URL || 'https://openrouter.ai/api/v1',
+  siteUrl: process.env.OPENAI_SITE_URL || 'http://localhost:5173',
+  siteName: process.env.OPENAI_SITE_NAME || 'InterviewAI Pro',
   models: {
-    transcription: 'whisper-1',
-    chat: process.env.OPENAI_CHAT_MODEL || 'gpt-4-turbo-preview',
-    chatFallback: 'gpt-3.5-turbo',
+    transcription: process.env.OPENAI_WHISPER_MODEL || 'openai/whisper-1',
+    chat: process.env.OPENAI_CHAT_MODEL || 'openai/gpt-4-turbo',
+    chatFallback: process.env.OPENAI_CHAT_FALLBACK_MODEL || 'openai/gpt-3.5-turbo',
   },
   maxTokens: {
     answer: parseInt(process.env.OPENAI_MAX_TOKENS_ANSWER ?? '1000') || 1000,

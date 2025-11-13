@@ -45,24 +45,34 @@ export class CvService {
     @InjectQueue(QUEUE_CV_ANALYSIS) private readonly cvAnalysisQueue: Queue,
   ) {
     const apiKey = this.configService.get<string>('OPENAI_API_KEY');
-    const organization = this.configService.get<string>('OPENAI_ORGANIZATION');
-    const config: { apiKey: string; organization?: string } = {
+    const baseURL = this.configService.get<string>('OPENAI_BASE_URL');
+    const siteUrl = this.configService.get<string>('OPENAI_SITE_URL');
+    const siteName = this.configService.get<string>('OPENAI_SITE_NAME');
+
+    const config: {
+      apiKey: string;
+      baseURL?: string;
+      defaultHeaders?: Record<string, string>;
+    } = {
       apiKey: apiKey || '',
     };
-    // Organization header is OPTIONAL - only needed if you have multiple organizations
-    // Most users don't need this parameter at all
-    // Only add if it's a valid organization ID (starts with 'org-' and has proper length)
-    if (
-      organization &&
-      organization.trim() &&
-      !organization.includes('your-') &&
-      !organization.includes('org-***') &&
-      organization.trim().startsWith('org-') &&
-      organization.trim().length > 4
-    ) {
-      config.organization = organization.trim();
+
+    // OpenRouter configuration
+    if (baseURL && baseURL.includes('openrouter')) {
+      config.baseURL = baseURL;
+      config.defaultHeaders = {};
+
+      // Add optional headers for OpenRouter rankings
+      if (siteUrl) {
+        config.defaultHeaders['HTTP-Referer'] = siteUrl;
+      }
+      if (siteName) {
+        config.defaultHeaders['X-Title'] = siteName;
+      }
     }
+
     this.openai = new OpenAI(config);
+    this.logger.log('OpenAI client initialized via OpenRouter');
   }
 
   /**

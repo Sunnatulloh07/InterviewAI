@@ -86,9 +86,20 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
           )
           .default(604800),
 
-        // OpenAI
+        // OpenAI / OpenRouter Configuration
         OPENAI_API_KEY: Joi.string().required(),
         OPENAI_ORGANIZATION: Joi.string().optional().allow(''),
+        OPENAI_BASE_URL: Joi.string().uri().default('https://openrouter.ai/api/v1'),
+        OPENAI_SITE_URL: Joi.string().uri().optional().allow(''),
+        OPENAI_SITE_NAME: Joi.string().optional().allow(''),
+        OPENAI_CHAT_MODEL: Joi.string().default('openai/gpt-4-turbo'),
+        OPENAI_CHAT_FALLBACK_MODEL: Joi.string().default('openai/gpt-3.5-turbo'),
+        OPENAI_WHISPER_MODEL: Joi.string().default('openai/whisper-1'),
+        OPENAI_MAX_TOKENS_ANSWER: Joi.number().default(1000),
+        OPENAI_MAX_TOKENS_ANALYSIS: Joi.number().default(2000),
+        OPENAI_TEMPERATURE: Joi.number().min(0).max(2).default(0.7),
+        OPENAI_TIMEOUT: Joi.number().default(30000),
+        OPENAI_RETRIES: Joi.number().default(3),
 
         // Stripe (Optional for development)
         STRIPE_API_KEY: Joi.string().optional().allow(''),
