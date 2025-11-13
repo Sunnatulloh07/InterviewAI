@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  # MongoDB Database
+  mongodb:
+    image: mongo:7.0
+    container_name: interviewai-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGODB_ROOT_USERNAME:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_ROOT_PASSWORD:-admin123}
+      MONGO_INITDB_DATABASE: ${MONGODB_DB_NAME:-interviewai}
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+    networks:
+      - interviewai-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  # MongoDB Express - Web-based MongoDB Admin Interface
+  mongo-express:
+    image: mongo-express:1.0-20
+    container_name: interviewai-mongo-express
+    restart: unless-stopped
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGODB_ROOT_USERNAME:-admin}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGODB_ROOT_PASSWORD:-admin123}
+      ME_CONFIG_MONGODB_URL: mongodb://${MONGODB_ROOT_USERNAME:-admin}:${MONGODB_ROOT_PASSWORD:-admin123}@mongodb:27017/
+      ME_CONFIG_BASICAUTH_USERNAME: ${MONGO_EXPRESS_USERNAME:-admin}
+      ME_CONFIG_BASICAUTH_PASSWORD: ${MONGO_EXPRESS_PASSWORD:-admin123}
+      ME_CONFIG_MONGODB_ENABLE_ADMIN: 'true'
+    ports:
+      - '8081:8081'
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - interviewai-network
+
+  # Redis Cache & Queue
+  redis:
+    image: redis:7-alpine
+    container_name: interviewai-redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD:-redis123} --appendonly yes
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    networks:
+      - interviewai-network
+    healthcheck:
+      test: ['CMD', 'redis-cli', '--raw', 'incr', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # Redis Commander - Web-based Redis Admin Interface
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: interviewai-redis-commander
+    restart: unless-stopped
+    environment:
+      REDIS_HOSTS: local:redis:6379:0:${REDIS_PASSWORD:-redis123}
+      HTTP_USER: ${REDIS_COMMANDER_USERNAME:-admin}
+      HTTP_PASSWORD: ${REDIS_COMMANDER_PASSWORD:-admin123}
+    ports:
+      - '8082:8081'
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - interviewai-network
+
+networks:
+  interviewai-network:
+    driver: bridge
+    name: interviewai-network
+
+volumes:
+  mongodb_data:
+    name: interviewai-mongodb-data
+  mongodb_config:
+    name: interviewai-mongodb-config
+  redis_data:
+    name: interviewai-redis-data
+
