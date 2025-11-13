@@ -4,13 +4,17 @@
 /build
 
 # Logs
-logs
+logs/
 *.log
 npm-debug.log*
 pnpm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
+
+# Winston logs (from structured logging)
+logs/**/*
+!logs/.gitkeep
 
 # OS
 .DS_Store
@@ -35,12 +39,28 @@ lerna-debug.log*
 !.vscode/launch.json
 !.vscode/extensions.json
 
-# Environment variables
+# Environment variables (CRITICAL - Never commit!)
 .env
+.env.*
+!.env.example
 .env.local
+.env.development
 .env.development.local
+.env.staging
+.env.test
 .env.test.local
+.env.production
 .env.production.local
+
+# Secrets and keys (CRITICAL - Never commit!)
+*.pem
+*.key
+*.cert
+*.crt
+*secret*
+*private*
+config/secrets.json
+secrets.yaml
 
 # Local uploads (development)
 uploads/

@@ -12,6 +12,13 @@ import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
+import { SecurityMiddleware } from './common/middleware/security.middleware';
+import { LoggerService } from './common/logger/logger.service';
+import { MetricsInterceptor } from './common/interceptors/metrics.interceptor';
+import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor';
+import { PerformanceInterceptor } from './common/interceptors/performance.interceptor';
+import { MetricsService } from './modules/metrics/metrics.service';
+import { Reflector } from '@nestjs/core';
 
 async function bootstrap() {
   // Create NestJS application
@@ -41,6 +48,9 @@ async function bootstrap() {
       crossOriginEmbedderPolicy: env === 'production',
     }),
   );
+
+  // Additional security headers
+  app.use(new SecurityMiddleware().use);
 
   // Compression
   app.use(compression());
@@ -76,11 +86,22 @@ async function bootstrap() {
     }),
   );
 
+  // Get services for interceptors
+  const loggerService = app.get(LoggerService);
+  const metricsService = app.get(MetricsService);
+  const reflector = app.get(Reflector);
+
   // Global filters
   app.useGlobalFilters(new AllExceptionsFilter());
 
-  // Global interceptors
-  app.useGlobalInterceptors(new LoggingInterceptor(), new TransformInterceptor());
+  // Global interceptors (order matters!)
+  app.useGlobalInterceptors(
+    new LoggingInterceptor(loggerService),
+    new MetricsInterceptor(metricsService),
+    new AuditLogInterceptor(reflector, loggerService),
+    new PerformanceInterceptor(reflector, loggerService),
+    new TransformInterceptor(),
+  );
 
   // Swagger documentation (only in development)
   if (env !== 'production') {
@@ -126,17 +147,42 @@ async function bootstrap() {
   await app.listen(port, '0.0.0.0');
 
   console.log(`
-    ╔═══════════════════════════════════════════════════════╗
-    ║                                                       ║
-    ║   🚀 InterviewAI Pro API Server Started!             ║
-    ║                                                       ║
-    ║   🌍 Environment: ${env.padEnd(20)}              ║
-    ║   🔗 API URL: http://localhost:${port}/api/v1         ║
-    ║   📚 API Docs: http://localhost:${port}/api/docs      ║
-    ║   ⏰ Started at: ${new Date().toISOString()}          ║
-    ║                                                       ║
-    ╚═══════════════════════════════════════════════════════╝
+    ╔══════════════════════════════════════════════════════════╗
+    ║                                                          ║
+    ║   🚀 InterviewAI Pro API Server Started!                ║
+    ║                                                          ║
+    ║   🌍 Environment: ${env.padEnd(30)}         ║
+    ║   🔗 API URL: http://localhost:${port}/api/v1            ║
+    ║   📚 API Docs: http://localhost:${port}/api/docs         ║
+    ║   💚 Health: http://localhost:${port}/api/v1/health      ║
+    ║   📊 Metrics: http://localhost:${port}/api/v1/metrics    ║
+    ║   ⏰ Started: ${new Date().toISOString()}                ║
+    ║                                                          ║
+    ║   ✓ Winston Logging                                     ║
+    ║   ✓ Prometheus Metrics                                  ║
+    ║   ✓ Advanced Rate Limiting                              ║
+    ║   ✓ Security Headers                                    ║
+    ║   ✓ Audit Logging                                       ║
+    ║   ✓ Performance Monitoring                              ║
+    ║   ✓ 2FA Authentication                                  ║
+    ║                                                          ║
+    ╚══════════════════════════════════════════════════════════╝
   `);
+
+  // Log using Winston logger
+  loggerService.setContext('Bootstrap');
+  loggerService.log(`Server started successfully on port ${port}`, {
+    environment: env,
+    port,
+    features: {
+      logging: 'Winston',
+      metrics: 'Prometheus',
+      rateLimiting: 'Advanced',
+      security: 'Enhanced',
+      auditLog: 'Enabled',
+      twoFactor: 'Available',
+    },
+  });
 }
 
 bootstrap().catch((error) => {

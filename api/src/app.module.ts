@@ -24,6 +24,13 @@ import { telegramConfig } from './config/telegram.config';
 // Common modules
 import { DatabaseModule } from './database/database.module';
 import { RedisService } from './common/services/redis.service';
+import { LoggerModule } from './common/logger/logger.module';
+
+// Monitoring & Security modules
+import { HealthModule } from './modules/health/health.module';
+import { MetricsModule } from './modules/metrics/metrics.module';
+import { AlertsModule } from './modules/alerts/alerts.module';
+import { TwoFactorModule } from './modules/two-factor/two-factor.module';
 
 // Feature modules
 import { AuthModule } from './modules/auth/auth.module';
@@ -303,8 +310,17 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
     // Database module
     DatabaseModule,
 
+    // Common modules
+    LoggerModule,
+
     // Core modules
     StorageModule,
+
+    // Monitoring & Security modules
+    HealthModule,
+    MetricsModule,
+    AlertsModule,
+    TwoFactorModule,
 
     // Feature modules
     AuthModule,
