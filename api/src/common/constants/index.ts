@@ -133,9 +133,11 @@ export const OPENAI_MAX_TOKENS_OPTIMIZATION = 3000;
 export const OPENAI_TEMPERATURE = 0.7;
 
 // AI Models
+// Supports both OpenAI and OpenRouter models
 export const AI_MODELS = {
   GPT4: 'gpt-4-turbo-preview',
   GPT35: 'gpt-3.5-turbo',
+  GPT5_NANO: 'openai/gpt-5-nano', // OpenRouter model
   CLAUDE: 'claude-3-sonnet',
 } as const;
 

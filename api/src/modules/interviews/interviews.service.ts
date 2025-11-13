@@ -37,14 +37,42 @@ export class InterviewsService {
     private readonly feedbackQueue: Queue,
   ) {
     // Initialize OpenAI client for question generation
+    // Supports both OpenAI and OpenRouter APIs
     const apiKey = this.configService.get<string>('OPENAI_API_KEY');
     const organization = this.configService.get<string>('OPENAI_ORGANIZATION');
+    const baseUrl = this.configService.get<string>('OPENAI_BASE_URL');
+    const siteUrl = this.configService.get<string>('OPENAI_SITE_URL');
+    const siteTitle = this.configService.get<string>('OPENAI_SITE_TITLE');
 
     // Only initialize OpenAI if API key is provided and valid
     if (apiKey && apiKey.trim() && !apiKey.includes('your-') && !apiKey.includes('sk-***')) {
-      const config: { apiKey: string; organization?: string } = {
+      const config: {
+        apiKey: string;
+        organization?: string;
+        baseURL?: string;
+        defaultHeaders?: Record<string, string>;
+      } = {
         apiKey: apiKey.trim(),
       };
+
+      // Add base URL if provided (for OpenRouter or other providers)
+      if (baseUrl && baseUrl.trim() && !baseUrl.includes('your-')) {
+        config.baseURL = baseUrl.trim();
+        this.logger.log(`Using custom OpenAI base URL: ${baseUrl.trim()}`);
+
+        // Add OpenRouter-specific headers if using OpenRouter
+        if (baseUrl.includes('openrouter.ai')) {
+          config.defaultHeaders = {};
+          if (siteUrl && siteUrl.trim()) {
+            config.defaultHeaders['HTTP-Referer'] = siteUrl.trim();
+          }
+          if (siteTitle && siteTitle.trim()) {
+            config.defaultHeaders['X-Title'] = siteTitle.trim();
+          }
+          this.logger.log('OpenRouter integration enabled with custom headers');
+        }
+      }
+
       // Organization header is OPTIONAL - only needed if you have multiple organizations
       // Most users don't need this parameter at all
       // If you're using a personal API key or single organization, DON'T include organization header
@@ -66,6 +94,7 @@ export class InterviewsService {
       }
       // If organization is not provided or invalid, just use API key alone (this is normal)
       this.openai = new OpenAI(config);
+      this.logger.log('OpenAI client initialized successfully');
     } else {
       this.openai = null;
       this.logger.warn(
@@ -468,7 +497,7 @@ export class InterviewsService {
 
     try {
       const completion = await this.openai.chat.completions.create({
-        model: AI_MODELS.GPT35,
+        model: AI_MODELS.GPT5_NANO, // Using GPT-5 Nano via OpenRouter (cheaper & faster)
         messages: [
           {
             role: 'system',

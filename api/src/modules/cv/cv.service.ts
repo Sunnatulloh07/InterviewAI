@@ -46,9 +46,35 @@ export class CvService {
   ) {
     const apiKey = this.configService.get<string>('OPENAI_API_KEY');
     const organization = this.configService.get<string>('OPENAI_ORGANIZATION');
-    const config: { apiKey: string; organization?: string } = {
+    const baseUrl = this.configService.get<string>('OPENAI_BASE_URL');
+    const siteUrl = this.configService.get<string>('OPENAI_SITE_URL');
+    const siteTitle = this.configService.get<string>('OPENAI_SITE_TITLE');
+
+    const config: {
+      apiKey: string;
+      organization?: string;
+      baseURL?: string;
+      defaultHeaders?: Record<string, string>;
+    } = {
       apiKey: apiKey || '',
     };
+
+    // Add base URL if provided (for OpenRouter or other providers)
+    if (baseUrl && baseUrl.trim() && !baseUrl.includes('your-')) {
+      config.baseURL = baseUrl.trim();
+
+      // Add OpenRouter-specific headers if using OpenRouter
+      if (baseUrl.includes('openrouter.ai')) {
+        config.defaultHeaders = {};
+        if (siteUrl && siteUrl.trim()) {
+          config.defaultHeaders['HTTP-Referer'] = siteUrl.trim();
+        }
+        if (siteTitle && siteTitle.trim()) {
+          config.defaultHeaders['X-Title'] = siteTitle.trim();
+        }
+      }
+    }
+
     // Organization header is OPTIONAL - only needed if you have multiple organizations
     // Most users don't need this parameter at all
     // Only add if it's a valid organization ID (starts with 'org-' and has proper length)
