@@ -1,39 +1,27 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { OpenAI } from 'openai';
 import { InterviewsRepository } from './interviews.repository';
 import { UsersService } from '../users/users.service';
 import { OPENAI_MAX_TOKENS_FEEDBACK, OPENAI_TEMPERATURE, AI_MODELS } from '@common/constants';
+import {
+  createOpenAIClient,
+  getModelName,
+  getModelForPlan,
+} from '@common/utils/openai-client.factory';
 
 @Injectable()
 export class InterviewsFeedbackService {
   private readonly logger = new Logger(InterviewsFeedbackService.name);
-  private readonly openai: OpenAI;
+  private readonly openai: OpenAI | null;
 
   constructor(
     private readonly repository: InterviewsRepository,
     private readonly usersService: UsersService,
     private readonly configService: ConfigService,
   ) {
-    const apiKey = this.configService.get<string>('OPENAI_API_KEY');
-    const organization = this.configService.get<string>('OPENAI_ORGANIZATION');
-    const config: { apiKey: string; organization?: string } = {
-      apiKey: apiKey || '',
-    };
-    // Organization header is OPTIONAL - only needed if you have multiple organizations
-    // Most users don't need this parameter at all
-    // Only add if it's a valid organization ID (starts with 'org-' and has proper length)
-    if (
-      organization &&
-      organization.trim() &&
-      !organization.includes('your-') &&
-      !organization.includes('org-***') &&
-      organization.trim().startsWith('org-') &&
-      organization.trim().length > 4
-    ) {
-      config.organization = organization.trim();
-    }
-    this.openai = new OpenAI(config);
+    // Initialize OpenAI client with support for both OpenAI and OpenRouter
+    this.openai = createOpenAIClient(this.configService);
   }
 
   /**
@@ -249,6 +237,12 @@ export class InterviewsFeedbackService {
     prompt += `6. If providing an example answer, make it realistic and achievable\n`;
     prompt += `7. **REMEMBER:** All JSON output fields must be in ${languageName}\n`;
 
+    if (!this.openai) {
+      throw new BadRequestException(
+        'AI service is not configured. Please configure OPENAI_API_KEY.',
+      );
+    }
+
     const completion = await this.openai.chat.completions.create({
       model,
       messages: [
@@ -395,6 +389,12 @@ export class InterviewsFeedbackService {
     prompt += `6. Provide realistic, achievable next steps\n`;
     prompt += `7. **REMEMBER:** All JSON output fields must be in ${languageName}\n`;
 
+    if (!this.openai) {
+      throw new BadRequestException(
+        'AI service is not configured. Please configure OPENAI_API_KEY.',
+      );
+    }
+
     const completion = await this.openai.chat.completions.create({
       model,
       messages: [
@@ -418,12 +418,10 @@ export class InterviewsFeedbackService {
 
   /**
    * Get AI model based on subscription plan
+   * Supports OpenRouter with automatic model mapping
    */
   private getModelByPlan(plan?: string): string {
-    if (plan === 'elite' || plan === 'pro' || plan === 'enterprise') {
-      return AI_MODELS.GPT4;
-    }
-    return AI_MODELS.GPT35;
+    return getModelForPlan(this.configService, plan || 'free', AI_MODELS.GPT35, AI_MODELS.GPT4);
   }
 
   /**

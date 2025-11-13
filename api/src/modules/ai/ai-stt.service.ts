@@ -1,6 +1,7 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { OpenAI } from 'openai';
+import { createOpenAIClient } from '@common/utils/openai-client.factory';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -12,30 +13,9 @@ export class AiSttService {
   private readonly openai: OpenAI | null;
 
   constructor(private readonly configService: ConfigService) {
-    const apiKey = this.configService.get<string>('OPENAI_API_KEY');
-    const organization = this.configService.get<string>('OPENAI_ORGANIZATION');
-
-    // Only initialize OpenAI if API key is provided and valid
-    if (apiKey && apiKey.trim() && !apiKey.includes('your-') && !apiKey.includes('sk-***')) {
-      const config: { apiKey: string; organization?: string } = {
-        apiKey: apiKey.trim(),
-      };
-      // Organization header is OPTIONAL - only needed if you have multiple organizations
-      // Most users don't need this parameter at all
-      // Only add if it's a valid organization ID (starts with 'org-' and has proper length)
-      if (
-        organization &&
-        organization.trim() &&
-        !organization.includes('your-') &&
-        !organization.includes('org-***') &&
-        organization.trim().startsWith('org-') &&
-        organization.trim().length > 4
-      ) {
-        config.organization = organization.trim();
-      }
-      this.openai = new OpenAI(config);
-    } else {
-      this.openai = null;
+    // Initialize OpenAI client with support for both OpenAI and OpenRouter
+    this.openai = createOpenAIClient(this.configService);
+    if (!this.openai) {
       this.logger.warn('OpenAI API key not configured. STT features will be disabled.');
     }
   }

@@ -20,6 +20,11 @@ import { InterviewSessionDocument } from './schemas/interview-session.schema';
 import { InterviewQuestionDocument } from './schemas/interview-question.schema';
 import { InterviewAnswerDocument } from './schemas/interview-answer.schema';
 import { USAGE_LIMITS, QUEUE_INTERVIEW_FEEDBACK, AI_MODELS } from '@common/constants';
+import {
+  createOpenAIClient,
+  getModelName,
+  OPENROUTER_MODELS,
+} from '@common/utils/openai-client.factory';
 
 @Injectable()
 export class InterviewsService {
@@ -37,40 +42,17 @@ export class InterviewsService {
     private readonly feedbackQueue: Queue,
   ) {
     // Initialize OpenAI client for question generation
-    const apiKey = this.configService.get<string>('OPENAI_API_KEY');
-    const organization = this.configService.get<string>('OPENAI_ORGANIZATION');
-
-    // Only initialize OpenAI if API key is provided and valid
-    if (apiKey && apiKey.trim() && !apiKey.includes('your-') && !apiKey.includes('sk-***')) {
-      const config: { apiKey: string; organization?: string } = {
-        apiKey: apiKey.trim(),
-      };
-      // Organization header is OPTIONAL - only needed if you have multiple organizations
-      // Most users don't need this parameter at all
-      // If you're using a personal API key or single organization, DON'T include organization header
-      // Including wrong organization will cause 401 errors
-      //
-      // Only add organization if:
-      // 1. It's provided and not empty
-      // 2. It's not a placeholder
-      // 3. It looks like a valid organization ID (starts with 'org-' and has proper length)
-      if (
-        organization &&
-        organization.trim() &&
-        !organization.includes('your-') &&
-        !organization.includes('org-***') &&
-        organization.trim().startsWith('org-') &&
-        organization.trim().length > 4
-      ) {
-        config.organization = organization.trim();
-      }
-      // If organization is not provided or invalid, just use API key alone (this is normal)
-      this.openai = new OpenAI(config);
-    } else {
-      this.openai = null;
+    // Supports both OpenAI and OpenRouter (auto-detects OpenRouter by API key prefix)
+    this.openai = createOpenAIClient(this.configService);
+    if (!this.openai) {
       this.logger.warn(
         'OpenAI API key not configured. Question generation will use fallback questions.',
       );
+    } else {
+      const apiKey = this.configService.get<string>('OPENAI_API_KEY');
+      if (apiKey?.startsWith('sk-or-v1-')) {
+        this.logger.log('Using OpenRouter API for question generation (auto-detected)');
+      }
     }
   }
 
@@ -461,18 +443,51 @@ export class InterviewsService {
     prompt += `- Questions should be specific and relevant to the domain/technologies mentioned\n`;
     prompt += `- Avoid generic questions, make them specific and practical\n\n`;
 
-    prompt += `Return your response as a JSON object with a "questions" array containing ${count} question strings:\n`;
+    prompt += `\nCRITICAL OUTPUT FORMAT:\n`;
+    prompt += `You MUST return a valid JSON object with this EXACT structure:\n`;
     prompt += `{\n`;
-    prompt += `  "questions": ["question 1", "question 2", ...]\n`;
-    prompt += `}\n`;
+    prompt += `  "questions": ["question 1", "question 2", "question 3", ...]\n`;
+    prompt += `}\n\n`;
+    prompt += `IMPORTANT RULES:\n`;
+    prompt += `- Return ONLY valid JSON, no markdown code blocks, no explanations, no text before or after\n`;
+    prompt += `- The "questions" array MUST contain exactly ${count} question strings\n`;
+    prompt += `- Each question must be a string with at least 10 characters\n`;
+    prompt += `- Do NOT include \`\`\`json or \`\`\` code blocks\n`;
+    prompt += `- Do NOT add any explanatory text\n`;
+    prompt += `- The response must be parseable as JSON\n`;
 
     try {
+      // Determine model based on OpenRouter or OpenAI
+      // Note: GPT-5 doesn't exist - using GPT-4o-mini as production-ready alternative
+      const model = getModelName(
+        this.configService,
+        AI_MODELS.GPT35,
+        OPENROUTER_MODELS['gpt-5-nano'] || 'openai/gpt-4o-mini',
+      );
+
       const completion = await this.openai.chat.completions.create({
-        model: AI_MODELS.GPT35,
+        model,
         messages: [
           {
             role: 'system',
-            content: `You are a professional interview question generator. Generate unique, relevant interview questions based on the requirements. Always respond in valid JSON format with a "questions" array.`,
+            content: `You are a professional interview question generator. Your task is to generate interview questions and return them in valid JSON format.
+
+CRITICAL RULES:
+1. ALWAYS return a valid JSON object with a "questions" array
+2. NEVER include markdown code blocks (\`\`\`json)
+3. NEVER add explanatory text before or after the JSON
+4. The JSON must be directly parseable
+5. Each question must be a string in the "questions" array
+
+Example of correct response:
+{"questions": ["Question 1?", "Question 2?", "Question 3?"]}
+
+Example of INCORRECT response (DO NOT DO THIS):
+\`\`\`json
+{"questions": ["Question 1?"]}
+\`\`\`
+
+Your response must be valid JSON that can be parsed directly.`,
           },
           {
             role: 'user',
@@ -485,36 +500,77 @@ export class InterviewsService {
       });
 
       const responseText = completion.choices[0]?.message?.content || '{}';
-      const parsed = JSON.parse(responseText) as any;
+      
+      // Log raw response for debugging (first 500 chars)
+      this.logger.debug(`AI response (first 500 chars): ${responseText.substring(0, 500)}`);
+
+      // Try to parse JSON response
+      let parsed: any;
+      try {
+        // Try to extract JSON from response if it contains markdown code blocks
+        let jsonText = responseText.trim();
+        if (jsonText.includes('```json')) {
+          jsonText = jsonText.split('```json')[1].split('```')[0].trim();
+        } else if (jsonText.includes('```')) {
+          jsonText = jsonText.split('```')[1].split('```')[0].trim();
+        }
+        parsed = JSON.parse(jsonText);
+      } catch (parseError) {
+        this.logger.error(`Failed to parse AI response as JSON: ${parseError.message}`);
+        this.logger.error(`Response text: ${responseText.substring(0, 1000)}`);
+        throw new Error(`Invalid JSON response from AI: ${parseError.message}`);
+      }
 
       // Try to extract questions from various possible JSON structures
       let questions: string[] = [];
+      
+      // Check if response is directly an array
       if (Array.isArray(parsed)) {
         questions = parsed;
-      } else if (parsed.questions && Array.isArray(parsed.questions)) {
+      }
+      // Check for common property names
+      else if (parsed.questions && Array.isArray(parsed.questions)) {
         questions = parsed.questions;
       } else if (parsed.questionsList && Array.isArray(parsed.questionsList)) {
         questions = parsed.questionsList;
+      } else if (parsed.questionList && Array.isArray(parsed.questionList)) {
+        questions = parsed.questionList;
+      } else if (parsed.data && Array.isArray(parsed.data)) {
+        questions = parsed.data;
+      } else if (parsed.items && Array.isArray(parsed.items)) {
+        questions = parsed.items;
       } else {
         // Try to find any array in the response
         const keys = Object.keys(parsed);
         for (const key of keys) {
           if (Array.isArray(parsed[key])) {
-            questions = parsed[key];
-            break;
+            const arrayValue = parsed[key];
+            // Check if array contains strings (questions)
+            if (arrayValue.length > 0 && typeof arrayValue[0] === 'string') {
+              questions = arrayValue;
+              this.logger.debug(`Found questions array in key: ${key}`);
+              break;
+            }
           }
         }
       }
 
       // Validate and clean questions
       questions = questions
-        .filter((q) => q && typeof q === 'string' && q.trim().length > 10)
+        .filter((q) => {
+          // More lenient validation - accept questions with at least 5 characters
+          return q && typeof q === 'string' && q.trim().length >= 5;
+        })
         .slice(0, count)
         .map((q) => q.trim());
 
       if (questions.length === 0) {
+        this.logger.error(`No valid questions found in AI response. Parsed object keys: ${Object.keys(parsed).join(', ')}`);
+        this.logger.error(`Full response: ${JSON.stringify(parsed, null, 2).substring(0, 2000)}`);
         throw new Error('No valid questions generated from AI response');
       }
+
+      this.logger.log(`Successfully extracted ${questions.length} questions from AI response`);
 
       return questions;
     } catch (error: any) {

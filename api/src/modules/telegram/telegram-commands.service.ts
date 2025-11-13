@@ -10,6 +10,7 @@ import { TelegramLiveService } from './telegram-live.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { AiAnswerService } from '../ai/ai-answer.service';
 import { OpenAI } from 'openai';
+import { createOpenAIClient, getModelName } from '@common/utils/openai-client.factory';
 
 @Injectable()
 export class TelegramCommandsService {
@@ -26,31 +27,8 @@ export class TelegramCommandsService {
     private readonly analyticsService: AnalyticsService,
     private readonly answerService: AiAnswerService,
   ) {
-    // Initialize OpenAI client for direct translation
-    const apiKey = this.configService.get<string>('OPENAI_API_KEY');
-    const organization = this.configService.get<string>('OPENAI_ORGANIZATION');
-
-    if (apiKey && apiKey.trim() && !apiKey.includes('your-') && !apiKey.includes('sk-***')) {
-      const config: { apiKey: string; organization?: string } = {
-        apiKey: apiKey.trim(),
-      };
-      // Organization header is OPTIONAL - only needed if you have multiple organizations
-      // Most users don't need this parameter at all
-      // Only add if it's a valid organization ID (starts with 'org-' and has proper length)
-      if (
-        organization &&
-        organization.trim() &&
-        !organization.includes('your-') &&
-        !organization.includes('org-***') &&
-        organization.trim().startsWith('org-') &&
-        organization.trim().length > 4
-      ) {
-        config.organization = organization.trim();
-      }
-      this.openai = new OpenAI(config);
-    } else {
-      this.openai = null;
-    }
+    // Initialize OpenAI client with support for both OpenAI and OpenRouter
+    this.openai = createOpenAIClient(this.configService);
   }
 
   async handleStart(ctx: BotContext) {
@@ -2362,7 +2340,7 @@ export class TelegramCommandsService {
           const translationPrompt = `Translate the following interview question to ${languageName} language. Return ONLY the translated question text, nothing else, no explanations, no JSON, no quotes, just the pure translation:\n\n${question.question}`;
 
           const completion = await this.openai.chat.completions.create({
-            model: 'gpt-3.5-turbo',
+            model: getModelName(this.configService, 'gpt-3.5-turbo', 'openai/gpt-5-nano'),
             messages: [
               {
                 role: 'system',

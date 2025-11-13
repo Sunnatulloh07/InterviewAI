@@ -28,11 +28,16 @@ import {
   AI_MODELS,
 } from '@common/constants';
 import { OpenAI } from 'openai';
+import {
+  createOpenAIClient,
+  getModelName,
+  getModelForPlan,
+} from '@common/utils/openai-client.factory';
 
 @Injectable()
 export class CvService {
   private readonly logger = new Logger(CvService.name);
-  private readonly openai: OpenAI;
+  private readonly openai: OpenAI | null;
   private readonly maxVersions = 5;
 
   constructor(
@@ -44,25 +49,8 @@ export class CvService {
     private readonly configService: ConfigService,
     @InjectQueue(QUEUE_CV_ANALYSIS) private readonly cvAnalysisQueue: Queue,
   ) {
-    const apiKey = this.configService.get<string>('OPENAI_API_KEY');
-    const organization = this.configService.get<string>('OPENAI_ORGANIZATION');
-    const config: { apiKey: string; organization?: string } = {
-      apiKey: apiKey || '',
-    };
-    // Organization header is OPTIONAL - only needed if you have multiple organizations
-    // Most users don't need this parameter at all
-    // Only add if it's a valid organization ID (starts with 'org-' and has proper length)
-    if (
-      organization &&
-      organization.trim() &&
-      !organization.includes('your-') &&
-      !organization.includes('org-***') &&
-      organization.trim().startsWith('org-') &&
-      organization.trim().length > 4
-    ) {
-      config.organization = organization.trim();
-    }
-    this.openai = new OpenAI(config);
+    // Initialize OpenAI client with support for both OpenAI and OpenRouter
+    this.openai = createOpenAIClient(this.configService);
   }
 
   /**
@@ -295,6 +283,12 @@ export class CvService {
     model: string = AI_MODELS.GPT35,
     language: string = 'en',
   ): Promise<any> {
+    if (!this.openai) {
+      throw new BadRequestException(
+        'AI service is not configured. Please configure OPENAI_API_KEY.',
+      );
+    }
+
     const prompt = this.buildAnalysisPrompt(cvText, parsedData, jobDescription, language);
 
     const completion = await this.openai.chat.completions.create({
@@ -349,6 +343,12 @@ export class CvService {
     model: string = AI_MODELS.GPT35,
     language: string = 'en',
   ): Promise<any> {
+    if (!this.openai) {
+      throw new BadRequestException(
+        'AI service is not configured. Please configure OPENAI_API_KEY.',
+      );
+    }
+
     const prompt = this.buildOptimizationPrompt(cvText, parsedData, analysis, dto, language);
 
     const completion = await this.openai.chat.completions.create({
@@ -682,11 +682,9 @@ export class CvService {
 
   /**
    * Get AI model based on subscription plan
+   * Supports OpenRouter with automatic model mapping
    */
   private getModelByPlan(plan?: string): string {
-    if (plan === 'elite' || plan === 'pro' || plan === 'enterprise') {
-      return AI_MODELS.GPT4;
-    }
-    return AI_MODELS.GPT35;
+    return getModelForPlan(this.configService, plan || 'free', AI_MODELS.GPT35, AI_MODELS.GPT4);
   }
 }
