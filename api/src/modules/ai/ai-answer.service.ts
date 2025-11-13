@@ -30,12 +30,39 @@ export class AiAnswerService {
   ) {
     const apiKey = this.configService.get<string>('OPENAI_API_KEY');
     const organization = this.configService.get<string>('OPENAI_ORGANIZATION');
+    const baseUrl = this.configService.get<string>('OPENAI_BASE_URL');
+    const siteUrl = this.configService.get<string>('OPENAI_SITE_URL');
+    const siteTitle = this.configService.get<string>('OPENAI_SITE_TITLE');
 
     // Only initialize OpenAI if API key is provided and valid
     if (apiKey && apiKey.trim() && !apiKey.includes('your-') && !apiKey.includes('sk-***')) {
-      const config: { apiKey: string; organization?: string } = {
+      const config: {
+        apiKey: string;
+        organization?: string;
+        baseURL?: string;
+        defaultHeaders?: Record<string, string>;
+      } = {
         apiKey: apiKey.trim(),
       };
+
+      // Add base URL if provided (for OpenRouter or other providers)
+      if (baseUrl && baseUrl.trim() && !baseUrl.includes('your-')) {
+        config.baseURL = baseUrl.trim();
+        this.logger.log(`Using custom OpenAI base URL: ${baseUrl.trim()}`);
+
+        // Add OpenRouter-specific headers if using OpenRouter
+        if (baseUrl.includes('openrouter.ai')) {
+          config.defaultHeaders = {};
+          if (siteUrl && siteUrl.trim()) {
+            config.defaultHeaders['HTTP-Referer'] = siteUrl.trim();
+          }
+          if (siteTitle && siteTitle.trim()) {
+            config.defaultHeaders['X-Title'] = siteTitle.trim();
+          }
+          this.logger.log('OpenRouter integration enabled with custom headers');
+        }
+      }
+
       // Organization header is OPTIONAL - only needed if you have multiple organizations
       // Most users don't need this parameter at all
       // Only add if it's a valid organization ID (starts with 'org-' and has proper length)
@@ -50,6 +77,7 @@ export class AiAnswerService {
         config.organization = organization.trim();
       }
       this.openai = new OpenAI(config);
+      this.logger.log('OpenAI client initialized successfully for AI Answer Service');
     } else {
       this.openai = null;
       this.logger.warn('OpenAI API key not configured. AI features will be disabled.');
@@ -715,12 +743,16 @@ export class AiAnswerService {
 
   /**
    * Get AI model based on subscription plan
+   * Free plan: GPT-5 Nano (via OpenRouter - cheaper and faster)
+   * Pro/Elite/Enterprise: GPT-4 for better quality
    */
   private getModelByPlan(plan?: string): string {
     if (plan === 'elite' || plan === 'pro' || plan === 'enterprise') {
       return AI_MODELS.GPT4;
     }
-    return AI_MODELS.GPT35;
+    // Use GPT-5 Nano for free plan (if using OpenRouter)
+    // Falls back to GPT-3.5 if using OpenAI direct
+    return AI_MODELS.GPT5_NANO;
   }
 
   /**
