@@ -31,6 +31,9 @@ export const ALLOWED_CV_FORMATS = [
   'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'text/plain',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
 ];
 export const ALLOWED_IMAGE_FORMATS = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 export const ALLOWED_AUDIO_FORMATS = [
@@ -41,102 +44,128 @@ export const ALLOWED_AUDIO_FORMATS = [
   'audio/ogg',
 ];
 
-// Usage Limits by Plan (TZ compliant with aiTokensPerMonth added)
+// Usage Limits by Plan
+// Plans: free_trial (7 days), starter, pro, elite
+// -1 means unlimited
 export const USAGE_LIMITS = {
-  free: {
+  free_trial: {
     mockInterviews: 3,
+    liveInterviewMinutes: 0, // No live interview in trial
     cvAnalyses: 1,
-    chromeQuestions: 50,
-    aiTokensPerMonth: 10000, // Basic usage
+    chromeQuestions: 0, // No chrome extension
+    aiTokensPerMonth: 10000,
+    voiceMessagesEnabled: false, // Text only
+    trialDays: 7,
+  },
+  starter: {
+    mockInterviews: 15, // Approx cost control
+    liveInterviewMinutes: 15, // Cost: ~$1.17 (1000 UZS/min)
+    cvAnalyses: 5,
+    chromeQuestions: 0,
+    aiTokensPerMonth: 150000, // Increased slighty
+    voiceMessagesEnabled: true,
+    voiceInLiveEnabled: false,
   },
   pro: {
-    mockInterviews: 50,
-    cvAnalyses: 10,
+    mockInterviews: 100, // Capped
+    liveInterviewMinutes: 60, // Cost: ~$4.68 (1000 UZS/min)
+    cvAnalyses: 20,
     chromeQuestions: 1000,
-    aiTokensPerMonth: 500000, // Generous for GPT-4
+    aiTokensPerMonth: 1000000,
+    voiceMessagesEnabled: true,
+    voiceInLiveEnabled: true,
   },
   elite: {
-    mockInterviews: -1, // unlimited
-    cvAnalyses: -1, // unlimited
-    chromeQuestions: -1, // unlimited
-    aiTokensPerMonth: -1, // unlimited
-  },
-  enterprise: {
-    mockInterviews: -1, // unlimited
-    cvAnalyses: -1, // unlimited
-    chromeQuestions: -1, // unlimited
-    aiTokensPerMonth: -1, // unlimited
+    mockInterviews: 200, // Capped
+    liveInterviewMinutes: 160, // Cost: ~$12.48 (1000 UZS/min) - ~42% of sub price
+    cvAnalyses: 50,
+    chromeQuestions: 5000,
+    aiTokensPerMonth: 5000000, // Capped
+    voiceMessagesEnabled: true,
+    voiceInLiveEnabled: true,
   },
 } as const;
 
-// Subscription Plan Features (TZ compliant)
+// Plan types for type safety
+export type SubscriptionPlan = keyof typeof USAGE_LIMITS;
+
+// Subscription Plan Features
+// Aligned with USAGE_LIMITS plan types
 export const PLAN_FEATURES = {
-  free: {
-    chromeExtension: false,
+  free_trial: {
     telegramBot: true,
+    chromeExtension: false,
+    liveInterview: false,
+    mockInterviews: true,
     cvAnalysis: true,
     cvOptimization: false,
-    mockInterviews: true,
+    voiceMessages: false, // Text only
+    voiceInLive: false,
     stealthMode: false,
-    voiceMessages: false,
     contextAwareness: false,
-    advancedAI: false, // GPT-3.5 only
+    advancedAI: false, // GPT-4o-mini only
     prioritySupport: false,
-    customTraining: false,
+  },
+  starter: {
+    telegramBot: true,
+    chromeExtension: false,
+    liveInterview: true,
+    mockInterviews: true,
+    cvAnalysis: true,
+    cvOptimization: false,
+    voiceMessages: true, // In mock only
+    voiceInLive: false,
+    stealthMode: false,
+    contextAwareness: true,
+    advancedAI: false, // GPT-4o-mini
+    prioritySupport: false,
   },
   pro: {
-    chromeExtension: true,
     telegramBot: true,
+    chromeExtension: true,
+    liveInterview: true,
+    mockInterviews: true,
     cvAnalysis: true,
     cvOptimization: true,
-    mockInterviews: true,
-    stealthMode: true,
     voiceMessages: true,
+    voiceInLive: true,
+    stealthMode: true,
     contextAwareness: true,
-    advancedAI: true, // GPT-4
+    advancedAI: true, // GPT-4o
     prioritySupport: false,
-    customTraining: false,
   },
   elite: {
-    chromeExtension: true,
     telegramBot: true,
+    chromeExtension: true,
+    liveInterview: true,
+    mockInterviews: true,
     cvAnalysis: true,
     cvOptimization: true,
-    mockInterviews: true,
-    stealthMode: true,
     voiceMessages: true,
-    contextAwareness: true,
-    advancedAI: true, // GPT-4
-    prioritySupport: true,
-    customTraining: false,
-  },
-  enterprise: {
-    chromeExtension: true,
-    telegramBot: true,
-    cvAnalysis: true,
-    cvOptimization: true,
-    mockInterviews: true,
+    voiceInLive: true,
     stealthMode: true,
-    voiceMessages: true,
     contextAwareness: true,
-    advancedAI: true, // GPT-4
+    advancedAI: true, // GPT-4o / Claude
     prioritySupport: true,
-    customTraining: true,
   },
 } as const;
+
+// Feature types for type safety
+export type PlanFeatures = keyof typeof PLAN_FEATURES;
 
 // OpenAI
 export const OPENAI_MAX_TOKENS_ANSWER = 1000;
-export const OPENAI_MAX_TOKENS_ANALYSIS = 2000;
+export const OPENAI_MAX_TOKENS_ANALYSIS = 4000; // Increased for deeper analysis (Nano/Mini support)
 export const OPENAI_MAX_TOKENS_FEEDBACK = 1500;
 export const OPENAI_MAX_TOKENS_OPTIMIZATION = 3000;
 export const OPENAI_TEMPERATURE = 0.7;
 
 // AI Models
 export const AI_MODELS = {
-  GPT4: 'gpt-4-turbo-preview',
-  GPT35: 'gpt-3.5-turbo',
-  CLAUDE: 'claude-3-sonnet',
+  GPT4: 'gpt-4o',
+  GPT35: 'openai/gpt-4o-mini', // Explicit provider prefix for clarity
+  GPT_NANO: 'openai/gpt-5-nano', // User requested - High context, low cost
+  CLAUDE: 'anthropic/claude-3.5-sonnet',
 } as const;
 
 // Redis Keys

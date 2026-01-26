@@ -41,10 +41,15 @@ export class TelegramSession {
 
   @Prop({ type: Object, default: {} })
   metadata: {
+    // Legacy fields
     jobRole?: string;
-    company?: string;
     interviewType?: string;
     language?: string;
+    // New fields for live session
+    domain?: string;
+    technologies?: string[];
+    position?: string;
+    company?: string;
   };
 
   @Prop({ type: Date })

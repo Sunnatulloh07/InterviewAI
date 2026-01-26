@@ -10,19 +10,9 @@ export class InterviewsProcessor {
 
   constructor(private readonly feedbackService: InterviewsFeedbackService) {}
 
-  @Process('generate-answer-feedback')
-  async handleAnswerFeedback(job: Job) {
-    this.logger.log(`Processing answer feedback job ${job.id}`);
-    const { answerId, questionId } = job.data;
-
-    try {
-      await this.feedbackService.generateAnswerFeedback(answerId, questionId);
-      this.logger.log(`Answer feedback completed: ${answerId}`);
-    } catch (error) {
-      this.logger.error(`Answer feedback failed: ${error.message}`, error.stack);
-      throw error;
-    }
-  }
+  // Immediate answer feedback is disabled for optimization
+  // @Process('generate-answer-feedback')
+  // async handleAnswerFeedback(job: Job) { ... }
 
   @Process('generate-session-feedback')
   async handleSessionFeedback(job: Job) {

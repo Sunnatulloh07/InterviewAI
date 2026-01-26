@@ -31,6 +31,7 @@ import { HealthModule } from './modules/health/health.module';
 import { MetricsModule } from './modules/metrics/metrics.module';
 import { AlertsModule } from './modules/alerts/alerts.module';
 import { TwoFactorModule } from './modules/two-factor/two-factor.module';
+import { SecurityModule } from './modules/security/security.module';
 
 // Feature modules
 import { AuthModule } from './modules/auth/auth.module';
@@ -44,10 +45,10 @@ import { PaymentsModule } from './modules/payments/payments.module';
 import { WebsocketModule } from './modules/websocket/websocket.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { AdminBotModule } from './modules/admin-bot/admin-bot.module';
 
 @Module({
   imports: [
-    // Configuration module with validation
     ConfigModule.forRoot({
       isGlobal: true,
       cache: true,
@@ -321,6 +322,7 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
     MetricsModule,
     AlertsModule,
     TwoFactorModule,
+    SecurityModule,
 
     // Feature modules
     AuthModule,
@@ -333,6 +335,7 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
     WebsocketModule,
     NotificationsModule,
     AnalyticsModule,
+    AdminBotModule,
   ],
   controllers: [AppController],
   providers: [AppService, RedisService],

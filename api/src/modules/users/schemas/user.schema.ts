@@ -65,21 +65,29 @@ export class User {
   @Prop({ default: 'uz' })
   language: string;
 
-  // Subscription
+  // Subscription - Plans: free_trial (7 days), starter, pro, elite
   @Prop({
     type: Object,
-    default: () => ({
-      plan: 'free',
-      status: 'active',
-      startDate: new Date(),
-    }),
+    default: () => {
+      const now = new Date();
+      const trialEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 days
+      return {
+        plan: 'free_trial',
+        status: 'trialing',
+        startDate: now,
+        trialStartDate: now,
+        trialEndsAt: trialEnd,
+      };
+    },
   })
   subscription: {
-    plan: 'free' | 'pro' | 'elite' | 'enterprise';
-    status: 'active' | 'cancelled' | 'expired' | 'trialing';
+    plan: 'free_trial' | 'starter' | 'pro' | 'elite';
+    status: 'trialing' | 'active' | 'expired' | 'cancelled';
     startDate: Date;
     endDate?: Date;
+    trialStartDate?: Date;
     trialEndsAt?: Date;
+    billingCycle?: 'monthly' | 'annual';
     stripeCustomerId?: string;
     stripeSubscriptionId?: string;
     cancelAtPeriodEnd?: boolean;
@@ -124,11 +132,12 @@ export class User {
     };
   };
 
-  // Usage tracking (TZ compliant with aiTokensThisMonth added)
+  // Usage tracking - includes live interview minutes
   @Prop({
     type: Object,
     default: () => ({
       mockInterviewsThisMonth: 0,
+      liveInterviewMinutesThisMonth: 0,
       cvAnalysesThisMonth: 0,
       chromeQuestionsThisMonth: 0,
       aiTokensThisMonth: 0,
@@ -137,6 +146,7 @@ export class User {
   })
   usage: {
     mockInterviewsThisMonth: number;
+    liveInterviewMinutesThisMonth: number;
     cvAnalysesThisMonth: number;
     chromeQuestionsThisMonth: number;
     aiTokensThisMonth: number;
@@ -147,8 +157,25 @@ export class User {
   @Prop()
   lastLoginAt?: Date;
 
+  // Trial notification tracking (to prevent duplicate notifications)
+  @Prop()
+  lastTrialNotificationDate?: Date;
+
   @Prop({ index: true })
   deletedAt?: Date;
+
+  // Blocking
+  @Prop({ default: false })
+  isBlocked: boolean;
+
+  @Prop()
+  blockReason?: string;
+
+  @Prop()
+  blockedAt?: Date;
+
+  @Prop()
+  blockedBy?: number;
 
   // Virtual property
   get fullName(): string {
@@ -202,19 +229,26 @@ UserSchema.set('toObject', {
 UserSchema.pre('save', function (next) {
   const user = this as any;
 
-  // Ensure defaults for new users (TZ compliant)
+  // Ensure defaults for new users
   if (user.isNew) {
+    // Set trial subscription for new users (7 days)
     if (!user.subscription) {
+      const now = new Date();
+      const trialEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 days
       user.subscription = {
-        plan: 'free',
-        status: 'active',
-        startDate: new Date(),
+        plan: 'free_trial',
+        status: 'trialing',
+        startDate: now,
+        trialStartDate: now,
+        trialEndsAt: trialEnd,
       };
     }
 
+    // Initialize usage tracking
     if (!user.usage) {
       user.usage = {
         mockInterviewsThisMonth: 0,
+        liveInterviewMinutesThisMonth: 0,
         cvAnalysesThisMonth: 0,
         chromeQuestionsThisMonth: 0,
         aiTokensThisMonth: 0,

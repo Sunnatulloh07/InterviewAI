@@ -376,7 +376,7 @@ Response:
 Savol yoki muammo bo'lsa:
 - GitHub Issues
 - Email: support@interviewai.pro
-- Telegram: @interviewai_support
+- Telegram: @interviewai_support_bot
 
 ---
 

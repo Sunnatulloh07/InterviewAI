@@ -51,6 +51,7 @@ logs/**/*
 .env.test.local
 .env.production
 .env.production.local
+.env.template
 
 # Secrets and keys (CRITICAL - Never commit!)
 *.pem

@@ -5,6 +5,7 @@ import { WebsocketGateway } from './websocket.gateway';
 import { WsJwtGuard } from './ws-jwt.guard';
 import { AiModule } from '../ai/ai.module';
 import { UsersModule } from '../users/users.module';
+import { PaymentsModule } from '../payments/payments.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { UsersModule } from '../users/users.module';
     ConfigModule,
     AiModule,
     UsersModule,
+    PaymentsModule,
   ],
   providers: [WebsocketGateway, WsJwtGuard],
 })

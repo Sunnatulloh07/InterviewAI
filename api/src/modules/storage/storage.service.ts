@@ -108,8 +108,17 @@ export class StorageService {
     userId: string,
   ): Promise<{ storageUrl: string; key: string }> {
     try {
+      // Sanitize userId to prevent path traversal and invalid folder names
+      // Remove any path separators, special characters that could cause issues
+      const sanitizedUserId = userId.replace(/[^a-zA-Z0-9_-]/g, '_');
+
       const fileExt = path.extname(file.originalname);
-      const fileName = `${userId}/${Date.now()}-${crypto.randomBytes(8).toString('hex')}${fileExt}`;
+      // Generate unique filename: {userId}/{timestamp}-{random}.{ext}
+      // This ensures:
+      // 1. Files are organized by user ID (not original filename)
+      // 2. No conflicts with special characters in folder names
+      // 3. Unique filenames prevent overwrites
+      const fileName = `${sanitizedUserId}/${Date.now()}-${crypto.randomBytes(8).toString('hex')}${fileExt}`;
       const key = `cvs/${fileName}`;
 
       if (this.storageMode === 's3') {
@@ -272,18 +281,19 @@ export class StorageService {
     const filePath = path.join(this.localUploadPath, key);
     const dirPath = path.dirname(filePath);
 
-    // Ensure directory exists
+    // Ensure directory exists (recursive mkdir handles nested directories)
     try {
       await access(dirPath);
     } catch {
       await mkdir(dirPath, { recursive: true });
+      this.logger.debug(`Created directory: ${dirPath}`);
     }
 
     // Write file to disk
     await writeFile(filePath, file.buffer);
 
     const storageUrl = `${this.publicUrl}/uploads/${key}`;
-    this.logger.log(`File uploaded locally: ${key}`);
+    this.logger.log(`File uploaded locally: ${key} (size: ${file.size} bytes)`);
 
     return { storageUrl, key };
   }

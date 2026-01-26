@@ -55,14 +55,20 @@ export class CvRepository {
 
   async updateAnalysis(id: string, analysis: any, status: string): Promise<CvDocument | null> {
     try {
+      // Include analyzedAt in the analysis object to avoid MongoDB conflict
+      // MongoDB doesn't allow updating both parent object and nested field in same operation
+      const analysisWithTimestamp = {
+        ...analysis,
+        analyzedAt: new Date(),
+      };
+
       return (await this.cvModel
         .findByIdAndUpdate(
           id,
           {
             $set: {
-              analysis,
+              analysis: analysisWithTimestamp,
               analysisStatus: status,
-              'analysis.analyzedAt': new Date(),
             },
           },
           { new: true },

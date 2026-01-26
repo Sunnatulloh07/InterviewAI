@@ -113,19 +113,26 @@ export class AiAnswerService {
       const processingTime = Date.now() - startTime;
       const tokensUsed = this.estimateTokens(dto.question, answers);
 
-      // Update context if session ID provided
+      // Update context if session ID provided (optimized: parallel execution)
       if (dto.sessionId) {
-        await this.contextService.addMessage(dto.sessionId, {
-          role: 'user',
-          content: dto.question,
-          type: 'question',
-          timestamp: new Date(),
-        });
-        await this.contextService.addMessage(dto.sessionId, {
-          role: 'assistant',
-          content: answers[0].content,
-          type: 'answer',
-          timestamp: new Date(),
+        // Optimized: Update context in parallel (non-blocking) for faster response
+        // Don't await - let it run in background
+        Promise.all([
+          this.contextService.addMessage(dto.sessionId, {
+            role: 'user',
+            content: dto.question,
+            type: 'question',
+            timestamp: new Date(),
+          }),
+          this.contextService.addMessage(dto.sessionId, {
+            role: 'assistant',
+            content: answers[0].content,
+            type: 'answer',
+            timestamp: new Date(),
+          }),
+        ]).catch((error) => {
+          // Log but don't fail the request
+          this.logger.warn(`Context update failed: ${error.message}`);
         });
       }
 
@@ -147,7 +154,9 @@ export class AiAnswerService {
         // Continue - response is still returned to user
       }
 
-      this.logger.log(`Answer generated in ${processingTime}ms using ${model}`);
+      this.logger.log(
+        `Answer generated in ${processingTime}ms using ${model} | Tokens: ${tokensUsed} | Est. Cost: $${(tokensUsed * 0.0000006).toFixed(6)}`,
+      );
       return response;
     } catch (error) {
       this.logger.error(`Answer generation failed: ${error.message}`, error.stack);
@@ -208,7 +217,155 @@ export class AiAnswerService {
     });
 
     const responseText = completion.choices[0].message.content || '{}';
-    const parsed = JSON.parse(responseText) as any;
+
+    // Robust JSON parsing with error handling
+    // AI sometimes returns malformed JSON (unterminated strings, markdown code blocks, etc.)
+    let parsed: any;
+    try {
+      // Step 1: Clean response text before parsing
+      let cleanedText = responseText.trim();
+
+      // Remove markdown code blocks if present
+      cleanedText = cleanedText.replace(/```json\s*/gi, '').replace(/```\s*/g, '');
+
+      // Step 2: Try to extract JSON object from response if it's wrapped in text
+      const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        cleanedText = jsonMatch[0];
+      }
+
+      // Step 3: Try parsing as-is first
+      parsed = JSON.parse(cleanedText);
+    } catch (parseError: any) {
+      this.logger.warn(
+        `JSON parsing failed: ${parseError.message}. Attempting recovery. Response preview: ${responseText.substring(0, 300)}`,
+      );
+
+      // Step 4: Try to fix common JSON issues
+      try {
+        let fixedText = responseText.trim();
+
+        // Remove markdown
+        fixedText = fixedText.replace(/```json\s*/gi, '').replace(/```\s*/g, '');
+
+        // Extract JSON object
+        const jsonMatch = fixedText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          fixedText = jsonMatch[0];
+        }
+
+        // Fix unterminated strings: find the last incomplete string and close it
+        // Count quotes to detect unterminated strings
+        const quoteCount = (fixedText.match(/"/g) || []).length;
+        if (quoteCount % 2 !== 0) {
+          // Odd number of quotes means unterminated string
+          // Find the last quote and add closing quote before the end
+          const lastQuoteIndex = fixedText.lastIndexOf('"');
+          const beforeQuote = fixedText.substring(0, lastQuoteIndex + 1);
+          const afterQuote = fixedText.substring(lastQuoteIndex + 1);
+
+          // If after quote doesn't have proper JSON structure, close the string
+          if (!afterQuote.match(/^\s*[:}\],]/)) {
+            // Find where to close: before next quote, comma, colon, or brace
+            const nextSpecialChar = afterQuote.search(/["}\],:]/);
+            if (nextSpecialChar > 0) {
+              // Insert closing quote before special character
+              fixedText = beforeQuote + '"' + afterQuote;
+            } else {
+              // No special char found, close at end
+              fixedText = beforeQuote + '"' + afterQuote;
+            }
+          }
+        }
+
+        // Ensure JSON object is properly closed
+        const openBraces = (fixedText.match(/\{/g) || []).length;
+        const closeBraces = (fixedText.match(/\}/g) || []).length;
+        if (openBraces > closeBraces) {
+          fixedText += '}'.repeat(openBraces - closeBraces);
+        }
+
+        // Try parsing fixed text
+        parsed = JSON.parse(fixedText);
+        this.logger.log('Successfully parsed JSON after fixing common issues');
+      } catch (fixError: any) {
+        // Step 5: Try to extract partial data using regex
+        try {
+          this.logger.warn(`JSON fix failed: ${fixError.message}. Attempting regex extraction.`);
+
+          // Extract answer field using regex (handles escaped quotes)
+          // Match: "answer": "content" or "answer":"content"
+          const answerRegex = /"answer"\s*:\s*"((?:[^"\\]|\\.)*)"/;
+          const answerMatch = responseText.match(answerRegex);
+
+          // Extract keyPoints array
+          const keyPointsRegex = /"keyPoints"\s*:\s*\[(.*?)\]/s;
+          const keyPointsMatch = responseText.match(keyPointsRegex);
+
+          if (answerMatch && answerMatch[1]) {
+            // Unescape the answer
+            const extractedAnswer = answerMatch[1]
+              .replace(/\\"/g, '"')
+              .replace(/\\n/g, '\n')
+              .replace(/\\t/g, '\t')
+              .replace(/\\\\/g, '\\');
+
+            // Parse keyPoints if found
+            let extractedKeyPoints: string[] = [];
+            if (keyPointsMatch && keyPointsMatch[1]) {
+              try {
+                // Try to parse as JSON array
+                const keyPointsArray = JSON.parse('[' + keyPointsMatch[1] + ']');
+                extractedKeyPoints = Array.isArray(keyPointsArray)
+                  ? keyPointsArray.filter(
+                      (item) => typeof item === 'string' && item.trim().length > 0,
+                    )
+                  : [];
+              } catch {
+                // Fallback: split by comma and clean
+                extractedKeyPoints = keyPointsMatch[1]
+                  .split(',')
+                  .map((s) => s.trim().replace(/^["']|["']$/g, ''))
+                  .filter((s) => s.length > 0);
+              }
+            }
+
+            parsed = {
+              answer: extractedAnswer,
+              keyPoints: extractedKeyPoints,
+              confidence: 0.7, // Lower confidence for extracted data
+            };
+            this.logger.log('Successfully extracted partial data from malformed JSON');
+          } else {
+            // Step 6: Last resort - use raw response as answer
+            const rawAnswer = responseText
+              .replace(/```json\s*/gi, '')
+              .replace(/```/g, '')
+              .replace(/^\{[\s\S]*"answer"\s*:\s*"/, '')
+              .replace(/"[\s\S]*$/, '')
+              .trim();
+
+            parsed = {
+              answer:
+                rawAnswer.length > 0
+                  ? rawAnswer
+                  : "Kechirasiz, javobni qayta ishlashda xatolik yuz berdi. Iltimos qayta urinib ko'ring.",
+              keyPoints: [],
+              confidence: 0.5,
+            };
+            this.logger.warn('Using raw response as fallback due to JSON parsing failure');
+          }
+        } catch (extractError: any) {
+          // Complete fallback - throw error
+          this.logger.error(
+            `All JSON parsing attempts failed. Last error: ${extractError.message}. Response: ${responseText.substring(0, 500)}`,
+          );
+          throw new BadRequestException(
+            "AI javobini qayta ishlashda xatolik yuz berdi. Iltimos qayta urinib ko'ring yoki savolingizni qayta yozing.",
+          );
+        }
+      }
+    }
 
     // Validate that response is in the correct language (basic check)
     // If answer contains mostly English words and language is not English, log a warning
@@ -242,6 +399,10 @@ export class AiAnswerService {
    * Build prompt for answer generation
    * Professional Senior Prompt Engineer Logic: Comprehensive context, structured data, clear instructions
    */
+  /**
+   * Build prompt for answer generation
+   * Professional Senior Prompt Engineer Logic: Comprehensive context, structured data, clear instructions
+   */
   private buildPrompt(
     dto: GenerateAnswerDto,
     style: string,
@@ -251,239 +412,68 @@ export class AiAnswerService {
     interviewHistory: any,
     language: string,
   ): string {
-    const languageName = this.getLanguageName(language);
-    let prompt = `You are an expert interview coach helping a candidate prepare for job interviews. Generate a ${style}, ${length}-length answer that is professional, authentic, and tailored to the candidate's background.\n\n`;
-
-    // CRITICAL: Language instruction must be at the beginning and very explicit
-    // Use target language examples to reinforce the requirement
-    const languageExamples: Record<string, string> = {
-      uz: `Masalan: "Men Node.js bo'yicha 3 yil tajribaga egaman" (to'g'ri), "I have 3 years of experience" (noto'g'ri)`,
-      ru: `Например: "У меня 3 года опыта работы с Node.js" (правильно), "I have 3 years of experience" (неправильно)`,
-      en: `Example: "I have 3 years of experience with Node.js" (correct)`,
-    };
-
-    prompt += `## CRITICAL LANGUAGE REQUIREMENT - READ THIS FIRST\n`;
-    prompt += `**MANDATORY:** You MUST respond EXCLUSIVELY in ${languageName} (${language.toUpperCase()}).\n`;
-    prompt += `**DO NOT** use English or any other language.\n`;
-    prompt += `${languageExamples[language] || languageExamples['en']}\n\n`;
-    prompt += `**ALL** output must be in ${languageName}:\n`;
-    prompt += `- The "answer" field in JSON: ${languageName}\n`;
-    prompt += `- The "keyPoints" array: ${languageName}\n`;
-    prompt += `- The "starMethod" object (if applicable): ${languageName}\n`;
-    prompt += `- The "suggestedFollowups" array: ${languageName}\n`;
-    prompt += `**If you respond in English or any other language, the response will be rejected and you must regenerate it.**\n\n`;
-
-    // Question Section
-    prompt += `## INTERVIEW QUESTION\n${dto.question}\n\n`;
-
-    // Job Description Section (if provided)
-    if (dto.jobDescription) {
-      prompt += `## TARGET JOB DESCRIPTION\n${dto.jobDescription}\n\n`;
-      prompt += `IMPORTANT: Align your answer with the job requirements and demonstrate how the candidate's experience matches the role.\n\n`;
-    }
-
-    // Comprehensive Candidate Background (CV Data)
-    if (cvData) {
-      prompt += `## CANDIDATE BACKGROUND\n`;
-
-      // Personal Information
-      if (cvData.personalInfo) {
-        prompt += `**Personal Information:**\n`;
-        if (cvData.personalInfo.name) {
-          prompt += `- Name: ${cvData.personalInfo.name}\n`;
-        }
-        if (cvData.personalInfo.email) {
-          prompt += `- Email: ${cvData.personalInfo.email}\n`;
-        }
-        if (cvData.personalInfo.phone) {
-          prompt += `- Phone: ${cvData.personalInfo.phone}\n`;
-        }
-        if (cvData.personalInfo.location) {
-          prompt += `- Location: ${cvData.personalInfo.location}\n`;
-        }
-        prompt += `\n`;
-      }
-
-      // Professional Summary
-      if (cvData.summary && cvData.summary.trim()) {
-        prompt += `**Professional Summary:**\n${cvData.summary}\n\n`;
-      }
-
-      // Experience (Detailed)
-      if (cvData.experience && cvData.experience.length > 0) {
-        prompt += `**Work Experience (${cvData.experience.length} positions):**\n`;
-        cvData.experience.slice(0, 5).forEach((exp: any, idx: number) => {
-          prompt += `${idx + 1}. ${exp.title || 'Position'} at ${exp.company || 'Company'}`;
-          if (exp.startDate || exp.endDate) {
-            prompt += ` (${exp.startDate || 'Start'} - ${exp.endDate || 'Present'})`;
-          }
-          prompt += `\n`;
-          if (exp.description) {
-            prompt += `   ${exp.description.substring(0, 200)}${exp.description.length > 200 ? '...' : ''}\n`;
-          }
-          if (exp.achievements && exp.achievements.length > 0) {
-            prompt += `   Key Achievements: ${exp.achievements.slice(0, 3).join(', ')}\n`;
-          }
-        });
-        prompt += `\n`;
-      }
-
-      // Education
-      if (cvData.education && cvData.education.length > 0) {
-        prompt += `**Education:**\n`;
-        cvData.education.slice(0, 3).forEach((edu: any) => {
-          prompt += `- ${edu.degree || 'Degree'} in ${edu.field || 'Field'}`;
-          if (edu.institution) {
-            prompt += ` from ${edu.institution}`;
-          }
-          if (edu.graduationYear) {
-            prompt += ` (${edu.graduationYear})`;
-          }
-          prompt += `\n`;
-        });
-        prompt += `\n`;
-      }
-
-      // Skills (Technical & Soft)
-      if (cvData.skills && cvData.skills.length > 0) {
-        prompt += `**Skills:** ${cvData.skills.join(', ')}\n\n`;
-      }
-
-      // Certifications
-      if (cvData.certifications && cvData.certifications.length > 0) {
-        prompt += `**Certifications:** ${cvData.certifications.map((c: any) => c.name || c).join(', ')}\n\n`;
-      }
-
-      // Projects
-      if (cvData.projects && cvData.projects.length > 0) {
-        prompt += `**Notable Projects:**\n`;
-        cvData.projects.slice(0, 3).forEach((proj: any) => {
-          prompt += `- ${proj.name || 'Project'}: ${proj.description?.substring(0, 150) || ''}\n`;
-        });
-        prompt += `\n`;
-      }
-
-      // Languages
-      if (cvData.languages && cvData.languages.length > 0) {
-        prompt += `**Languages:** ${cvData.languages.map((l: any) => (typeof l === 'string' ? l : `${l.name} (${l.level})`)).join(', ')}\n\n`;
-      }
-
-      // CV Analysis Insights
-      if (cvData.analysis) {
-        prompt += `**CV Analysis Insights:**\n`;
-        prompt += `- ATS Score: ${cvData.analysis.atsScore}/100\n`;
-        if (cvData.analysis.strengths && cvData.analysis.strengths.length > 0) {
-          prompt += `- Key Strengths: ${cvData.analysis.strengths.slice(0, 5).join(', ')}\n`;
-        }
-        prompt += `\n`;
-      }
-    }
-
-    // Interview History & Performance Context
-    if (interviewHistory && interviewHistory.totalInterviews > 0) {
-      prompt += `## INTERVIEW PERFORMANCE HISTORY\n`;
-      prompt += `- Total Mock Interviews Completed: ${interviewHistory.totalInterviews}\n`;
-      prompt += `- Completed Interviews: ${interviewHistory.completedInterviews}\n`;
-      prompt += `- Average Score: ${interviewHistory.averageScore.toFixed(1)}/10\n\n`;
-
-      if (interviewHistory.weakAreas && interviewHistory.weakAreas.length > 0) {
-        prompt += `**Areas Needing Improvement:** ${interviewHistory.weakAreas.slice(0, 5).join(', ')}\n`;
-        prompt += `IMPORTANT: Address these areas in your answer to help the candidate improve.\n\n`;
-      }
-
-      if (interviewHistory.strongAreas && interviewHistory.strongAreas.length > 0) {
-        prompt += `**Strong Areas:** ${interviewHistory.strongAreas.slice(0, 5).join(', ')}\n`;
-        prompt += `IMPORTANT: Leverage these strengths in your answer.\n\n`;
-      }
-
-      if (
-        interviewHistory.practicedTopics &&
-        Object.keys(interviewHistory.practicedTopics).length > 0
-      ) {
-        prompt += `**Practiced Topics:** ${Object.keys(interviewHistory.practicedTopics).slice(0, 5).join(', ')}\n\n`;
-      }
-    }
-
-    // Previous Conversation Context (Full Messages, Not Truncated)
-    if (context.messages && context.messages.length > 0) {
-      prompt += `## PREVIOUS CONVERSATION CONTEXT\n`;
-      prompt += `The following is the recent conversation history to maintain context and continuity:\n\n`;
-      const recentMessages = context.messages.slice(-6); // Last 6 messages for better context
-      recentMessages.forEach((msg: any, idx: number) => {
-        const role = msg.role === 'user' ? 'Candidate' : 'Assistant';
-        const content =
-          msg.content.length > 500 ? `${msg.content.substring(0, 500)}...` : msg.content;
-        prompt += `${idx + 1}. [${role}]: ${content}\n\n`;
-      });
-    }
-
-    // Answer Requirements
-    prompt += `## ANSWER REQUIREMENTS\n`;
-    prompt += `- **Style:** ${style} (${this.getStyleDescription(style)})\n`;
-    prompt += `- **Length:** ${length} (${this.getLengthDescription(length)})\n`;
-    prompt += `- **Key Points:** ${dto.includeKeyPoints !== false ? 'Include 3-5 key points to highlight' : 'Not required'}\n`;
-    prompt += `- **Follow-up Questions:** ${dto.includeFollowups !== false ? 'Suggest 2-3 potential follow-up questions' : 'Not required'}\n`;
-    prompt += `- **Authenticity:** Use the candidate's actual experience from their CV. Do not fabricate experiences.\n`;
-    prompt += `- **Relevance:** Connect the answer directly to the job description if provided.\n`;
-    prompt += `- **Structure:** Organize the answer logically with clear introduction, body, and conclusion.\n\n`;
-
-    // Behavioral Question Detection (STAR Method)
+    // 1. Determine Question Type (Technical vs Behavioral)
     const isBehavioral = this.isBehavioralQuestion(dto.question);
-    if (isBehavioral) {
-      prompt += `## BEHAVIORAL QUESTION DETECTED - USE STAR METHOD\n`;
-      prompt += `This is a behavioral interview question. Structure your answer using the STAR method:\n`;
-      prompt += `- **Situation:** Set the context and background (1-2 sentences)\n`;
-      prompt += `- **Task:** Describe the specific task or challenge you faced (1-2 sentences)\n`;
-      prompt += `- **Action:** Explain the actions you took to address the task (3-5 sentences, most important part)\n`;
-      prompt += `- **Result:** Describe the outcome and what you learned (2-3 sentences)\n\n`;
-      prompt += `IMPORTANT: Use a real example from the candidate's experience. Be specific with metrics and outcomes.\n\n`;
-    }
-
-    // Technical Question Detection
     const isTechnical = this.isTechnicalQuestion(dto.question);
-    if (isTechnical) {
-      prompt += `## TECHNICAL QUESTION DETECTED\n`;
-      prompt += `This is a technical question. Provide:\n`;
-      prompt += `- Clear, accurate technical explanation\n`;
-      prompt += `- Real-world examples from the candidate's experience if applicable\n`;
-      prompt += `- Code examples or diagrams if relevant (use markdown code blocks)\n`;
-      prompt += `- Best practices and industry standards\n\n`;
+    // If not explicitly detected, assume technical/conceptual if it contains tech terms, else behavioral preference if CV is rich
+    const effectiveType = isBehavioral ? 'behavioral' : 'technical'; 
+
+    let prompt = `## INTERVIEW QUESTION\n`;
+    prompt += `**Question:** "${dto.question}"\n\n`;
+
+    // 2. Transcription Error Correction (Consolidated)
+    prompt += `## TRANSCRIPTION CORRECTION\n`;
+    prompt += `This question is from STT (Speech-to-Text). It may have typos (e.g., "nojes" -> "Node.js").\n`;
+    prompt += `**Task:** Identify the intent. If it asks about a specific tech, answer about that tech.\n\n`;
+
+    // 3. Live Context (Metadata)
+    if (dto.domain || dto.technologies?.length || dto.position) {
+      prompt += `## INTERVIEW CONTEXT\n`;
+      if (dto.domain) prompt += `- Domain: ${dto.domain}\n`;
+      if (dto.position) prompt += `- Position: ${dto.position}\n`;
+      if (dto.technologies?.length) prompt += `- Stack: ${dto.technologies.join(', ')}\n`;
+      prompt += `Use this to disambiguate terms (e.g., "Java" vs "JavaScript").\n\n`;
     }
 
-    // Output Format
-    prompt += `## OUTPUT FORMAT\n`;
-    prompt += `Provide your response in the following JSON format (strictly valid JSON):\n`;
-    prompt += `{\n`;
-    prompt += `  "answer": "<the complete, well-structured answer in ${length} length>",\n`;
-    prompt += `  "keyPoints": [<array of 3-5 key points or takeaways>],\n`;
-    if (isBehavioral) {
-      prompt += `  "starMethod": {\n`;
-      prompt += `    "situation": "<situation description>",\n`;
-      prompt += `    "task": "<task description>",\n`;
-      prompt += `    "action": "<detailed action taken>",\n`;
-      prompt += `    "result": "<result achieved with metrics if possible>"\n`;
-      prompt += `  },\n`;
+    // 4. Previous Conversation (Last 3-5 messages only to save tokens)
+    if (context.messages && context.messages.length > 0) {
+      prompt += `## CONVERSATION HISTORY (Last 3)\n`;
+      const recentMessages = context.messages.slice(-3); 
+      recentMessages.forEach((msg: any, idx: number) => {
+        const role = msg.role === 'user' ? 'Q' : 'A';
+        const content = msg.content.length > 300 ? `${msg.content.substring(0, 300)}...` : msg.content;
+        prompt += `${role}: ${content}\n`;
+      });
+      prompt += `\nIf this question is a follow-up, build on previous answers.\n\n`;
     }
-    prompt += `  "confidence": <number 0-1, representing confidence in the answer quality>,\n`;
-    prompt += `  "suggestedFollowups": [<array of 2-3 potential follow-up questions the interviewer might ask>]\n`;
-    prompt += `}\n\n`;
 
-    prompt += `## FINAL INSTRUCTIONS\n`;
-    prompt += `1. **CRITICAL - LANGUAGE:** Generate ALL content EXCLUSIVELY in ${languageName} (${language.toUpperCase()}). This includes:\n`;
-    prompt += `   - The "answer" field: ${languageName}\n`;
-    prompt += `   - The "keyPoints" array: ${languageName}\n`;
-    prompt += `   - The "starMethod" object (if applicable): ${languageName}\n`;
-    prompt += `   - The "suggestedFollowups" array: ${languageName}\n`;
-    prompt += `   **DO NOT use English or any other language. If you use English, regenerate the entire response.**\n\n`;
-    prompt += `2. Generate a professional, authentic answer based on the candidate's actual background\n`;
-    prompt += `3. Ensure the answer is ${length} in length (${this.getLengthWordCount(length)} words approximately)\n`;
-    prompt += `4. Make the answer relevant to the job description if provided\n`;
-    prompt += `5. Use specific examples from the candidate's CV when possible\n`;
-    prompt += `6. Address any identified weak areas from interview history\n`;
-    prompt += `7. Maintain conversation context if previous messages exist\n`;
-    prompt += `8. Ensure the answer is ${style} in tone and style\n`;
-    prompt += `9. **FINAL REMINDER:** Before sending the JSON response, verify that ALL text fields are in ${languageName}. If any field contains English, translate it to ${languageName} immediately.\n`;
+    // 5. SMART CONTEXT INJECTION (The Core Optimization)
+    if (cvData) {
+        prompt += `## CANDIDATE BACKGROUND\n`;
+        
+        // Always show what the candidate KNOWS (Technologies/Skills)
+        prompt += `**Known Technologies:** ${cvData.technologies?.join(', ') || 'N/A'}\n`;
+        prompt += `**Education:** ${cvData.education?.map((e:any) => e.field).join(', ') || 'N/A'}\n\n`;
 
+        // CONDITIONAL FULL CV INJECTION
+        if (effectiveType === 'behavioral') {
+            prompt += `**FULL CV TEXT (Use for Behavioral/Experience questions):**\n`;
+            prompt += `"${cvData.fullText.substring(0, 4000)}"\n\n`; // Cap at 4000 chars
+            prompt += `**INSTRUCTION:** Search the CV above. If the candidate has specific experience matching the question, cite it (Company, Project, Result). Use STAR method.\n`;
+        } else {
+            // Technical Question - DO NOT INJECT FULL CV
+            prompt += `**NOTE:** Full CV omitted for this Technical/Conceptual question to save tokens.\n`;
+            prompt += `**INSTRUCTION:** Answer as a knowledgeable candidate. Do NOT invent specific personal stories. Focus on explaining the concept ("What", "How", "Why").\n`;
+            prompt += `Use "Men bilaman..." (I know...) or "Mening tajribamda..." (In my experience [general]).\n`;
+        }
+    }
+
+    // 6. Output Requirements
+    prompt += `## ANSWER REQUIREMENTS\n`;
+    prompt += `- Style: ${style}\n`;
+    prompt += `- Length: ${length}\n`;
+    prompt += `- Language: ${language.toUpperCase()} ONLY.\n`;
+    
     return prompt;
   }
 
@@ -558,31 +548,178 @@ export class AiAnswerService {
   /**
    * Get system prompt based on style and language
    */
+  /**
+   * Get system prompt - Master Instructions (Optimized)
+   * Consolidates Role, Tone, Language, and Output Format to save User Prompt tokens.
+   */
   private getSystemPrompt(style: string, language: string = 'en'): string {
+    const languageName = this.getLanguageName(language);
+    const languageCode = language.toUpperCase();
+
+    // 1. ROLE DEFINITION
+    let systemPrompt = `ROLE: You are an expert Software Engineer candidate in a job interview.\n`;
+    systemPrompt += `TASK: Generate a perfect, ${style} answer to the interviewer's question.\n`;
+    systemPrompt += `PERSPECTIVE: Speak in FIRST PERSON ("I...", "Men...", "Mening...").\n`;
+    systemPrompt += `Never say "If you..." or "You should...". You ARE the candidate.\n\n`;
+
+    // 2. LANGUAGE RULES (Strict)
+    systemPrompt += `LANGUAGE: Respond EXCLUSIVELY in ${languageName} (${languageCode}).\n`;
+    systemPrompt += `Do NOT use English unless the question asks for an English answer.\n\n`;
+
+    // 3. TONE & STYLE
+    const toneMap: Record<string, string> = {
+      professional: 'Polished, articulate, senior-level expert.',
+      balanced: 'Natural, confident, human-like (not robotic).',
+      simple: 'Straightforward, easy to understand, relatable.',
+    };
+    systemPrompt += `TONE: ${toneMap[style] || toneMap['balanced']}\n`;
+    systemPrompt += `Make it sound like a REAL person, not ChatGPT. Use simple words where possible.\n\n`;
+
+    // 4. OUTPUT FORMAT (JSON only)
+    systemPrompt += `OUTPUT FORMAT: Return STRICT JSON only. No markdown before/after.\n`;
+    systemPrompt += `Structure:\n`;
+    systemPrompt += `{\n`;
+    systemPrompt += `  "answer": "The text of your answer (in ${languageName})",\n`;
+    systemPrompt += `  "keyPoints": ["Key point 1", "Key point 2"],\n`;
+    systemPrompt += `  "starMethod": { "situation": "...", "task": "...", "action": "...", "result": "..." }, // Use only for behavioral questions\n`;
+    systemPrompt += `  "confidence": 0.95,\n`;
+    systemPrompt += `  "suggestedFollowups": ["Question 1?", "Question 2?"]\n`;
+    systemPrompt += `}\n\n`;
+
+    // 5. CRITICAL LOGIC
+    systemPrompt += `LOGIC:\n`;
+    systemPrompt += `- If the question implies you don't know something (and it's not in the Context), admit it professionally or give a theoretical answer.\n`;
+    systemPrompt += `- Correct any transcription typos in the question (e.g., "nojes" -> "Node.js") silently and answer the INTENDED question.\n`;
+    systemPrompt += `- If asked for code, use markdown code blocks inside the "answer" string.\n`;
+
+    return systemPrompt;
+  }
+
+  private getSystemPrompt_Legacy(style: string, language: string = 'en'): string {
     const languageName = this.getLanguageName(language);
     const languageCode = language.toUpperCase();
 
     // Language-specific system prompts for better adherence
     const languageInstructions: Record<string, string> = {
-      uz: `Siz professional intervyu murabbiysi. Barcha javoblarni O'ZBEK TILIDA berishingiz kerak. Hech qachon ingliz yoki boshqa tillarda javob bermang.`,
-      ru: `Вы профессиональный тренер по собеседованиям. Вы ДОЛЖНЫ отвечать на РУССКОМ ЯЗЫКЕ. Никогда не отвечайте на английском или других языках.`,
-      en: `You are a professional interview coach. You MUST respond in ENGLISH. Never respond in other languages.`,
+      uz: `Siz IT sohasida professional intervyu murabbiysi va texnik mentorsiz. Barcha javoblarni O'ZBEK TILIDA berishingiz kerak. Hech qachon ingliz yoki boshqa tillarda javob bermang. Javoblaringiz xuddi haqiqiy odam gapirayotgandek sodda, tushunarli va do'stona bo'lsin.`,
+      ru: `Вы профессиональный тренер по IT-собеседованиям и технический наставник. Вы ДОЛЖНЫ отвечать на РУССКОМ ЯЗЫКЕ. Никогда не отвечайте на английском или других языках. Ваши ответы должны быть простыми, понятными и дружелюбными, как будто отвечает реальный человек.`,
+      en: `You are a professional IT interview coach and technical mentor. You MUST respond in ENGLISH. Never respond in other languages. Your answers should be simple, easy to understand, and friendly - like a real person talking.`,
     };
 
     const basePrompts: Record<string, string> = {
       professional:
-        'You are an expert interview coach helping professionals prepare for job interviews. Provide articulate, polished answers that demonstrate leadership and expertise.',
+        'You are an expert IT interview coach and technical mentor. Provide articulate, polished answers that demonstrate deep knowledge but in a simple, human-like way.',
       balanced:
-        'You are an interview coach helping candidates prepare for interviews. Provide clear, natural answers that balance professionalism with authenticity.',
+        'You are an IT interview coach and technical mentor. Provide clear, natural answers that balance professionalism with authenticity. Speak like a real person, not a robot.',
       simple:
-        'You are an interview coach helping entry-level candidates. Provide straightforward, easy-to-understand answers that are honest and relatable.',
+        'You are an IT interview coach and technical mentor. Provide straightforward, easy-to-understand answers like a friendly colleague explaining things.',
     };
     const basePrompt = basePrompts[style] || basePrompts['balanced'];
 
     // Add explicit language instruction in the target language itself
     const languageInstruction = languageInstructions[language] || languageInstructions['en'];
 
-    return `${basePrompt}\n\n${languageInstruction}\n\nCRITICAL RULE: All JSON response fields (answer, keyPoints, starMethod, suggestedFollowups) MUST be in ${languageName} (${languageCode}). If you respond in English or any other language, the response will be rejected.`;
+    // Critical instructions for answer types - IT Interview focused
+    const answerTypeInstructions = `
+
+🎯 **IT INTERVYU KONTEKSTI - MUHIM!**
+Bu IT sohasidagi intervyu savollari. Savollar dasturlash, texnologiyalar, framework'lar, 
+database'lar, API'lar, arxitektura va boshqa IT mavzulari haqida bo'ladi.
+
+📝 **TRANSKRIPTSIYA XATOLARINI AVTOMATIK TUZATISH - JUDA MUHIM!**
+Savollar AUDIO dan TEXT ga aylantirilgan bo'lishi mumkin. Shuning uchun:
+- Sintaksis xatolari bo'lishi mumkin (masalan: "riekt" → "React", "nodjes" → "Node.js")
+- Texnologiya nomlari noto'g'ri yozilishi mumkin (masalan: "postgressql" → "PostgreSQL")
+- So'zlar qo'shib yoki ajratib yozilishi mumkin (masalan: "java script" → "JavaScript")
+- Harflar almashib ketishi mumkin (masalan: "mongodv" → "MongoDB")
+
+⚡ **SEN QILISHING KERAK:**
+1. Xatoli so'zlarni o'zing tuzat va to'g'ri ma'noni tushun
+2. Savolning ASLIY maqsadini anglab ol
+3. To'g'ri texnologiya/konseptni aniqlash uchun kontekstdan foydalang
+4. Hech qachon "tushunmadim" dema - o'zing tuzatib javob ber
+
+🗣️ **JAVOB BERISH USLUBI - HAQIQIY ODAM KABI!**
+Javoblaringiz xuddi TAJRIBALI DASTURCHI do'stingiz gapirayotgandek bo'lsin:
+- SODDA va TUSHUNARLI til ishlat
+- Murakkab tushunchalarni ODDIY so'zlar bilan tushuntir
+- Texnik atamalarni ishlatganda QISQA izoh qo'sh
+- QISQA jumlalar yoz, uzun paragraflardan qoching
+- Haqiqiy misollar va analogiyalar keltir
+
+💻 **KOD MISOLLARI - MAJBURIY QOIDALAR!**
+Qachonki:
+- Savol "qanday yoziladi", "misol keltiring", "kod ko'rsating" desa
+- Yoki savol sintaksis/implementatsiya haqida bo'lsa
+- Yoki tushuntirish uchun kod kerak bo'lsa
+
+ALBATTA kod misolini \`\`\`code\`\`\` blokida ko'rsat:
+
+\`\`\`javascript
+// Misol: React component
+function HelloWorld() {
+  return <h1>Salom Dunyo!</h1>;
+}
+\`\`\`
+
+**Kod blok qoidalari:**
+- Har doim tilni ko'rsat: \`\`\`javascript, \`\`\`python, \`\`\`sql, \`\`\`typescript va h.k.
+- Kod ichida IZOHLAR yoz (o'zbek tilida bo'lishi mumkin)
+- Kodni YANGI QATORDAN boshlash
+- Amaliy, ISHLAYDIGAN kod yoz
+
+CRITICAL ANSWER TYPE RULES:
+
+1. TECHNICAL/CONCEPTUAL Questions ("What is X?", "How does Y work?", "Explain Z", "Define...", "nima", "qanday ishlaydi", "tushuntiring"):
+   
+   ✅ REQUIRED APPROACH:
+   - SODDA tilda tushuntir, xuddi do'stingga gapirayotgandek
+   - Avval ODDIY ta'rif ber, keyin chuqurroq tushuntir
+   - Real hayotdan ANALOGIYA keltir (masalan: "API bu restoran ofitsiantiga o'xshaydi...")
+   - Keyin AMALIY misol yoki kod ko'rsat
+   - "Bu nima uchun kerak?" savoliga javob ber
+   
+   📌 Misol javob strukturasi:
+   "X bu - [ODDIY ta'rif]. 
+    Oddiy qilib aytganda, [real hayot analogiyasi].
+    
+    Masalan:
+    \`\`\`code
+    // amaliy misol
+    \`\`\`
+    
+    Bu kerak chunki [foydalari]."
+
+2. BEHAVIORAL Questions ("Tell me about a time...", "Give me an example when...", "Describe a situation...", "tajribangiz", "qanday hal qildingiz"):
+   ✅ REQUIRED:
+   - Use STAR method (Situation, Task, Action, Result)
+   - Reference REAL examples from candidate's CV
+   - Include specific: company names, project names, metrics, outcomes
+   - Use personal pronouns ("men"/"I") and past tense
+   - Be concrete and specific with details
+   - SODDA va QISQA hikoya qilib aytib ber
+
+3. EXPERIENCE/PROJECT Questions ("ishlatganmisiz", "tajribangiz bormi", "have you used"):
+   🔍 **MANDATORY CV SEARCH - STEP BY STEP:**
+   
+   **Step 1: Extract Technologies** - Savoldan texnologiyalarni ajrat
+   **Step 2: Search FULL CV Text** - CV dan qidir
+   **Step 3: Match & Verify** - Topilganlarni tekshir
+   **Step 4: Construct Answer** - SODDA javob yoz
+   
+   Agar texnologiya bilan ishlamagan bo'lsang, HALOL ayt va umumiy bilimingni baham ko'r.
+   
+   **Step 5: Code Examples** - Agar so'ralsa, ALBATTA kod blokda ko'rsat:
+   \`\`\`sql
+   SELECT * FROM users WHERE active = true;
+   \`\`\`
+   
+   ⚠️ **CRITICAL RULES:**
+   - CV da bo'lmagan tajribani TO'QIMA
+   - Bilmagan narsangni bilaman dema
+   - Ammo umumiy bilimingni baham ko'r`;
+
+    return `${basePrompt}\n\n${languageInstruction}\n${answerTypeInstructions}\n\nCRITICAL RULE: All JSON response fields (answer, keyPoints, starMethod, suggestedFollowups) MUST be in ${languageName} (${languageCode}). If you respond in English or any other language, the response will be rejected.`;
   }
 
   /**
@@ -598,7 +735,189 @@ export class AiAnswerService {
   }
 
   /**
-   * Check if question is behavioral
+   * Detect potential transcription errors in question
+   * Dynamic error detection based on actual question content
+   */
+  private detectPotentialErrors(
+    question: string,
+    technologies: string[],
+    language: string,
+  ): string[] {
+    const errors: string[] = [];
+    const lowerQuestion = question.toLowerCase();
+
+    // Check for common word boundary errors
+    if (language === 'uz' || language === 'ru') {
+      // Check for missing spaces (common in speech-to-text)
+      const wordBoundaryPattern = /[а-яёa-z][А-ЯЁA-Z]/;
+      if (wordBoundaryPattern.test(question)) {
+        errors.push('Potential word boundary errors detected (missing spaces)');
+      }
+    }
+
+    // Check for technology name variations (common mispronunciations)
+    technologies.forEach((tech) => {
+      const techLower = tech.toLowerCase();
+      const variations = [
+        techLower.replace(/\./g, ' '), // "node.js" -> "node js"
+        techLower.replace(/-/g, ' '), // "socket.io" -> "socket io"
+        techLower.replace(/\./g, ''), // "node.js" -> "nodejs"
+      ];
+      variations.forEach((variation) => {
+        if (lowerQuestion.includes(variation) && !lowerQuestion.includes(techLower)) {
+          errors.push(`Technology "${tech}" may be misspelled as "${variation}"`);
+        }
+      });
+    });
+
+    // Check for very short words that might be typos
+    const words = question.split(/\s+/);
+    const suspiciousShortWords = words.filter((w) => w.length <= 2 && /[a-zа-яё]/.test(w));
+    if (suspiciousShortWords.length > 3) {
+      errors.push('Multiple very short words detected (possible transcription errors)');
+    }
+
+    return errors;
+  }
+
+  /**
+   * Get error types for specific language
+   * Dynamic error patterns based on language
+   */
+  private getErrorTypesForLanguage(language: string): string[] {
+    const errorTypes: Record<string, string[]> = {
+      uz: [
+        'Syntax errors (typos, wrong word forms)',
+        'Grammar mistakes (verb conjugation, word order)',
+        'Missing words or punctuation',
+        'Technical term mispronunciations',
+        'Language mixing (Uzbek words mixed with Russian/English)',
+        'Word boundary errors (missing spaces between words)',
+      ],
+      ru: [
+        'Syntax errors (typos, wrong word forms)',
+        'Grammar mistakes (case endings, verb forms)',
+        'Missing words or punctuation',
+        'Technical term mispronunciations',
+        'Language mixing (Russian words mixed with English)',
+        'Word boundary errors (missing spaces)',
+      ],
+      en: [
+        'Syntax errors (typos, wrong word forms)',
+        'Grammar mistakes (articles, verb tenses)',
+        'Missing words or punctuation',
+        'Technical term mispronunciations',
+        'Word boundary errors (missing spaces)',
+      ],
+    };
+
+    return errorTypes[language] || errorTypes['en'];
+  }
+
+  /**
+   * Extract technical terms from question
+   * Dynamic extraction based on question and selected technologies
+   */
+  private extractTechnicalTerms(question: string, technologies: string[]): string[] {
+    const terms: string[] = [];
+    const lowerQuestion = question.toLowerCase();
+
+    // Extract mentioned technologies
+    technologies.forEach((tech) => {
+      const techLower = tech.toLowerCase();
+      if (lowerQuestion.includes(techLower)) {
+        terms.push(tech);
+      }
+    });
+
+    // Extract common technical keywords
+    const technicalKeywords = [
+      'algorithm',
+      'data structure',
+      'design pattern',
+      'architecture',
+      'database',
+      'api',
+      'framework',
+      'language',
+      'code',
+      'programming',
+      'implementation',
+      'optimization',
+      'performance',
+      'scalability',
+      'security',
+      'testing',
+      'debugging',
+      'system design',
+    ];
+
+    technicalKeywords.forEach((keyword) => {
+      if (lowerQuestion.includes(keyword)) {
+        terms.push(keyword);
+      }
+    });
+
+    return terms.length > 0 ? terms : [];
+  }
+
+  /**
+   * Extract technologies from question
+   * Dynamic extraction for CV search process
+   */
+  private extractTechnologiesFromQuestion(
+    question: string,
+    selectedTechnologies: string[],
+  ): string[] {
+    const found: string[] = [];
+    const lowerQuestion = question.toLowerCase();
+
+    // Check selected technologies first (most relevant)
+    selectedTechnologies.forEach((tech) => {
+      const techLower = tech.toLowerCase();
+      // Check for exact match or common variations
+      if (
+        lowerQuestion.includes(techLower) ||
+        lowerQuestion.includes(techLower.replace(/\./g, ' ')) ||
+        lowerQuestion.includes(techLower.replace(/-/g, ' '))
+      ) {
+        found.push(tech);
+      }
+    });
+
+    // Also check for common technologies mentioned in question
+    const commonTechs = [
+      'javascript',
+      'typescript',
+      'python',
+      'java',
+      'react',
+      'vue',
+      'angular',
+      'node',
+      'express',
+      'mysql',
+      'postgresql',
+      'mongodb',
+      'redis',
+      'docker',
+      'kubernetes',
+      'aws',
+      'azure',
+      'gcp',
+    ];
+
+    commonTechs.forEach((tech) => {
+      if (lowerQuestion.includes(tech) && !found.some((f) => f.toLowerCase().includes(tech))) {
+        found.push(tech);
+      }
+    });
+
+    return found;
+  }
+
+  /**
+   * Check if question is behavioral or experience-based
    */
   private isBehavioralQuestion(question: string): boolean {
     const behavioralKeywords = [
@@ -614,6 +933,38 @@ export class AiAnswerService {
       'mistake',
       'failure',
       'success',
+      // Experience/Project questions - Uzbek
+      'qanday loyihalar',
+      'qaysidur loyiha',
+      'loyihalarda ishlat',
+      "loyihalarda qo'lla",
+      'ishlatganmisiz',
+      "qo'llaganmisiz",
+      'ishlaganmisiz',
+      'qilganmisiz',
+      'loyihalar qildingiz',
+      'ishlagan loyihalar',
+      'qilgan ishlar',
+      'bilan ishlagan',
+      'bilan qanday',
+      'tajribangiz',
+      // Experience/Project questions - English
+      'what projects',
+      'which projects',
+      'your projects',
+      'projects you',
+      'worked on',
+      'have you worked',
+      'did you work',
+      'have you used',
+      'did you use',
+      'your experience with',
+      'experience with',
+      'worked with',
+      // Russian
+      'какие проекты',
+      'работали с',
+      'использовали',
     ];
     const lowerQuestion = question.toLowerCase();
     return behavioralKeywords.some((keyword) => lowerQuestion.includes(keyword));
@@ -632,7 +983,7 @@ export class AiAnswerService {
   }
 
   /**
-   * Get user CV data
+   * Get user CV data with extracted technologies and education
    */
   private async getUserCvData(userId: string): Promise<any> {
     try {
@@ -643,20 +994,31 @@ export class AiAnswerService {
       }
 
       const cv = cvs[0];
-      if (!cv.parsedData) {
-        return null;
-      }
+      const parsedData = cv.parsedData || {};
 
-      // Return structured CV data for prompt
+      // Extract technologies from CV
+      const cvTechnologies = this.extractTechnologiesFromCv(cv.parsedText || '', parsedData);
+
+      // Extract education/degree information
+      const education = this.extractEducationFromCv(parsedData);
+
+      // CRITICAL: Return FULL CV text instead of parsed data
+      // Reason: regex-based parsing is too simple and misses a lot of information
+      // The AI should work with the full CV text to extract relevant information
       return {
-        personalInfo: cv.parsedData.personalInfo || {},
-        summary: cv.parsedData.summary || '',
-        experience: cv.parsedData.experience || [],
-        education: cv.parsedData.education || [],
-        skills: cv.parsedData.skills || [],
-        languages: cv.parsedData.languages || [],
-        certifications: cv.parsedData.certifications || [],
-        projects: cv.parsedData.projects || [],
+        // Full CV text - contains ALL information
+        fullText: cv.parsedText || '',
+        // Basic info from parsed data (name, email, etc.)
+        personalInfo: parsedData.personalInfo || {},
+        // Skills list for quick reference
+        skills: parsedData.skills || [],
+        // Extracted technologies from CV
+        technologies: cvTechnologies,
+        // Education information
+        education: education,
+        // Experience information (for context)
+        experience: parsedData.experience || [],
+        // Analysis insights if available
         analysis: cv.analysis
           ? {
               atsScore: cv.analysis.atsScore,
@@ -668,6 +1030,152 @@ export class AiAnswerService {
       this.logger.warn(`Failed to get CV data for user ${userId}: ${error.message}`);
       return null;
     }
+  }
+
+  /**
+   * Extract technologies from CV text and parsed data
+   */
+  private extractTechnologiesFromCv(cvText: string, parsedData: any): string[] {
+    const technologies: Set<string> = new Set();
+    const lowerText = cvText.toLowerCase();
+
+    // Common technology keywords
+    const techKeywords = [
+      // Frontend
+      'react',
+      'vue',
+      'angular',
+      'svelte',
+      'next.js',
+      'nextjs',
+      'nuxt',
+      'gatsby',
+      // Backend
+      'node.js',
+      'nodejs',
+      'node',
+      'express',
+      'nestjs',
+      'fastify',
+      'koa',
+      'python',
+      'django',
+      'flask',
+      'fastapi',
+      'tornado',
+      'java',
+      'spring',
+      'spring boot',
+      'hibernate',
+      'c#',
+      'csharp',
+      '.net',
+      'asp.net',
+      'dotnet',
+      'php',
+      'laravel',
+      'symfony',
+      'codeigniter',
+      'go',
+      'golang',
+      'rust',
+      'ruby',
+      'rails',
+      // Databases
+      'mysql',
+      'postgresql',
+      'postgres',
+      'mongodb',
+      'mongo',
+      'redis',
+      'cassandra',
+      'elasticsearch',
+      'dynamodb',
+      'sqlite',
+      // Cloud & DevOps
+      'aws',
+      'azure',
+      'gcp',
+      'docker',
+      'kubernetes',
+      'k8s',
+      'terraform',
+      'jenkins',
+      'gitlab ci',
+      'github actions',
+      'ansible',
+      // Mobile
+      'react native',
+      'flutter',
+      'swift',
+      'kotlin',
+      'ios',
+      'android',
+      // Other
+      'typescript',
+      'javascript',
+      'js',
+      'ts',
+      'html',
+      'css',
+      'sass',
+      'scss',
+      'graphql',
+      'rest api',
+      'microservices',
+      'serverless',
+    ];
+
+    // Extract from skills
+    if (parsedData.skills && Array.isArray(parsedData.skills)) {
+      parsedData.skills.forEach((skill: string) => {
+        const skillLower = skill.toLowerCase();
+        techKeywords.forEach((keyword) => {
+          if (skillLower.includes(keyword) || keyword.includes(skillLower)) {
+            technologies.add(keyword);
+          }
+        });
+      });
+    }
+
+    // Extract from experience
+    if (parsedData.experience && Array.isArray(parsedData.experience)) {
+      parsedData.experience.forEach((exp: any) => {
+        const expText = (exp.description || exp.responsibilities || '').toLowerCase();
+        techKeywords.forEach((keyword) => {
+          if (expText.includes(keyword)) {
+            technologies.add(keyword);
+          }
+        });
+      });
+    }
+
+    // Extract from full text
+    techKeywords.forEach((keyword) => {
+      if (lowerText.includes(keyword)) {
+        technologies.add(keyword);
+      }
+    });
+
+    return Array.from(technologies);
+  }
+
+  /**
+   * Extract education information from CV
+   */
+  private extractEducationFromCv(parsedData: any): any {
+    if (!parsedData.education || !Array.isArray(parsedData.education)) {
+      return null;
+    }
+
+    const education = parsedData.education.map((edu: any) => ({
+      degree: edu.degree || edu.qualification || '',
+      field: edu.field || edu.major || edu.specialization || '',
+      institution: edu.institution || edu.university || edu.school || '',
+      year: edu.year || edu.graduationYear || '',
+    }));
+
+    return education.length > 0 ? education : null;
   }
 
   /**

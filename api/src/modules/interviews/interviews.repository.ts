@@ -123,6 +123,15 @@ export class InterviewsRepository {
     }
   }
 
+  async createQuestions(data: Partial<InterviewQuestion>[]): Promise<InterviewQuestionDocument[]> {
+    try {
+      return (await this.questionModel.insertMany(data)) as any;
+    } catch (error) {
+      this.logger.error(`Failed to create interview questions: ${error.message}`, error.stack);
+      throw new Error(`Database operation failed: ${error.message}`);
+    }
+  }
+
   async findQuestionById(id: string): Promise<InterviewQuestionDocument | null> {
     try {
       return (await this.questionModel.findById(id).exec()) as any;
@@ -205,6 +214,21 @@ export class InterviewsRepository {
     } catch (error) {
       this.logger.error(
         `Failed to find answers by session ID ${sessionId}: ${error.message}`,
+        error.stack,
+      );
+      throw new Error(`Database operation failed: ${error.message}`);
+    }
+  }
+
+  async findAnswersBySessionIds(sessionIds: string[]): Promise<InterviewAnswerDocument[]> {
+    try {
+      return (await this.answerModel
+        .find({ sessionId: { $in: sessionIds } })
+        .populate('questionId')
+        .exec()) as any;
+    } catch (error) {
+      this.logger.error(
+        `Failed to find answers by session IDs: ${error.message}`,
         error.stack,
       );
       throw new Error(`Database operation failed: ${error.message}`);

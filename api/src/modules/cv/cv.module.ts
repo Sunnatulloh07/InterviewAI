@@ -6,6 +6,7 @@ import { CvService } from './cv.service';
 import { CvController } from './cv.controller';
 import { CvRepository } from './cv.repository';
 import { CvParserService } from './cv-parser.service';
+import { OcrService } from './ocr.service';
 import { CvProcessor } from './cv.processor';
 import { Cv, CvSchema } from './schemas/cv.schema';
 import { StorageModule } from '../storage/storage.module';
@@ -25,7 +26,7 @@ import { QUEUE_CV_ANALYSIS } from '@common/constants';
     AnalyticsModule,
   ],
   controllers: [CvController],
-  providers: [CvService, CvRepository, CvParserService, CvProcessor],
+  providers: [CvService, CvRepository, CvParserService, OcrService, CvProcessor],
   exports: [CvService, CvRepository],
 })
 export class CvModule {}

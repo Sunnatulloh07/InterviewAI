@@ -12,10 +12,10 @@ export class StartInterviewDto {
 
   @ApiProperty({
     description: 'Difficulty level',
-    enum: ['junior', 'mid', 'senior'],
-    example: 'mid',
+    enum: ['junior', 'middle', 'senior'],
+    example: 'middle',
   })
-  @IsEnum(['junior', 'mid', 'senior'])
+  @IsEnum(['junior', 'middle', 'senior'])
   difficulty: string;
 
   @ApiPropertyOptional({
@@ -37,12 +37,12 @@ export class StartInterviewDto {
   technology?: string[];
 
   @ApiProperty({
-    description: 'Number of questions (5-20)',
-    example: 10,
+    description: 'Number of questions (30-50)',
+    example: 30,
   })
   @IsNumber()
-  @Min(5)
-  @Max(20)
+  @Min(30)
+  @Max(50)
   numQuestions: number;
 
   @ApiProperty({
@@ -72,4 +72,16 @@ export class StartInterviewDto {
   @IsOptional()
   @IsEnum(['uz', 'ru', 'en'])
   language?: string;
+
+  @ApiPropertyOptional({
+    description: 'CV context for personalized questions (skills, experience, etc.)',
+    example: { skills: ['React', 'Node.js'], experience: '3 years' },
+  })
+  @IsOptional()
+  cvContext?: {
+    skills?: string[];
+    experience?: string;
+    strengths?: string[];
+    summary?: string;
+  };
 }

@@ -1,13 +1,18 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as pdfParse from 'pdf-parse';
 import * as mammoth from 'mammoth';
+import { OcrService } from './ocr.service';
+// pdf-parse uses CommonJS export, need to use require or dynamic import
+const pdfParse = require('pdf-parse');
 
 @Injectable()
 export class CvParserService {
   private readonly logger = new Logger(CvParserService.name);
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly ocrService: OcrService,
+  ) {}
 
   /**
    * Parse CV file based on mime type
@@ -16,6 +21,8 @@ export class CvParserService {
     let text: string;
 
     try {
+      this.logger.debug(`Parsing file with mimeType: ${mimeType}`);
+
       switch (mimeType) {
         case 'application/pdf':
           text = await this.parsePdf(buffer);
@@ -27,8 +34,24 @@ export class CvParserService {
         case 'text/plain':
           text = buffer.toString('utf-8');
           break;
+        case 'image/jpeg':
+        case 'image/png':
+        case 'image/webp':
+          // Start OCR for images
+          text = await this.ocrService.recognize(buffer);
+          break;
         default:
-          throw new BadRequestException('Unsupported file type');
+          throw new BadRequestException('Unsupported file type. Please upload PDF, DOCX, or Image (JPG/PNG).');
+      }
+
+      // Check if text is empty (especially after OCR or Scanned PDF)
+      if (!text || text.trim().length < 50) {
+         if (mimeType === 'application/pdf') {
+             throw new BadRequestException(
+              'PDF dan matn o\'qib bo\'lmadi (Scan qilingan bo\'lishi mumkin). Iltimos, bu faylni Rasm (JPG/PNG) formatiga o\'tkazib yuklang yoki Word faylidan foydalaning.'
+             );
+         }
+         throw new BadRequestException('Fayldan yetarli matn topilmadi. Sifati yaxshiroq fayl yuklang.');
       }
 
       // Extract structured data from text
@@ -37,6 +60,7 @@ export class CvParserService {
       return { text, parsedData };
     } catch (error) {
       this.logger.error(`Failed to parse CV: ${error.message}`, error.stack);
+      if (error instanceof BadRequestException) throw error;
       throw new BadRequestException('Failed to parse CV file');
     }
   }
@@ -46,11 +70,77 @@ export class CvParserService {
    */
   private async parsePdf(buffer: Buffer): Promise<string> {
     try {
-      const data = await (pdfParse as any).default(buffer);
-      return data.text;
-    } catch (error) {
-      this.logger.error(`PDF parsing failed: ${error.message}`);
-      throw new BadRequestException('Failed to parse PDF file');
+      // pdf-parse v2.4.5 uses PDFParse class which requires { data: buffer } in constructor
+      const PDFParse = (pdfParse as any).PDFParse;
+
+      if (!PDFParse || typeof PDFParse !== 'function') {
+        this.logger.error(
+          `PDFParse class not found. pdfParse type: ${typeof pdfParse}, Keys: ${Object.keys(
+            pdfParse || {},
+          )
+            .slice(0, 10)
+            .join(', ')}`,
+        );
+        throw new Error('PDFParse class not found in pdf-parse module');
+      }
+
+      // Create PDFParse instance with buffer data
+      const pdfInstance = new PDFParse({
+        data: buffer,
+        verbosity: 0, // 0 = ERRORS only, 1 = WARNINGS, 2 = INFOS
+      });
+
+      // Get text from PDF
+      const result = await pdfInstance.getText();
+
+      if (!result || !result.text || result.text.trim().length < 50) {
+        throw new BadRequestException(
+          'Fayldan yettarli matn topilmadi. Sizning PDF faylingiz rasm (scanned) ko\'rinishida bo\'lishi mumkin. Iltimos, matn formatidagi PDF yoki Word fayl yuklang.',
+        );
+      }
+
+      // Check if text mostly contains unreadable characters (encoding issue)
+      // This is a basic check - scanned PDFs often return garbage characters or nothing
+      const text = result.text.trim();
+
+      return text;
+    } catch (error: any) {
+      this.logger.error(`PDF parsing failed: ${error.message}`, error.stack);
+
+      // Provide more specific error messages
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+
+      // Check for specific error types
+      if (error.message?.includes('Invalid PDF') || error.message?.includes('corrupted')) {
+        throw new BadRequestException(
+          'Invalid or corrupted PDF file. Please check your file and try again.',
+        );
+      }
+
+      if (
+        error.message?.includes('password') ||
+        error.message?.includes('encrypted') ||
+        error.message?.includes('Password')
+      ) {
+        throw new BadRequestException(
+          'PDF file is password protected. Please remove password protection and try again.',
+        );
+      }
+
+      if (
+        error.message?.includes('not found') ||
+        error.message?.includes('not properly imported')
+      ) {
+        throw new BadRequestException(
+          'PDF parsing service configuration error. Please contact support.',
+        );
+      }
+
+      throw new BadRequestException(
+        `Failed to parse PDF file: ${error.message || 'Unknown error'}`,
+      );
     }
   }
 
@@ -60,10 +150,23 @@ export class CvParserService {
   private async parseDocx(buffer: Buffer): Promise<string> {
     try {
       const result = await mammoth.extractRawText({ buffer });
+
+      if (!result || !result.value) {
+        throw new Error('DOCX parsing returned empty result');
+      }
+
       return result.value;
-    } catch (error) {
-      this.logger.error(`DOCX parsing failed: ${error.message}`);
-      throw new BadRequestException('Failed to parse DOCX file');
+    } catch (error: any) {
+      this.logger.error(`DOCX parsing failed: ${error.message}`, error.stack);
+
+      // Provide more specific error messages
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+
+      throw new BadRequestException(
+        `Failed to parse DOCX file: ${error.message || 'Unknown error'}`,
+      );
     }
   }
 

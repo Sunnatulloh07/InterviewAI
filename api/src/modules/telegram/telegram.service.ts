@@ -20,7 +20,15 @@ export interface BotContext extends Context {
     interviewPosition?: string; // Junior Developer, Senior Engineer, etc.
     interviewCompany?: string;
     interviewCvId?: string;
-    interviewStep?: 'mode' | 'domain' | 'technology' | 'position' | 'company' | 'cv' | 'ready';
+    interviewStep?:
+      | 'mode'
+      | 'domain'
+      | 'technology'
+      | 'technology_custom'
+      | 'position'
+      | 'company'
+      | 'cv'
+      | 'ready';
     // CV analysis flow state
     cvUploadStep?: 'waiting' | 'analyzing' | 'complete';
     currentCvId?: string;
@@ -29,10 +37,21 @@ export interface BotContext extends Context {
     currentQuestionIndex?: number;
     // Live session metadata
     liveSessionMetadata?: {
-      jobRole?: string;
+      domain?: string; // Frontend, Backend, Full Stack, etc.
+      technologies?: string[]; // React, Node.js, Python, etc. (multiple)
+      position?: string; // Junior Developer, Senior Engineer, etc.
       company?: string;
-      interviewType?: string;
+      jobRole?: string; // Legacy field
+      interviewType?: string; // Legacy field
     };
+    liveSessionStep?:
+      | 'domain'
+      | 'technologies'
+      | 'technologies_custom'
+      | 'position'
+      | 'company'
+      | 'active'
+      | 'complete';
   };
 }
 
@@ -100,6 +119,7 @@ export class TelegramService implements OnModuleInit {
       this.bot.command('help', (ctx) => this.commandsService.handleHelp(ctx));
       this.bot.command('stats', (ctx) => this.commandsService.handleStats(ctx));
       this.bot.command('settings', (ctx) => this.commandsService.handleSettings(ctx));
+      this.bot.command('upgrade', (ctx) => this.commandsService.handleUpgrade(ctx));
 
       // Voice message handler
       this.bot.on('message:voice', (ctx) => this.voiceService.handleVoiceMessage(ctx));
@@ -116,6 +136,51 @@ export class TelegramService implements OnModuleInit {
       // Callback query handler (for inline keyboards)
       this.bot.on('callback_query', (ctx) => this.handleCallbackQuery(ctx));
 
+      // Setup global error handler
+      this.bot.catch = (err: any) => {
+        const ctx = err.ctx as BotContext | undefined;
+        const error = err.error as Error;
+        this.logger.error(
+          `Error in bot middleware: ${error?.message || 'Unknown error'}`,
+          error?.stack,
+        );
+
+        // Handle specific errors
+        if (
+          (error as any)?.description?.includes('too old') ||
+          (error as any)?.description?.includes('invalid')
+        ) {
+          // Expired callback query - ignore, already handled
+          this.logger.debug('Expired callback query error caught by global handler');
+          return;
+        }
+
+        // For other errors, try to send a user-friendly message
+        if (ctx) {
+          const lang = ctx.session?.language || 'en';
+          const errorText: Record<string, string> = {
+            uz: `❌ Xatolik yuz berdi. Iltimos qayta urinib ko'ring.`,
+            ru: `❌ Произошла ошибка. Пожалуйста, попробуйте снова.`,
+            en: `❌ An error occurred. Please try again.`,
+          };
+          ctx.reply(errorText[lang] || errorText['en']).catch((replyError) => {
+            this.logger.error(`Failed to send error message: ${replyError.message}`);
+          });
+        }
+      };
+
+      // Set global commands
+      await this.bot.api.setMyCommands([
+        { command: 'start', description: '🏠 Menu / Start' },
+        { command: 'interview', description: '🎯 Interview' },
+        { command: 'upgrade', description: '💳 Tariflar / Plans' },
+        { command: 'profile', description: '👤 Profile' },
+        { command: 'help', description: '❓ Help' },
+      ]);
+
+      // Setup Bot Menu Button (appears in bottom left corner of input field)
+      await this.setupBotMenuButton();
+
       // Setup webhook or polling
       if (this.webhookUrl) {
         await this.bot.api.setWebhook(this.webhookUrl);
@@ -126,6 +191,45 @@ export class TelegramService implements OnModuleInit {
       }
     } catch (error) {
       this.logger.error(`Failed to initialize Telegram bot: ${error.message}`, error.stack);
+    }
+  }
+
+  /**
+   * Setup Bot Menu Button (appears in bottom left corner of input field)
+   * This is different from inline keyboard buttons - it's a persistent menu button
+   */
+  private async setupBotMenuButton() {
+    try {
+      const webAppUrl = this.configService.get<string>('WEB_APP_URL');
+      const isHttps = webAppUrl?.startsWith('https://');
+      const isDevelopment = this.configService.get<string>('NODE_ENV') === 'development';
+      const enabledInDev = this.configService.get<string>('WEB_APP_ENABLED_IN_DEV') === 'true';
+
+      // Only set menu button if URL is HTTPS or explicitly enabled in development
+      if (webAppUrl && (isHttps || (isDevelopment && enabledInDev))) {
+        // Set menu button for all users
+        await this.bot.api.setChatMenuButton({
+          menu_button: {
+            type: 'web_app',
+            text: '🌐 Web App',
+            web_app: {
+              url: webAppUrl,
+            },
+          },
+        });
+        this.logger.log(`Bot menu button set to: ${webAppUrl}`);
+      } else {
+        // Remove menu button if URL is not HTTPS
+        await this.bot.api.setChatMenuButton({
+          menu_button: {
+            type: 'commands', // Default commands menu
+          },
+        });
+        this.logger.log('Bot menu button disabled (HTTPS required)');
+      }
+    } catch (error) {
+      this.logger.warn(`Failed to set bot menu button: ${error.message}`);
+      // Don't throw - menu button is optional
     }
   }
 
@@ -175,6 +279,13 @@ export class TelegramService implements OnModuleInit {
    * Handle text messages
    */
   private async handleTextMessage(ctx: BotContext) {
+    // Check if user is collecting live session metadata (PRIORITY: check this first)
+    // This handles text input during metadata collection (e.g., company name)
+    if (ctx.session.liveSessionStep && ctx.session.liveSessionStep !== 'complete') {
+      await this.liveService.handleLiveMessage(ctx);
+      return;
+    }
+
     // Check if user is in live session
     const liveSession = await this.liveService.isInLiveSession(ctx.from?.id as number);
     if (liveSession) {
@@ -182,7 +293,14 @@ export class TelegramService implements OnModuleInit {
       return;
     }
 
-    // Check if user is in interview flow
+    // Check if user is answering interview questions
+    // This handles answers during active interview sessions
+    if (ctx.session.currentInterviewSessionId && ctx.session.currentQuestionIndex !== undefined) {
+      await this.commandsService.handleInterviewText(ctx);
+      return;
+    }
+
+    // Check if user is in interview flow (position, company, etc.)
     if (ctx.session.interviewStep) {
       await this.commandsService.handleInterviewText(ctx);
       return;
@@ -207,18 +325,52 @@ export class TelegramService implements OnModuleInit {
 
     if (!data) {
       this.logger.warn('Callback query received without data');
-      await ctx.answerCallbackQuery();
+      try {
+        await ctx.answerCallbackQuery();
+      } catch (error: any) {
+        // Ignore expired callback query errors
+        if (!error.description?.includes('too old') && !error.description?.includes('invalid')) {
+          this.logger.warn(`Failed to answer callback query: ${error.message}`);
+        }
+      }
       return;
+    }
+
+    // CRITICAL: Answer callback query IMMEDIATELY to prevent timeout
+    // Telegram callback queries expire after a few seconds, so we must answer before processing
+    try {
+      await ctx.answerCallbackQuery();
+    } catch (error: any) {
+      // If callback query is already expired, log and continue (don't fail the handler)
+      if (error.description?.includes('too old') || error.description?.includes('invalid')) {
+        this.logger.warn(
+          `Callback query expired (ID: ${ctx.callbackQuery?.id}), but continuing processing: ${data}`,
+        );
+      } else {
+        this.logger.warn(`Failed to answer callback query: ${error.message}`);
+        // Still try to process, but don't fail if answerCallbackQuery fails
+      }
     }
 
     try {
       this.logger.debug(`Handling callback query: ${data}`);
+      // Process callback (this may take time, e.g., CV analysis)
       await this.commandsService.handleCallback(ctx, data);
-      await ctx.answerCallbackQuery();
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error(`Error handling callback: ${error.message}`, error.stack);
-      const errorMessage = error.message || 'An error occurred';
-      await ctx.answerCallbackQuery(errorMessage.substring(0, 200)); // Telegram limit
+      // Don't try to answer callback query again - it's already answered or expired
+      // Instead, send an error message to the user
+      const lang = ctx.session?.language || 'en';
+      const errorText: Record<string, string> = {
+        uz: `❌ Xatolik yuz berdi: ${error.message || "Noma'lum xatolik"}`,
+        ru: `❌ Произошла ошибка: ${error.message || 'Неизвестная ошибка'}`,
+        en: `❌ An error occurred: ${error.message || 'Unknown error'}`,
+      };
+      try {
+        await ctx.reply(errorText[lang] || errorText['en'], { parse_mode: 'HTML' });
+      } catch (replyError) {
+        this.logger.error(`Failed to send error message: ${replyError.message}`);
+      }
     }
   }
 

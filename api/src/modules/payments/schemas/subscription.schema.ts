@@ -16,15 +16,15 @@ export class Subscription {
 
   @Prop({
     type: String,
-    enum: ['free', 'pro', 'elite', 'enterprise'],
-    default: 'free',
+    enum: ['free_trial', 'starter', 'pro', 'elite'],
+    default: 'free_trial',
   })
   plan: string;
 
   @Prop({
     type: String,
-    enum: ['active', 'canceled', 'past_due', 'trialing'],
-    default: 'active',
+    enum: ['trialing', 'active', 'expired', 'canceled'],
+    default: 'trialing',
   })
   status: string;
 

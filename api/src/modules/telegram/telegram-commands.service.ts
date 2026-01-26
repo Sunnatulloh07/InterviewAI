@@ -1,12 +1,15 @@
-import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
+import { Injectable, Logger, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { UsersService } from '../users/users.service';
 import { BotContext } from './telegram.service';
 import { InlineKeyboard, Keyboard } from 'grammy';
 import { InterviewsService } from '../interviews/interviews.service';
+import { InterviewsFeedbackService } from '../interviews/interviews-feedback.service';
 import { OtpService } from '../otp/otp.service';
 import { CvService } from '../cv/cv.service';
 import { TelegramLiveService } from './telegram-live.service';
+import { TelegramSubscriptionService } from './telegram-subscription.service';
+import { SecurityService } from '../security/security.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { AiAnswerService } from '../ai/ai-answer.service';
 import { OpenAI } from 'openai';
@@ -20,10 +23,13 @@ export class TelegramCommandsService {
   constructor(
     private readonly usersService: UsersService,
     private readonly interviewsService: InterviewsService,
+    private readonly interviewsFeedbackService: InterviewsFeedbackService,
     private readonly configService: ConfigService,
     private readonly otpService: OtpService,
     private readonly cvService: CvService,
     private readonly liveService: TelegramLiveService,
+    private readonly subscriptionService: TelegramSubscriptionService,
+    private readonly securityService: SecurityService,
     private readonly analyticsService: AnalyticsService,
     private readonly answerService: AiAnswerService,
   ) {
@@ -46,7 +52,7 @@ export class TelegramCommandsService {
       const welcomeText = this.getWelcomeText(savedLang);
       const mainKeyboard = this.getMainKeyboard(savedLang);
 
-      await ctx.reply(welcomeText, {
+      await this.replyOrEdit(ctx, welcomeText, {
         reply_markup: mainKeyboard,
         parse_mode: 'HTML',
       });
@@ -69,7 +75,7 @@ export class TelegramCommandsService {
         'Xush kelibsiz! | Добро пожаловать! | Welcome!\n\n' +
         'Tilni tanlang | Выберите язык | Select language:';
 
-      await ctx.reply(welcomeText, {
+      await this.replyOrEdit(ctx, welcomeText, {
         reply_markup: languageKeyboard,
         parse_mode: 'HTML',
       });
@@ -81,40 +87,85 @@ export class TelegramCommandsService {
     const regText = this.getRegistrationText(lang);
     const regKeyboard = this.getRegistrationKeyboard(lang);
 
-    await ctx.reply(regText, {
+    await this.replyOrEdit(ctx, regText, {
       reply_markup: regKeyboard,
       parse_mode: 'HTML',
     });
   }
 
   private getMainKeyboard(lang: string): InlineKeyboard {
+    const webAppUrl =
+      this.configService.get<string>('WEB_APP_URL') || 'https://app.interviewai.pro';
+
+    // Check if URL is HTTPS (Telegram requires HTTPS for Web App buttons)
+    const isHttps = webAppUrl.startsWith('https://');
+    const isDevelopment = this.configService.get<string>('NODE_ENV') === 'development';
+
+    // Only show Web App button if URL is HTTPS or explicitly enabled in development
+    const showWebAppButton =
+      isHttps ||
+      (isDevelopment && this.configService.get<string>('WEB_APP_ENABLED_IN_DEV') === 'true');
+
     const keyboards: Record<string, InlineKeyboard> = {
-      uz: new InlineKeyboard()
-        .text('🎯 Intervyu', 'interview_start')
-        .row()
-        .text('📊 Profil', 'profile')
-        .row()
-        .text('📈 Statistika', 'stats')
-        .row()
-        .text('ℹ️ Yordam', 'help'),
+      uz: (() => {
+        const keyboard = new InlineKeyboard();
+        if (showWebAppButton) {
+          keyboard.webApp('🌐 Web App', webAppUrl).row();
+        }
+        keyboard
+          .text('🎯 Intervyu', 'interview_start')
+          .row()
+          .text('📊 Profil', 'profile')
+          .row()
+          .text('📄 CV Tahlil', 'analyze_cv')
+          .row()
+          .text('📈 Statistika', 'stats')
+          .row()
+          .text('💳 Tariflar', 'upgrade')
+          .row()
+          .text('ℹ️ Yordam', 'help');
+        return keyboard;
+      })(),
 
-      ru: new InlineKeyboard()
-        .text('🎯 Интервью', 'interview_start')
-        .row()
-        .text('📊 Профиль', 'profile')
-        .row()
-        .text('📈 Статистика', 'stats')
-        .row()
-        .text('ℹ️ Помощь', 'help'),
+      ru: (() => {
+        const keyboard = new InlineKeyboard();
+        if (showWebAppButton) {
+          keyboard.webApp('🌐 Веб-приложение', webAppUrl).row();
+        }
+        keyboard
+          .text('🎯 Интервью', 'interview_start')
+          .row()
+          .text('📊 Профиль', 'profile')
+          .row()
+          .text('📄 Анализ CV', 'analyze_cv')
+          .row()
+          .text('📈 Статистика', 'stats')
+          .row()
+          .text('💳 Тарифы', 'upgrade')
+          .row()
+          .text('ℹ️ Помощь', 'help');
+        return keyboard;
+      })(),
 
-      en: new InlineKeyboard()
-        .text('🎯 Interview', 'interview_start')
-        .row()
-        .text('📊 Profile', 'profile')
-        .row()
-        .text('📈 Statistics', 'stats')
-        .row()
-        .text('ℹ️ Help', 'help'),
+      en: (() => {
+        const keyboard = new InlineKeyboard();
+        if (showWebAppButton) {
+          keyboard.webApp('🌐 Web App', webAppUrl).row();
+        }
+        keyboard
+          .text('🎯 Interview', 'interview_start')
+          .row()
+          .text('📊 Profile', 'profile')
+          .row()
+          .text('📄 CV Analysis', 'analyze_cv')
+          .row()
+          .text('📈 Statistics', 'stats')
+          .row()
+          .text('💳 Plans', 'upgrade')
+          .row()
+          .text('ℹ️ Help', 'help');
+        return keyboard;
+      })(),
     };
 
     return keyboards[lang] || keyboards['en'];
@@ -216,7 +267,10 @@ export class TelegramCommandsService {
       }
 
       const profileText = this.getProfileText(lang, user);
-      await ctx.reply(profileText, { parse_mode: 'HTML' });
+      await this.replyOrEdit(ctx, profileText, {
+        parse_mode: 'HTML',
+        reply_markup: this.getBackKeyboard(lang),
+      });
     } catch (_error) {
       const lang = ctx.session.language || 'en';
       const errorText: Record<string, string> = {
@@ -229,30 +283,27 @@ export class TelegramCommandsService {
   }
 
   private getProfileText(lang: string, user: any): string {
-    const texts: Record<string, string> = {
-      uz:
-        `📊 <b>Sizning Profilingiz</b>\n\n` +
-        `<b>Ism:</b> ${user.firstName} ${user.lastName}\n` +
-        `<b>Rejа:</b> ${user.subscription?.plan || 'free'}\n` +
-        `<b>Bu oy intervyular:</b> ${user.usage.mockInterviewsThisMonth}\n` +
-        `<b>CV tahlillari:</b> ${user.usage.cvAnalysesThisMonth}`,
+    // Get subscription status text from service
+    const subscriptionText = this.subscriptionService.getSubscriptionStatusText(user, lang);
+    // Get usage stats text from service
+    const usageText = this.subscriptionService.getUsageStatsText(user, lang);
 
-      ru:
-        `📊 <b>Ваш Профиль</b>\n\n` +
-        `<b>Имя:</b> ${user.firstName} ${user.lastName}\n` +
-        `<b>План:</b> ${user.subscription?.plan || 'free'}\n` +
-        `<b>Интервью в этом месяце:</b> ${user.usage.mockInterviewsThisMonth}\n` +
-        `<b>Анализы CV:</b> ${user.usage.cvAnalysesThisMonth}`,
-
-      en:
-        `📊 <b>Your Profile</b>\n\n` +
-        `<b>Name:</b> ${user.firstName} ${user.lastName}\n` +
-        `<b>Plan:</b> ${user.subscription?.plan || 'free'}\n` +
-        `<b>Interviews this month:</b> ${user.usage.mockInterviewsThisMonth}\n` +
-        `<b>CV analyses:</b> ${user.usage.cvAnalysesThisMonth}`,
+    const headerTexts: Record<string, string> = {
+      uz: `📊 <b>Sizning Profilingiz</b>\n\n<b>Ism:</b> ${user.firstName} ${user.lastName}\n`,
+      ru: `📊 <b>Ваш Профиль</b>\n\n<b>Имя:</b> ${user.firstName} ${user.lastName}\n`,
+      en: `📊 <b>Your Profile</b>\n\n<b>Name:</b> ${user.firstName} ${user.lastName}\n`,
     };
 
-    return texts[lang] || texts['en'];
+    const upgradeHint: Record<string, string> = {
+      uz: '\n\n💡 Tarifni yangilash uchun /upgrade yozing',
+      ru: '\n\n💡 Введите /upgrade для обновления тарифа',
+      en: '\n\n💡 Type /upgrade to upgrade your plan',
+    };
+
+    const header = headerTexts[lang] || headerTexts['en'];
+    const hint = user.subscription?.plan === 'elite' ? '' : (upgradeHint[lang] || upgradeHint['en']);
+
+    return `${header}${subscriptionText}\n\n${usageText}${hint}`;
   }
 
   async handleInterview(ctx: BotContext) {
@@ -270,6 +321,9 @@ export class TelegramCommandsService {
       return;
     }
 
+    // Get user ID for subscription check
+    const userId = (user as any)._id?.toString() || (user as any).id?.toString() || user.id;
+
     // Get language from session, user preferences, or database
     let lang = ctx.session?.language;
     if (!lang) {
@@ -280,6 +334,19 @@ export class TelegramCommandsService {
       }
     }
 
+    // Check subscription status (trial expired, subscription expired)
+    const canProceed = await this.subscriptionService.checkAndNotify(ctx, userId);
+    if (!canProceed) {
+      // User is blocked (trial/subscription expired) - message already sent by service
+      return;
+    }
+
+    // Check mock interview usage limits and block if limit reached
+    const canDoMockInterview = await this.subscriptionService.checkMockInterviewLimit(ctx, user, lang);
+    if (!canDoMockInterview) {
+      return; // Limit reached, user notified
+    }
+
     // Reset interview state
     ctx.session.interviewStep = 'mode';
     ctx.session.interviewMode = undefined;
@@ -288,6 +355,10 @@ export class TelegramCommandsService {
     ctx.session.interviewPosition = undefined;
     ctx.session.interviewCompany = undefined;
     ctx.session.interviewCvId = undefined;
+    
+    // CRITICAL: Clear live session state to prevent it from intercepting interview setup text
+    ctx.session.liveSessionStep = undefined;
+    ctx.session.liveSessionMetadata = undefined;
 
     // Step 1: Ask for interview mode (Mock or Real)
     const modeText: Record<string, string> = {
@@ -316,9 +387,11 @@ export class TelegramCommandsService {
     const modeKeyboard = new InlineKeyboard()
       .text(modeButtons.mock, 'interview_mode_mock')
       .row()
-      .text(modeButtons.real, 'interview_mode_real');
+      .text(modeButtons.real, 'interview_mode_real')
+      .row()
+      .text(lang === 'uz' ? '🔙 Bosh menyu' : lang === 'ru' ? '🔙 Главное меню' : '🔙 Main Menu', 'back_to_menu');
 
-    await ctx.reply(modeText[lang] || modeText['en'], {
+    await this.replyOrEdit(ctx, modeText[lang] || modeText['en'], {
       reply_markup: modeKeyboard,
       parse_mode: 'HTML',
     });
@@ -356,8 +429,26 @@ export class TelegramCommandsService {
       }
     }
 
+    // Check subscription status (trial expired or subscription expired)
+    const canProceed = await this.subscriptionService.checkAndNotify(ctx, userId);
+    if (!canProceed) {
+      return; // User is blocked, appropriate message already sent
+    }
+
     // Check if user has existing CVs
     const userCvs = await this.cvService.getUserCvs(userId, 5, 0);
+
+    // Only apply limit check if user HAS NO CVs (forced to upload new) or EXPLICITLY requested new analysis
+    // If user has CVs, we show the list FIRST, then check limit when they click 'Upload New' or 'Re-analyze'
+    const hasExistingCvs = userCvs.length > 0;
+    
+    if (!hasExistingCvs) {
+      // No existing CVs, user must upload new -> Check limit now
+      const canAnalyzeCv = await this.subscriptionService.checkCvAnalysisLimit(ctx, user, lang);
+      if (!canAnalyzeCv) {
+        return; // Limit reached, user notified
+      }
+    }
 
     if (userCvs.length > 0) {
       // Show CV list with option to upload new
@@ -387,9 +478,21 @@ export class TelegramCommandsService {
         ru: '➕ Загрузить новое CV',
         en: '➕ Upload New CV',
       };
-      keyboard.row().text(uploadButtonTexts[lang] || uploadButtonTexts['en'], 'cv_upload_new');
+      
+      // Check if user has analysis limit left (without notifying)
+      const canAnalyzeNew = await this.subscriptionService.checkCvAnalysisLimit(ctx, user, lang, false);
+      if (canAnalyzeNew) {
+        keyboard.row().text(uploadButtonTexts[lang] || uploadButtonTexts['en'], 'cv_upload_new');
+      }
+      
+      const backText: Record<string, string> = {
+        uz: '⬅️ Asosiy menyu',
+        ru: '⬅️ Главное меню',
+        en: '⬅️ Main Menu',
+      };
+      keyboard.row().text(backText[lang] || backText['en'], 'back_to_menu');
 
-      await ctx.reply(cvListText[lang] || cvListText['en'], {
+      await this.replyOrEdit(ctx, cvListText[lang] || cvListText['en'], {
         reply_markup: keyboard,
         parse_mode: 'HTML',
       });
@@ -404,7 +507,13 @@ export class TelegramCommandsService {
       en: `📄 <b>CV Analysis</b>\n\nPlease upload your CV as a PDF or DOCX file.\n\nMax size: 5MB`,
     };
 
-    await ctx.reply(cvText[lang] || cvText['en'], { parse_mode: 'HTML' });
+    const backText = lang === 'uz' ? '🔙 Bosh menyu' : lang === 'ru' ? '🔙 Главное меню' : '🔙 Main Menu';
+    const backKeyboard = new InlineKeyboard().text(backText, 'back_to_menu');
+
+    await this.replyOrEdit(ctx, cvText[lang] || cvText['en'], { 
+      parse_mode: 'HTML',
+      reply_markup: backKeyboard
+    });
   }
 
   async handleHelp(ctx: BotContext) {
@@ -493,7 +602,14 @@ export class TelegramCommandsService {
       keyboard.text(registerTexts[lang] || registerTexts['en'], 'register_quick');
     }
 
-    await ctx.reply(helpText, {
+    const backText: Record<string, string> = {
+      uz: '⬅️ Asosiy menyu',
+      ru: '⬅️ Главное меню',
+      en: '⬅️ Main Menu',
+    };
+    keyboard.row().text(backText[lang] || backText['en'], 'back_to_menu');
+
+    await this.replyOrEdit(ctx, helpText, {
       parse_mode: 'HTML',
       reply_markup: keyboard,
     });
@@ -577,7 +693,10 @@ export class TelegramCommandsService {
       const analytics = await this.interviewsService.getAnalytics(userId);
       const statsText = this.getStatsText(lang, analytics);
 
-      await ctx.reply(statsText, { parse_mode: 'HTML' });
+      await this.replyOrEdit(ctx, statsText, {
+        parse_mode: 'HTML',
+        reply_markup: this.getBackKeyboard(lang),
+      });
     } catch (_error) {
       const lang = ctx.session.language || 'en';
       const errorText: Record<string, string> = {
@@ -626,13 +745,38 @@ export class TelegramCommandsService {
       .text('🔔', 'settings_notifications')
       .text('🌐', 'settings_language');
 
-    await ctx.reply(settingsText[lang] || settingsText['en'], {
-      reply_markup: keyboard,
+    await this.replyOrEdit(ctx, settingsText[lang] || settingsText['en'], {
+      reply_markup: keyboard.row().append(this.getBackKeyboard(lang)),
       parse_mode: 'HTML',
     });
   }
 
+  /**
+   * Handle /upgrade command - show plan comparison
+   */
+  async handleUpgrade(ctx: BotContext) {
+    const telegramId = ctx.from?.id as number;
+    const user = await this.usersService.findByTelegramId(telegramId);
+
+    let lang = ctx.session?.language;
+    if (!lang) {
+      lang = user?.preferences?.language || user?.language || 'en';
+      if (ctx.session) {
+        ctx.session.language = lang;
+      }
+    }
+
+    await this.subscriptionService.sendPlanComparison(ctx, lang);
+  }
+
   async handleCallback(ctx: BotContext, data: string) {
+    // Subscription-related callbacks (show_plans, upgrade_*, contact_support)
+    const lang = ctx.session?.language || 'en';
+    const subscriptionHandled = await this.subscriptionService.handleSubscriptionCallback(ctx, data, lang);
+    if (subscriptionHandled) {
+      return;
+    }
+
     // Language selection
     if (data.startsWith('lang_')) {
       const lang = data.replace('lang_', '');
@@ -730,7 +874,7 @@ export class TelegramCommandsService {
     }
 
     // Quick action callbacks from help menu
-    if (data === 'cv_quick') {
+    if (data === 'cv_quick' || data === 'analyze_cv') {
       await this.handleAnalyzeCv(ctx);
       return;
     }
@@ -752,6 +896,16 @@ export class TelegramCommandsService {
       } else {
         await this.liveService.handleStartLive(ctx);
       }
+      return;
+    }
+
+    // Live session metadata callbacks
+    if (
+      data.startsWith('live_domain_') ||
+      data.startsWith('live_tech_') ||
+      data.startsWith('live_position_')
+    ) {
+      await this.liveService.handleLiveMetadataCallback(ctx, data);
       return;
     }
 
@@ -779,6 +933,12 @@ export class TelegramCommandsService {
       return;
     }
 
+    // Back to main menu
+    if (data === 'back_to_menu') {
+      await this.handleStart(ctx);
+      return;
+    }
+
     // Interview mode selection (Mock or Real)
     if (data === 'interview_mode_mock') {
       ctx.session.interviewMode = 'mock';
@@ -788,6 +948,51 @@ export class TelegramCommandsService {
     }
 
     if (data === 'interview_mode_real') {
+      const lang = ctx.session?.language || 'en';
+      
+      const warningText: Record<string, string> = {
+        uz: `⚠️ <b>Diqqat: Live Intervyu Rejimi</b>\n\n` +
+            `Bu rejimda sizning balansingizdan daqiqalar yechib olinadi.\n` +
+            `• Har bir daqiqa uchun hisoblanadi.\n` +
+            `• Intervyu tugagach "End Interview" tugmasini bosishni unutmang!\n\n` +
+            `Davom etishga rozimisiz?`,
+        ru: `⚠️ <b>Внимание: Режим Live Интервью</b>\n\n` +
+            `В этом режиме минуты списываются с вашего баланса.\n` +
+            `• Расчет идет за каждую минуту.\n` +
+            `• Не забудьте нажать "End Interview" после окончания!\n\n` +
+            `Вы согласны продолжить?`,
+        en: `⚠️ <b>Warning: Live Interview Mode</b>\n\n` +
+            `This mode deducts minutes from your balance.\n` +
+            `• Charged per minute.\n` +
+            `• Don't forget to press "End Interview" when finished!\n\n` +
+            `Do you agree to proceed?`,
+      };
+
+      const btnText: Record<string, string> = {
+        uz: "✅ Tushundim, Boshlash",
+        ru: "✅ Понял, Начать",
+        en: "✅ I understand, Start",
+      };
+
+      const cancelText: Record<string, string> = {
+        uz: "❌ Bekor qilish",
+        ru: "❌ Отмена",
+        en: "❌ Cancel",
+      };
+
+      const keyboard = new InlineKeyboard()
+        .text(btnText[lang] || btnText['en'], 'interview_real_confirm')
+        .row()
+        .text(cancelText[lang] || cancelText['en'], 'back_to_menu');
+
+      await ctx.reply(warningText[lang] || warningText['en'], {
+        parse_mode: 'HTML',
+        reply_markup: keyboard,
+      });
+      return;
+    }
+
+    if (data === 'interview_real_confirm') {
       ctx.session.interviewMode = 'real';
       ctx.session.interviewStep = 'domain';
       await this.askInterviewDomain(ctx);
@@ -806,6 +1011,30 @@ export class TelegramCommandsService {
     // Technology selection
     if (data.startsWith('tech_')) {
       const technology = data.replace('tech_', '');
+      if (technology === 'custom') {
+        // User wants to enter technology manually
+        ctx.session.interviewStep = 'technology_custom';
+        const lang = ctx.session?.language || 'en';
+        const customText: Record<string, string> = {
+          uz:
+            `✍️ <b>Texnologiyani qo'lda kiriting</b>\n\n` +
+            `Texnologiya nomini yozing:\n` +
+            `Masalan: <code>React</code>, <code>Node.js</code>, <code>Python</code>`,
+          ru:
+            `✍️ <b>Введите технологию вручную</b>\n\n` +
+            `Напишите название технологии:\n` +
+            `Например: <code>React</code>, <code>Node.js</code>, <code>Python</code>`,
+          en:
+            `✍️ <b>Enter technology manually</b>\n\n` +
+            `Type the technology name:\n` +
+            `Example: <code>React</code>, <code>Node.js</code>, <code>Python</code>`,
+        };
+        await ctx.reply(customText[lang] || customText['en'], {
+          parse_mode: 'HTML',
+        });
+        await ctx.answerCallbackQuery();
+        return;
+      }
       ctx.session.interviewTechnology = technology;
       ctx.session.interviewStep = 'position';
       await this.askInterviewPosition(ctx);
@@ -830,8 +1059,11 @@ export class TelegramCommandsService {
       return;
     }
 
-    if (data.startsWith('cv_view_')) {
-      const cvId = data.replace('cv_view_', '');
+    // CV detail view callback (both cv_view_ and cv_detail_ for compatibility)
+    if (data.startsWith('cv_view_') || data.startsWith('cv_detail_')) {
+      const cvId = data.startsWith('cv_view_')
+        ? data.replace('cv_view_', '')
+        : data.replace('cv_detail_', '');
       await this.showCvDetails(ctx, cvId);
       return;
     }
@@ -839,6 +1071,276 @@ export class TelegramCommandsService {
     if (data.startsWith('cv_reanalyze_')) {
       const cvId = data.replace('cv_reanalyze_', '');
       await this.reanalyzeCv(ctx, cvId);
+      return;
+    }
+
+    // CV selection for real interview
+    if (data.startsWith('use_cv_')) {
+      const cvId = data.replace('use_cv_', '');
+      const telegramId = ctx.from?.id as number;
+      const user = await this.usersService.findByTelegramId(telegramId);
+
+      // Get language
+      let lang = ctx.session?.language;
+      if (!lang) {
+        if (user) {
+          lang = user.preferences?.language || user.language || 'en';
+        } else {
+          lang = 'en';
+        }
+        if (ctx.session) {
+          ctx.session.language = lang;
+        }
+      }
+
+      if (!user) {
+        const errorText: Record<string, string> = {
+          uz: `Xatolik: Foydalanuvchi topilmadi.`,
+          ru: `Ошибка: Пользователь не найден.`,
+          en: `Error: User not found.`,
+        };
+        await ctx.answerCallbackQuery(errorText[lang] || errorText['en']);
+        return;
+      }
+
+      // Get user ID
+      const userId = (user as any)._id?.toString() || (user as any).id?.toString() || user.id;
+      if (!userId) {
+        await ctx.answerCallbackQuery('Error: User ID not found');
+        return;
+      }
+
+      try {
+        // Verify CV belongs to user
+        const cvs = await this.cvService.getUserCvs(userId, 10, 0);
+        const selectedCv = cvs.find((cv) => cv.id === cvId);
+
+        if (!selectedCv) {
+          const errorText: Record<string, string> = {
+            uz: `❌ CV topilmadi yoki o'chirilgan. Iltimos boshqa CV tanlang yoki yangi CV yuklang.`,
+            ru: `❌ CV не найдено или удалено. Пожалуйста, выберите другое CV или загрузите новое.`,
+            en: `❌ CV not found or deleted. Please select another CV or upload a new one.`,
+          };
+          await ctx.answerCallbackQuery(errorText[lang] || errorText['en']);
+
+          // Re-ask for CV selection
+          await this.askInterviewCv(ctx);
+          return;
+        }
+
+        // Check if CV has parsed text (required for interview context)
+        if (!selectedCv.parsedText || selectedCv.parsedText.trim().length === 0) {
+          const errorText: Record<string, string> = {
+            uz: `❌ CV hali tahlil qilinmagan. Iltimos boshqa CV tanlang yoki yangi CV yuklang.`,
+            ru: `❌ CV еще не проанализировано. Пожалуйста, выберите другое CV или загрузите новое.`,
+            en: `❌ CV has not been analyzed yet. Please select another CV or upload a new one.`,
+          };
+          await ctx.answerCallbackQuery(errorText[lang] || errorText['en']);
+
+          // Re-ask for CV selection
+          await this.askInterviewCv(ctx);
+          return;
+        }
+
+        // Save CV ID to session
+        ctx.session.interviewCvId = cvId;
+        ctx.session.interviewStep = 'ready';
+
+        const successText: Record<string, string> = {
+          uz: `✅ CV tanlandi: ${selectedCv.fileName || 'CV'}`,
+          ru: `✅ CV выбрано: ${selectedCv.fileName || 'CV'}`,
+          en: `✅ CV selected: ${selectedCv.fileName || 'CV'}`,
+        };
+        await ctx.answerCallbackQuery(successText[lang] || successText['en']);
+
+        // Start interview
+        await this.startInterviewSession(ctx);
+      } catch (error: any) {
+        this.logger.error(`Error selecting CV: ${error.message}`, error.stack);
+        const errorText: Record<string, string> = {
+          uz: `❌ CV tanlashda xatolik yuz berdi: ${error.message || "Noma'lum xatolik"}. Iltimos qayta urinib ko'ring.`,
+          ru: `❌ Произошла ошибка при выборе CV: ${error.message || 'Неизвестная ошибка'}. Пожалуйста, попробуйте снова.`,
+          en: `❌ An error occurred while selecting CV: ${error.message || 'Unknown error'}. Please try again.`,
+        };
+        await ctx.answerCallbackQuery(errorText[lang] || errorText['en']);
+
+        // Re-ask for CV selection
+        try {
+          await this.askInterviewCv(ctx);
+        } catch (retryError) {
+          this.logger.error(`Error re-asking for CV: ${retryError.message}`);
+        }
+      }
+      return;
+    }
+
+    if (data === 'upload_new_cv') {
+      // Set step to wait for CV upload
+      ctx.session.interviewStep = 'cv';
+      const lang = ctx.session?.language || 'en';
+      const cvText: Record<string, string> = {
+        uz: `📄 <b>Yangi CV yuklash</b>\n\nIltimos, CV'ingizni PDF yoki DOCX formatida yuklang.\n\nBu CV intervyu uchun kontekst sifatida ishlatiladi.`,
+        ru: `📄 <b>Загрузить новое CV</b>\n\nПожалуйста, загрузите ваше CV в формате PDF или DOCX.\n\nЭто CV будет использоваться как контекст для интервью.`,
+        en: `📄 <b>Upload New CV</b>\n\nPlease upload your CV in PDF or DOCX format.\n\nThis CV will be used as context for the interview.`,
+      };
+      await ctx.answerCallbackQuery();
+      await this.replyOrEdit(ctx, cvText[lang] || cvText['en'], {
+        parse_mode: 'HTML',
+      });
+      return;
+    }
+
+    // Continue with existing analyzed CV (no re-analysis needed)
+    if (data.startsWith('continue_with_cv_')) {
+      const cvId = data.replace('continue_with_cv_', '');
+      const telegramId = ctx.from?.id as number;
+      const user = await this.usersService.findByTelegramId(telegramId);
+      const lang = ctx.session?.language || user?.preferences?.language || 'en';
+
+      if (!user) {
+        await ctx.answerCallbackQuery('Foydalanuvchi topilmadi');
+        return;
+      }
+
+      const userId = (user as any)._id?.toString() || (user as any).id?.toString() || user.id;
+
+      try {
+        // Verify CV exists and is analyzed
+        const cv = await this.cvService.getCvById(userId, cvId);
+        
+        if (!cv || cv.analysisStatus !== 'completed') {
+          const errorText: Record<string, string> = {
+            uz: '❌ CV tahlil qilinmagan. Iltimos yangi CV yuklang.',
+            ru: '❌ CV не проанализировано. Пожалуйста, загрузите новое CV.',
+            en: '❌ CV not analyzed. Please upload a new CV.',
+          };
+          await ctx.answerCallbackQuery(errorText[lang] || errorText['en']);
+          await this.askInterviewCv(ctx);
+          return;
+        }
+
+        // Set CV for interview
+        ctx.session.interviewCvId = cvId;
+        ctx.session.interviewStep = 'ready';
+
+        const successText: Record<string, string> = {
+          uz: `✅ CV tanlandi: ${cv.fileName || 'CV'}. Intervyu boshlanmoqda...`,
+          ru: `✅ CV выбрано: ${cv.fileName || 'CV'}. Начинаем интервью...`,
+          en: `✅ CV selected: ${cv.fileName || 'CV'}. Starting interview...`,
+        };
+        
+        await ctx.answerCallbackQuery();
+        await this.replyOrEdit(ctx, successText[lang] || successText['en'], { parse_mode: 'HTML' });
+
+        // Start interview with existing CV
+        await this.startInterviewSession(ctx);
+      } catch (error: any) {
+        this.logger.error(`Error continuing with CV: ${error.message}`);
+        await ctx.answerCallbackQuery('Xatolik yuz berdi');
+        await this.askInterviewCv(ctx);
+      }
+      return;
+    }
+
+    // Upload new CV and replace existing (delete old CVs first)
+    if (data === 'upload_new_cv_replace') {
+      const telegramId = ctx.from?.id as number;
+      const user = await this.usersService.findByTelegramId(telegramId);
+      const lang = ctx.session?.language || user?.preferences?.language || 'en';
+
+      if (!user) {
+        await ctx.answerCallbackQuery('Foydalanuvchi topilmadi');
+        return;
+      }
+
+      const userId = (user as any)._id?.toString() || (user as any).id?.toString() || user.id;
+      
+      // Check CV analysis usage limits before allowing upload
+      const canAnalyzeCv = await this.subscriptionService.checkCvAnalysisLimit(ctx, user, lang);
+      if (!canAnalyzeCv) {
+        // Must answer callbackQuery to stop loading spinner on Telegram client
+        await ctx.answerCallbackQuery('Limit tugagan / Limit reached');
+        return; // Limit reached, user notified
+      }
+
+      try {
+        // Delete all existing CVs before uploading new one
+        const existingCvs = await this.cvService.getUserCvs(userId, 10, 0);
+        for (const oldCv of existingCvs) {
+          await this.cvService.deleteCv(userId, oldCv.id);
+          this.logger.log(`Deleted old CV ${oldCv.id} for user ${userId}`);
+        }
+
+        // Set session to wait for new CV upload
+        ctx.session.interviewStep = 'cv';
+        ctx.session.cvUploadStep = 'waiting';
+
+        const uploadText: Record<string, string> = {
+          uz: `📤 <b>Yangi CV yuklash</b>\n\n✅ Eski CV(lar) o'chirildi.\n\nIltimos, yangi CV'ingizni PDF yoki DOCX formatida yuklang.`,
+          ru: `📤 <b>Загрузка нового CV</b>\n\n✅ Старые CV удалены.\n\nПожалуйста, загрузите новое CV в формате PDF или DOCX.`,
+          en: `📤 <b>Upload New CV</b>\n\n✅ Old CV(s) deleted.\n\nPlease upload your new CV in PDF or DOCX format.`,
+        };
+
+        await ctx.answerCallbackQuery();
+        await this.replyOrEdit(ctx, uploadText[lang] || uploadText['en'], { parse_mode: 'HTML' });
+      } catch (error: any) {
+        this.logger.error(`Error preparing for new CV upload: ${error.message}`);
+        await ctx.answerCallbackQuery('Xatolik yuz berdi');
+      }
+      return;
+    }
+
+    // Select CV for analysis (from list with status)
+    if (data.startsWith('select_cv_')) {
+      const cvId = data.replace('select_cv_', '');
+      const telegramId = ctx.from?.id as number;
+      const user = await this.usersService.findByTelegramId(telegramId);
+      const lang = ctx.session?.language || user?.preferences?.language || 'en';
+
+      if (!user) {
+        await ctx.answerCallbackQuery('Foydalanuvchi topilmadi');
+        return;
+      }
+
+      const userId = (user as any)._id?.toString() || (user as any).id?.toString() || user.id;
+
+      try {
+        const cv = await this.cvService.getCvById(userId, cvId);
+        
+        if (cv.analysisStatus === 'completed' && cv.analysis) {
+          // CV is analyzed - use it directly
+          ctx.session.interviewCvId = cvId;
+          ctx.session.interviewStep = 'ready';
+          
+          await ctx.answerCallbackQuery();
+          const successMsg = lang === 'uz' ? `✅ CV tanlandi: ${cv.fileName || 'CV'}` : lang === 'ru' ? `✅ CV выбрано: ${cv.fileName || 'CV'}` : `✅ CV selected: ${cv.fileName || 'CV'}`;
+          await this.replyOrEdit(ctx, successMsg, { parse_mode: 'HTML' });
+          await this.startInterviewSession(ctx);
+        } else if (cv.analysisStatus === 'processing') {
+          // CV is being analyzed
+          const processingText: Record<string, string> = {
+            uz: '⏳ CV hali tahlil qilinmoqda. Iltimos kuting...',
+            ru: '⏳ CV еще анализируется. Пожалуйста, подождите...',
+            en: '⏳ CV is still being analyzed. Please wait...',
+          };
+          await ctx.answerCallbackQuery(processingText[lang] || processingText['en']);
+        } else {
+          // CV needs analysis - start it
+          const analyzingText: Record<string, string> = {
+            uz: '⏳ CV tahlil qilinmoqda...',
+            ru: '⏳ Анализируем CV...',
+            en: '⏳ Analyzing CV...',
+          };
+          await ctx.answerCallbackQuery();
+          await this.replyOrEdit(ctx, analyzingText[lang] || analyzingText['en']);
+          
+          await this.cvService.analyzeCv(userId, cvId, { language: lang });
+          await this.pollCvAnalysis(ctx, cvId, userId);
+        }
+      } catch (error: any) {
+        this.logger.error(`Error selecting CV: ${error.message}`);
+        await ctx.answerCallbackQuery('Xatolik yuz berdi');
+      }
       return;
     }
 
@@ -919,6 +1421,8 @@ export class TelegramCommandsService {
    * Show CV details
    */
   private async showCvDetails(ctx: BotContext, cvId: string) {
+    this.logger.debug(`showCvDetails called with cvId: ${cvId}`);
+
     const telegramId = ctx.from?.id as number;
     const user = await this.usersService.findByTelegramId(telegramId);
 
@@ -937,6 +1441,13 @@ export class TelegramCommandsService {
     const userId = (user as any)._id?.toString() || (user as any).id?.toString() || user.id;
     if (!userId) {
       this.logger.error(`User ID is undefined for Telegram ID: ${telegramId}`);
+      const lang = ctx.session?.language || 'en';
+      const errorText: Record<string, string> = {
+        uz: `Xatolik: Foydalanuvchi ID topilmadi.`,
+        ru: `Ошибка: ID пользователя не найден.`,
+        en: `Error: User ID not found.`,
+      };
+      await ctx.reply(errorText[lang] || errorText['en']);
       return;
     }
 
@@ -951,9 +1462,14 @@ export class TelegramCommandsService {
     }
 
     try {
+      this.logger.debug(`Fetching CV ${cvId} for user ${userId}`);
       const cv = await this.cvService.getCvById(userId, cvId);
+      this.logger.debug(
+        `CV found: ${cv.id}, status: ${cv.analysisStatus}, hasAnalysis: ${!!cv.analysis}`,
+      );
 
       if (cv.analysisStatus === 'completed' && cv.analysis) {
+        this.logger.debug(`Displaying CV analysis for CV ${cvId}`);
         await this.displayCvAnalysis(ctx, cv);
       } else if (cv.analysisStatus === 'processing') {
         const processingText: Record<string, string> = {
@@ -979,14 +1495,35 @@ export class TelegramCommandsService {
           parse_mode: 'HTML',
         });
       }
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error(`Error showing CV details: ${error.message}`, error.stack);
-      const errorText: Record<string, string> = {
-        uz: `CV ma'lumotlarini ko'rsatishda xatolik.`,
-        ru: `Ошибка при отображении информации о CV.`,
-        en: `Error showing CV details.`,
-      };
-      await ctx.reply(errorText[lang] || errorText['en']);
+      const lang = ctx.session?.language || 'en';
+
+      // Provide specific error messages
+      let errorText: Record<string, string>;
+      if (error instanceof NotFoundException) {
+        errorText = {
+          uz: `❌ CV topilmadi. Iltimos boshqa CV tanlang yoki yangi CV yuklang.`,
+          ru: `❌ CV не найдено. Пожалуйста, выберите другое CV или загрузите новое.`,
+          en: `❌ CV not found. Please select another CV or upload a new one.`,
+        };
+      } else if (error instanceof ForbiddenException) {
+        errorText = {
+          uz: `❌ Bu CV'ga kirish huquqingiz yo'q.`,
+          ru: `❌ У вас нет доступа к этому CV.`,
+          en: `❌ You don't have access to this CV.`,
+        };
+      } else {
+        errorText = {
+          uz: `❌ CV ma'lumotlarini ko'rsatishda xatolik: ${error.message || "Noma'lum xatolik"}.`,
+          ru: `❌ Ошибка при отображении информации о CV: ${error.message || 'Неизвестная ошибка'}.`,
+          en: `❌ Error showing CV details: ${error.message || 'Unknown error'}.`,
+        };
+      }
+
+      await ctx.reply(errorText[lang] || errorText['en'], {
+        parse_mode: 'HTML',
+      });
     }
   }
 
@@ -1008,13 +1545,6 @@ export class TelegramCommandsService {
       return;
     }
 
-    // Get user ID (handle both _id and id fields)
-    const userId = (user as any)._id?.toString() || (user as any).id?.toString() || user.id;
-    if (!userId) {
-      this.logger.error(`User ID is undefined for Telegram ID: ${telegramId}`);
-      return;
-    }
-
     // Get language from session, user preferences, or database
     let lang = ctx.session?.language;
     if (!lang) {
@@ -1023,6 +1553,19 @@ export class TelegramCommandsService {
       if (ctx.session) {
         ctx.session.language = lang;
       }
+    }
+
+    // Check CV analysis usage limits
+    const canAnalyzeCv = await this.subscriptionService.checkCvAnalysisLimit(ctx, user, lang);
+    if (!canAnalyzeCv) {
+      return; // Limit reached, user notified
+    }
+
+    // Get user ID (handle both _id and id fields)
+    const userId = (user as any)._id?.toString() || (user as any).id?.toString() || user.id;
+    if (!userId) {
+      this.logger.error(`User ID is undefined for Telegram ID: ${telegramId}`);
+      return;
     }
 
     try {
@@ -1228,9 +1771,11 @@ export class TelegramCommandsService {
       .text(domainButtons.ai, 'domain_ai')
       .row()
       .text(domainButtons.data, 'domain_data')
-      .text(domainButtons.security, 'domain_security');
+      .text(domainButtons.security, 'domain_security')
+      .row()
+      .text(lang === 'uz' ? '🔙 Bosh menyu' : lang === 'ru' ? '🔙 Главное меню' : '🔙 Main Menu', 'back_to_menu');
 
-    await ctx.reply(domainText[lang] || domainText['en'], {
+    await this.replyOrEdit(ctx, domainText[lang] || domainText['en'], {
       reply_markup: domainKeyboard,
       parse_mode: 'HTML',
     });
@@ -1348,7 +1893,29 @@ export class TelegramCommandsService {
         .text('🔷 C#', 'tech_csharp');
     }
 
-    await ctx.reply(techText[lang] || techText['en'], {
+    // Add custom input button and back button
+    techKeyboard.row().text("➕ Qo'lda kiritish", 'tech_custom');
+    techKeyboard.row().text(lang === 'uz' ? '🔙 Bosh menyu' : lang === 'ru' ? '🔙 Главное меню' : '🔙 Main Menu', 'back_to_menu');
+
+    const updatedTechText: Record<string, string> = {
+      uz:
+        `⚙️ <b>Texnologiya tanlang</b>\n\n` +
+        `Qaysi texnologiya bo'yicha intervyu o'tkazmoqchisiz?\n\n` +
+        `Tugmalardan tanlash yoki "➕ Qo'lda kiritish" tugmasini bosib, texnologiyani yozing.\n` +
+        `Masalan: "React", "Node.js", "Python"`,
+      ru:
+        `⚙️ <b>Выберите технологию</b>\n\n` +
+        `По какой технологии вы проходите интервью?\n\n` +
+        `Выберите из кнопок или нажмите "➕ Ввести вручную" и напишите технологию.\n` +
+        `Например: "React", "Node.js", "Python"`,
+      en:
+        `⚙️ <b>Select Technology</b>\n\n` +
+        `What technology are you interviewing for?\n\n` +
+        `Select from buttons or press "➕ Enter manually" and type the technology.\n` +
+        `Example: "React", "Node.js", "Python"`,
+    };
+
+    await this.replyOrEdit(ctx, updatedTechText[lang] || updatedTechText['en'], {
       reply_markup: techKeyboard,
       parse_mode: 'HTML',
     });
@@ -1365,8 +1932,12 @@ export class TelegramCommandsService {
       en: `💼 <b>Position</b>\n\nWhat position are you interviewing for?\n\nFor example: Junior Developer, Middle Developer, Senior Developer, Team Lead, etc.\n\nOr type your position.`,
     };
 
-    await ctx.reply(positionText[lang] || positionText['en'], {
+    const keyboard = new InlineKeyboard()
+      .text(lang === 'uz' ? '🔙 Bosh menyu' : lang === 'ru' ? '🔙 Главное меню' : '🔙 Main Menu', 'back_to_menu');
+
+    await this.replyOrEdit(ctx, positionText[lang] || positionText['en'], {
       parse_mode: 'HTML',
+      reply_markup: keyboard,
     });
   }
 
@@ -1381,24 +1952,189 @@ export class TelegramCommandsService {
       en: `🏢 <b>Company</b>\n\nWhich company are you interviewing with?\n\nPlease send the company name.`,
     };
 
-    await ctx.reply(companyText[lang] || companyText['en'], {
+    const keyboard = new InlineKeyboard()
+      .text(lang === 'uz' ? '🔙 Bosh menyu' : lang === 'ru' ? '🔙 Главное меню' : '🔙 Main Menu', 'back_to_menu');
+
+    await this.replyOrEdit(ctx, companyText[lang] || companyText['en'], {
       parse_mode: 'HTML',
+      reply_markup: keyboard,
     });
   }
 
   /**
-   * Ask for CV (for real interviews)
+   * Ask for CV (for real/mock interviews)
+   * Smart CV selection:
+   * - If user has analyzed CV: offer to continue with it or upload new
+   * - If no CV: prompt to upload
    */
   private async askInterviewCv(ctx: BotContext) {
-    const lang = ctx.session?.language || 'en';
+    const telegramId = ctx.from?.id as number;
+    const user = await this.usersService.findByTelegramId(telegramId);
+
+    // Get language from session, user preferences, or database
+    let lang = ctx.session?.language;
+    if (!lang) {
+      if (user) {
+        lang = user.preferences?.language || user.language || 'en';
+      } else {
+        lang = 'en';
+      }
+      if (ctx.session) {
+        ctx.session.language = lang;
+      }
+    }
+
+    if (!user) {
+      const errorText: Record<string, string> = {
+        uz: `Xatolik: Foydalanuvchi topilmadi.`,
+        ru: `Ошибка: Пользователь не найден.`,
+        en: `Error: User not found.`,
+      };
+      await ctx.reply(errorText[lang] || errorText['en']);
+      return;
+    }
+
+    const userId = (user as any)._id?.toString() || (user as any).id?.toString() || user.id;
+    if (!userId) {
+      this.logger.error(`User ID is undefined for Telegram ID: ${telegramId}`);
+      return;
+    }
+
+    // Get user's CVs and find the latest analyzed one
+    const existingCvs = await this.cvService.getUserCvs(userId, 10, 0);
+    const analyzedCv = existingCvs.find(cv => cv.analysisStatus === 'completed' && cv.analysis);
+
+    if (analyzedCv) {
+      // User has an analyzed CV - offer to use it or upload new
+      await this.showCvSelectionOptions(ctx, lang, analyzedCv);
+    } else if (existingCvs.length > 0) {
+      // User has CVs but none are analyzed - show list with analysis status
+      await this.showCvListWithStatus(ctx, lang, existingCvs);
+    } else {
+      // No CVs - prompt upload
+      await this.promptCvUpload(ctx, lang);
+    }
+  }
+
+  /**
+   * Show options for user with analyzed CV:
+   * - Continue with existing CV
+   * - Upload new CV (will delete old and re-analyze)
+   */
+  private async showCvSelectionOptions(ctx: BotContext, lang: string, analyzedCv: any) {
+    const cvName = analyzedCv.fileName || 'CV';
+    const cvDate = analyzedCv.createdAt
+      ? new Date(analyzedCv.createdAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })
+      : '';
+    
+    // Extract key info from parsedData for display (not analysis - skills are in parsedData)
+    const skills = analyzedCv.parsedData?.skills?.slice(0, 3).join(', ') || '';
+    const skillsPreview = skills ? `\n🛠 ${lang === 'uz' ? "Ko'nikmalar" : lang === 'ru' ? 'Навыки' : 'Skills'}: ${skills}...` : '';
+
+    const messageText: Record<string, string> = {
+      uz:
+        `📄 <b>CV tanlash</b>\n\n` +
+        `Sizda tahlil qilingan CV mavjud:\n` +
+        `📁 <b>${cvName}</b>${cvDate ? ` (${cvDate})` : ''}` +
+        `${skillsPreview}\n\n` +
+        `Ushbu CV bilan intervyuni davom ettirasizmi?\n\n` +
+        `<i>Agar CV'ingizda yangilanishlar bo'lsa (yangi ko'nikmalar, tajriba), yangi CV yuklang.</i>`,
+      ru:
+        `📄 <b>Выбор CV</b>\n\n` +
+        `У вас есть проанализированное CV:\n` +
+        `📁 <b>${cvName}</b>${cvDate ? ` (${cvDate})` : ''}` +
+        `${skillsPreview}\n\n` +
+        `Продолжить интервью с этим CV?\n\n` +
+        `<i>Если в вашем CV есть обновления (новые навыки, опыт), загрузите новое CV.</i>`,
+      en:
+        `📄 <b>Select CV</b>\n\n` +
+        `You have an analyzed CV:\n` +
+        `📁 <b>${cvName}</b>${cvDate ? ` (${cvDate})` : ''}` +
+        `${skillsPreview}\n\n` +
+        `Continue interview with this CV?\n\n` +
+        `<i>If your CV has updates (new skills, experience), upload a new CV.</i>`,
+    };
+
+    const continueText: Record<string, string> = {
+      uz: '✅ Ushbu CV bilan davom etish',
+      ru: '✅ Продолжить с этим CV',
+      en: '✅ Continue with this CV',
+    };
+
+    const uploadNewText: Record<string, string> = {
+      uz: '📤 Yangi CV yuklash',
+      ru: '📤 Загрузить новое CV',
+      en: '📤 Upload new CV',
+    };
+
+    const backText = lang === 'uz' ? '🔙 Bosh menyu' : lang === 'ru' ? '🔙 Главное меню' : '🔙 Main Menu';
+
+    const keyboard = new InlineKeyboard()
+      .text(continueText[lang] || continueText['en'], `continue_with_cv_${analyzedCv.id}`)
+      .row()
+      .text(uploadNewText[lang] || uploadNewText['en'], 'upload_new_cv_replace')
+      .row()
+      .text(backText, 'back_to_menu');
+
+    await this.replyOrEdit(ctx, messageText[lang] || messageText['en'], {
+      parse_mode: 'HTML',
+      reply_markup: keyboard,
+    });
+  }
+
+  /**
+   * Show CV list with analysis status (for CVs that aren't analyzed)
+   */
+  private async showCvListWithStatus(ctx: BotContext, lang: string, cvs: any[]) {
+    const messageText: Record<string, string> = {
+      uz: `📄 <b>CV tanlash</b>\n\nSizda ${cvs.length} ta CV mavjud. Tahlil qilish yoki yangi yuklash uchun tanlang:`,
+      ru: `📄 <b>Выбор CV</b>\n\nУ вас ${cvs.length} CV. Выберите для анализа или загрузите новое:`,
+      en: `📄 <b>Select CV</b>\n\nYou have ${cvs.length} CV(s). Select to analyze or upload new:`,
+    };
+
+    const keyboard: any[] = [];
+
+    for (let i = 0; i < Math.min(cvs.length, 5); i++) {
+      const cv = cvs[i];
+      const status = cv.analysisStatus === 'completed' ? '✅' : cv.analysisStatus === 'processing' ? '⏳' : '📋';
+      const cvName = cv.fileName || `CV ${i + 1}`;
+      const buttonText = `${status} ${cvName}`.substring(0, 60);
+      
+      keyboard.push([{ text: buttonText, callback_data: `select_cv_${cv.id}` }]);
+    }
+
+    const uploadNewText: Record<string, string> = {
+      uz: '📤 Yangi CV yuklash',
+      ru: '📤 Загрузить новое CV',
+      en: '📤 Upload new CV',
+    };
+    const backText = lang === 'uz' ? '🔙 Bosh menyu' : lang === 'ru' ? '🔙 Главное меню' : '🔙 Main Menu';
+
+    keyboard.push([{ text: uploadNewText[lang] || uploadNewText['en'], callback_data: 'upload_new_cv' }]);
+    keyboard.push([{ text: backText, callback_data: 'back_to_menu' }]);
+
+    await this.replyOrEdit(ctx, messageText[lang] || messageText['en'], {
+      parse_mode: 'HTML',
+      reply_markup: { inline_keyboard: keyboard },
+    });
+  }
+
+  /**
+   * Prompt user to upload CV (no existing CVs)
+   */
+  private async promptCvUpload(ctx: BotContext, lang: string) {
     const cvText: Record<string, string> = {
       uz: `📄 <b>CV yuklash</b>\n\nIltimos, CV'ingizni PDF yoki DOCX formatida yuklang.\n\nBu CV intervyu uchun kontekst sifatida ishlatiladi.`,
       ru: `📄 <b>Загрузка CV</b>\n\nПожалуйста, загрузите ваше CV в формате PDF или DOCX.\n\nЭто CV будет использоваться как контекст для интервью.`,
       en: `📄 <b>Upload CV</b>\n\nPlease upload your CV in PDF or DOCX format.\n\nThis CV will be used as context for the interview.`,
     };
 
-    await ctx.reply(cvText[lang] || cvText['en'], {
+    const backText = lang === 'uz' ? '🔙 Bosh menyu' : lang === 'ru' ? '🔙 Главное меню' : '🔙 Main Menu';
+    const keyboard = new InlineKeyboard().text(backText, 'back_to_menu');
+
+    await this.replyOrEdit(ctx, cvText[lang] || cvText['en'], {
       parse_mode: 'HTML',
+      reply_markup: keyboard,
     });
   }
 
@@ -1437,6 +2173,79 @@ export class TelegramCommandsService {
 
     const step = ctx.session.interviewStep;
 
+    // Handle custom technology input
+    if (step === 'technology_custom') {
+      const technology = text.trim();
+      if (!technology || technology.length < 2) {
+        const errorText: Record<string, string> = {
+          uz: `⚠️ Texnologiya nomi juda qisqa. Iltimos, to'liq nomini yuboring.`,
+          ru: `⚠️ Название технологии слишком короткое. Пожалуйста, отправьте полное название.`,
+          en: `⚠️ Technology name is too short. Please send the full name.`,
+        };
+        await ctx.reply(errorText[lang] || errorText['en']);
+        return;
+      }
+
+      // Normalize technology name
+      const normalized = technology.toLowerCase();
+      const techMap: Record<string, string> = {
+        react: 'react',
+        vue: 'vue',
+        'vue.js': 'vue',
+        vuejs: 'vue',
+        angular: 'angular',
+        node: 'nodejs',
+        'node.js': 'nodejs',
+        nodejs: 'nodejs',
+        python: 'python',
+        java: 'java',
+        'c#': 'csharp',
+        csharp: 'csharp',
+        go: 'go',
+        golang: 'go',
+        rust: 'rust',
+        typescript: 'typescript',
+        ts: 'typescript',
+        javascript: 'javascript',
+        js: 'javascript',
+        postgresql: 'postgresql',
+        postgres: 'postgresql',
+        mysql: 'mysql',
+        mongodb: 'mongodb',
+        mongo: 'mongodb',
+        redis: 'redis',
+        docker: 'docker',
+        kubernetes: 'kubernetes',
+        k8s: 'kubernetes',
+        aws: 'aws',
+        azure: 'azure',
+        gcp: 'gcp',
+        'next.js': 'nextjs',
+        nextjs: 'nextjs',
+        express: 'express',
+        nestjs: 'nestjs',
+        nest: 'nestjs',
+      };
+
+      const finalTech =
+        techMap[normalized] || technology.toLowerCase().replace(/\s+/g, '').replace(/\./g, '');
+
+      ctx.session.interviewTechnology = finalTech;
+      ctx.session.interviewStep = 'position';
+
+      const confirmText: Record<string, string> = {
+        uz: `✅ Texnologiya tanlandi: <b>${finalTech}</b>`,
+        ru: `✅ Технология выбрана: <b>${finalTech}</b>`,
+        en: `✅ Technology selected: <b>${finalTech}</b>`,
+      };
+      await ctx.reply(confirmText[lang] || confirmText['en'], {
+        parse_mode: 'HTML',
+      });
+
+      await this.askInterviewPosition(ctx);
+      return;
+    }
+
     if (step === 'position') {
       // Save position and move to next step
       ctx.session.interviewPosition = text;
@@ -1472,7 +2281,30 @@ export class TelegramCommandsService {
       return;
     }
 
+    if (step === 'cv') {
+      // User sent text during CV upload step - remind them to upload file or select CV
+      const reminderText: Record<string, string> = {
+        uz:
+          `📄 <b>CV yuklash kerak</b>\n\n` +
+          `Iltimos CV faylingizni yuboring (PDF yoki DOCX formatida).\n\n` +
+          `Yoki agar sizda mavjud CV bo'lsa, yuqoridagi tugmalardan birini tanlang.`,
+        ru:
+          `📄 <b>Требуется загрузка CV</b>\n\n` +
+          `Пожалуйста, отправьте файл CV (в формате PDF или DOCX).\n\n` +
+          `Или если у вас есть существующее CV, выберите одну из кнопок выше.`,
+        en:
+          `📄 <b>CV upload required</b>\n\n` +
+          `Please send your CV file (in PDF or DOCX format).\n\n` +
+          `Or if you have an existing CV, select one of the buttons above.`,
+      };
+      await ctx.reply(reminderText[lang] || reminderText['en'], {
+        parse_mode: 'HTML',
+      });
+      return;
+    }
+
     // Check if there's an active interview session (answering questions)
+    // This should be checked BEFORE other steps, as interview answers can come at any time
     const sessionId = ctx.session.currentInterviewSessionId;
     if (sessionId && ctx.session.currentQuestionIndex !== undefined) {
       await this.handleInterviewAnswer(ctx, text);
@@ -1548,16 +2380,39 @@ export class TelegramCommandsService {
         // Map domain/technology to interview type (default to technical)
         const interviewType = 'technical'; // Can be enhanced to detect behavioral/case_study
 
-        // Create interview DTO
+        // Get CV analysis if CV was selected (for personalized questions)
+        let cvContext: { skills?: string[]; experience?: string; strengths?: string[]; summary?: string } | undefined;
+        if (ctx.session.interviewCvId) {
+          try {
+            const cv = await this.cvService.getCvById(userId, ctx.session.interviewCvId);
+            if (cv && cv.parsedData) {
+              // Get skills and experience from parsedData (parsed CV content)
+              // Get strengths from analysis if available
+              cvContext = {
+                skills: cv.parsedData.skills || [],
+                experience: cv.parsedData.summary || '',
+                strengths: cv.analysis?.strengths || [],
+                summary: cv.parsedData.summary || '',
+              };
+              this.logger.log(`CV context loaded for interview: ${cv.fileName}`);
+            }
+          } catch (cvError: any) {
+            this.logger.warn(`Failed to load CV context: ${cvError.message}`);
+            // Continue without CV context
+          }
+        }
+
+        // Create interview DTO with CV context
         const interviewDto = {
           type: interviewType,
           difficulty,
           domain: domain?.toLowerCase(),
           technology: technology ? [technology.toLowerCase()] : [],
-          numQuestions: 10, // Default 10 questions
+          numQuestions: 30, // Default 30 questions
           mode: 'text' as const, // Default to text mode for Telegram
           timeLimit: 5, // 5 minutes per question
           language: lang, // Pass user's language preference
+          cvContext, // Pass CV context for personalized questions
         };
 
         // Start interview session
@@ -1600,80 +2455,94 @@ export class TelegramCommandsService {
         // Show first question
         await this.showCurrentQuestion(ctx, session.id);
       } else if (mode === 'real') {
-        // Real interview - check if CV is uploaded
-        if (!ctx.session.interviewCvId) {
-          const cvNeededText: Record<string, string> = {
-            uz: `Iltimos CV'ingizni yuklang.`,
-            ru: `Пожалуйста, загрузите ваше CV.`,
-            en: `Please upload your CV.`,
-          };
-          await ctx.reply(cvNeededText[lang] || cvNeededText['en']);
-          return;
-        }
+        // Real interview mode - start Live Interview Assistance
+        // According to TZ: Real interview is NOT question-answer mode
+        // Instead, it's assistance mode where AI helps user during actual interview
 
-        // Map position to difficulty
-        if (!position) {
-          throw new Error('Position is required');
-        }
-        const difficulty = this.mapPositionToDifficulty(position);
+        // IMPORTANT: Save values to local variables BEFORE clearing session
+        const savedDomain = domain;
+        const savedTechnology = technology;
+        const savedPosition = position;
+        const savedCompany = ctx.session.interviewCompany;
 
-        // For real interviews, use mixed type to cover all aspects
-        const interviewType = 'mixed';
-
-        // Create interview DTO
-        const interviewDto = {
-          type: interviewType,
-          difficulty,
-          domain: domain?.toLowerCase(),
-          technology: technology ? [technology.toLowerCase()] : [],
-          numQuestions: 10, // Default 10 questions
-          mode: 'text' as const,
-          timeLimit: 5,
-          language: lang, // Pass user's language preference
+        // Save interview metadata for live session context
+        ctx.session.liveSessionMetadata = {
+          domain: savedDomain,
+          technologies: savedTechnology ? [savedTechnology] : [],
+          position: savedPosition,
+          company: savedCompany,
+          jobRole: savedPosition,
+          interviewType: 'real',
         };
 
-        // Start interview session
-        const session = await this.interviewsService.startInterview(userId, interviewDto);
-
-        // Store session ID
-        ctx.session.currentInterviewSessionId = session.id;
-        ctx.session.currentQuestionIndex = 0;
+        // Clear interview step to exit interview flow
         ctx.session.interviewStep = undefined;
+        ctx.session.interviewMode = undefined;
+        ctx.session.interviewDomain = undefined;
+        ctx.session.interviewTechnology = undefined;
+        ctx.session.interviewPosition = undefined;
+        ctx.session.interviewCompany = undefined;
+        ctx.session.interviewCvId = undefined;
 
-        // Show start message
-        const startText: Record<string, string> = {
+        // Mark as live session (so liveService.handleLiveMessage handles subsequent messages)
+        ctx.session.liveSessionStep = 'active';
+
+        // Start Live Interview Mode (assistance mode, not question-answer)
+        const liveStartText: Record<string, string> = {
           uz:
-            `💼 <b>Real Intervyu boshlanmoqda...</b>\n\n` +
-            `Soha: <b>${domain}</b>\n` +
-            `Texnologiya: <b>${technology}</b>\n` +
-            `Pozitsiya: <b>${position}</b>\n` +
-            `Kompaniya: <b>${ctx.session.interviewCompany}</b>\n` +
-            `Savollar soni: <b>${session.numQuestions}</b>\n\n` +
-            `Birinchi savolga o'tamiz...`,
+            `💼 <b>Real Intervyu Yordam Rejimi</b>\n\n` +
+            `Siz endi haqiqiy intervyuda bo'lsangiz, men sizga real vaqtda yordam bera olaman!\n\n` +
+            `📋 <b>Ma'lumotlar:</b>\n` +
+            `• Pozitsiya: <b>${savedPosition || "Noma'lum"}</b>\n` +
+            `• Kompaniya: <b>${savedCompany || "Noma'lum"}</b>\n` +
+            `• Soha: <b>${savedDomain || "Noma'lum"}</b>\n` +
+            `• Texnologiya: <b>${savedTechnology || "Noma'lum"}</b>\n\n` +
+            `🎯 <b>Qanday ishlaydi:</b>\n` +
+            `1. Intervyuer sizga savol beradi\n` +
+            `2. Siz menga savolni yuboring (matn yoki ovozli xabar)\n` +
+            `3. Men darhol professional javob beraman\n\n` +
+            `💡 <b>Maslahat:</b> Intervyu paytida savollarni yuborish uchun Telegram'ni ochiq qoldiring.\n\n` +
+            `Live rejim faollashtirildi! Savollaringizni yuboring.\n\n` +
+            `To'xtatish uchun /end_live buyrug'ini yuboring.`,
           ru:
-            `💼 <b>Начинается Real интервью...</b>\n\n` +
-            `Область: <b>${domain}</b>\n` +
-            `Технология: <b>${technology}</b>\n` +
-            `Позиция: <b>${position}</b>\n` +
-            `Компания: <b>${ctx.session.interviewCompany}</b>\n` +
-            `Количество вопросов: <b>${session.numQuestions}</b>\n\n` +
-            `Переходим к первому вопросу...`,
+            `💼 <b>Режим Помощи на Real Интервью</b>\n\n` +
+            `Если вы сейчас на реальном интервью, я могу помочь вам в реальном времени!\n\n` +
+            `📋 <b>Информация:</b>\n` +
+            `• Позиция: <b>${savedPosition || 'Неизвестно'}</b>\n` +
+            `• Компания: <b>${savedCompany || 'Неизвестно'}</b>\n` +
+            `• Область: <b>${savedDomain || 'Неизвестно'}</b>\n` +
+            `• Технология: <b>${savedTechnology || 'Неизвестно'}</b>\n\n` +
+            `🎯 <b>Как это работает:</b>\n` +
+            `1. Интервьюер задает вам вопрос\n` +
+            `2. Вы отправляете мне вопрос (текст или голосовое сообщение)\n` +
+            `3. Я сразу дам профессиональный ответ\n\n` +
+            `💡 <b>Совет:</b> Держите Telegram открытым во время интервью для отправки вопросов.\n\n` +
+            `Live режим активирован! Отправляйте вопросы.\n\n` +
+            `Для остановки отправьте /end_live.`,
           en:
-            `💼 <b>Starting Real Interview...</b>\n\n` +
-            `Domain: <b>${domain}</b>\n` +
-            `Technology: <b>${technology}</b>\n` +
-            `Position: <b>${position}</b>\n` +
-            `Company: <b>${ctx.session.interviewCompany}</b>\n` +
-            `Number of questions: <b>${session.numQuestions}</b>\n\n` +
-            `Moving to the first question...`,
+            `💼 <b>Real Interview Assistance Mode</b>\n\n` +
+            `If you're currently in a real interview, I can help you in real-time!\n\n` +
+            `📋 <b>Information:</b>\n` +
+            `• Position: <b>${savedPosition || 'Unknown'}</b>\n` +
+            `• Company: <b>${savedCompany || 'Unknown'}</b>\n` +
+            `• Domain: <b>${savedDomain || 'Unknown'}</b>\n` +
+            `• Technology: <b>${savedTechnology || 'Unknown'}</b>\n\n` +
+            `🎯 <b>How it works:</b>\n` +
+            `1. Interviewer asks you a question\n` +
+            `2. You send me the question (text or voice message)\n` +
+            `3. I'll provide instant professional answers\n\n` +
+            `💡 <b>Tip:</b> Keep Telegram open during the interview to send questions.\n\n` +
+            `Live mode activated! Send me questions.\n\n` +
+            `To stop, send /end_live.`,
         };
 
-        await ctx.reply(startText[lang] || startText['en'], {
+        await ctx.reply(liveStartText[lang] || liveStartText['en'], {
           parse_mode: 'HTML',
         });
 
-        // Show first question
-        await this.showCurrentQuestion(ctx, session.id);
+        // NOTE: Do NOT call liveService.handleStartLive(ctx) here!
+        // That would re-ask for metadata. We already have all metadata from interview setup.
+        // The session is now in live mode (liveSessionStep = 'active').
       }
     } catch (error) {
       this.logger.error(`Error starting interview: ${error.message}`, error.stack);
@@ -1921,6 +2790,24 @@ export class TelegramCommandsService {
         path: '',
       } as Express.Multer.File;
 
+      // SECURITY CHECK: Validate file using centralized SecurityService
+      await this.securityService.validateFile(multerFile);
+
+      // DELETE OLD CVS: Remove all existing CVs before uploading new one
+      // This ensures user always has only one CV (latest)
+      const existingCvs = await this.cvService.getUserCvs(userId, 10, 0);
+      if (existingCvs.length > 0) {
+        this.logger.log(`Deleting ${existingCvs.length} old CV(s) for user ${userId}`);
+        for (const oldCv of existingCvs) {
+          try {
+            await this.cvService.deleteCv(userId, oldCv.id);
+            this.logger.log(`Deleted old CV ${oldCv.id}`);
+          } catch (deleteError: any) {
+            this.logger.warn(`Failed to delete old CV ${oldCv.id}: ${deleteError.message}`);
+          }
+        }
+      }
+
       // Upload CV
       const cv = await this.cvService.uploadCv(userId, multerFile, {});
 
@@ -1941,12 +2828,21 @@ export class TelegramCommandsService {
       // Poll for analysis completion
       await this.pollCvAnalysis(ctx, cv.id, userId);
     } catch (error) {
-      this.logger.error(`Error handling CV upload: ${error.message}`, error.stack);
+      if (error instanceof Error && error.message.includes('Security check failed')) {
+          this.logger.warn(`Security check blocked file upload: ${error.message}`);
+      } else {
+          this.logger.error(`Error handling CV upload: ${error.message}`, error.stack);
+      }
+      
       ctx.session.cvUploadStep = undefined;
+      
+      // Use specific error message if it's a known error (like security validation)
+      const isSecurityError = error.status === 400 || (error.message && (error.message.includes('Security') || error.message.includes('integrity') || error.message.includes('size')));
+      
       const errorText: Record<string, string> = {
-        uz: `CV yuklashda xatolik yuz berdi. Iltimos qayta urinib ko'ring.`,
-        ru: `Произошла ошибка при загрузке CV. Пожалуйста, попробуйте снова.`,
-        en: `An error occurred while uploading CV. Please try again.`,
+        uz: isSecurityError ? `❌ Xavfsizlik tekshiruvi xatosi: ${error.message}` : `CV yuklashda xatolik yuz berdi. Iltimos qayta urinib ko'ring.`,
+        ru: isSecurityError ? `❌ Ошибка проверки безопасности: ${error.message}` : `Произошла ошибка при загрузке CV. Пожалуйста, попробуйте снова.`,
+        en: isSecurityError ? `❌ Security check error: ${error.message}` : `An error occurred while uploading CV. Please try again.`,
       };
       await ctx.reply(errorText[lang] || errorText['en']);
     }
@@ -1994,6 +2890,20 @@ export class TelegramCommandsService {
         en: `❌ Wrong format!\n\nPlease send a file in PDF or DOCX format.`,
       };
       await ctx.reply(wrongFormatText[lang] || wrongFormatText['en'], {
+        parse_mode: 'HTML',
+      });
+      return;
+    }
+
+    // Check file size (max 5MB)
+    const maxSize = 5 * 1024 * 1024; // 5MB
+    if (document.file_size && document.file_size > maxSize) {
+      const sizeErrorText: Record<string, string> = {
+        uz: `❌ Fayl hajmi juda katta!\n\nMaksimal hajm: 5MB\nSizning faylingiz: ${(document.file_size / 1024 / 1024).toFixed(2)}MB\n\nIltimos kichikroq fayl yuboring.`,
+        ru: `❌ Файл слишком большой!\n\nМаксимальный размер: 5MB\nВаш файл: ${(document.file_size / 1024 / 1024).toFixed(2)}MB\n\nПожалуйста, отправьте файл меньшего размера.`,
+        en: `❌ File too large!\n\nMax size: 5MB\nYour file: ${(document.file_size / 1024 / 1024).toFixed(2)}MB\n\nPlease send a smaller file.`,
+      };
+      await ctx.reply(sizeErrorText[lang] || sizeErrorText['en'], {
         parse_mode: 'HTML',
       });
       return;
@@ -2052,6 +2962,24 @@ export class TelegramCommandsService {
         path: '',
       } as Express.Multer.File;
 
+      // SECURITY CHECK: Validate file using centralized SecurityService
+      await this.securityService.validateFile(multerFile);
+
+      // DELETE OLD CVS: Remove all existing CVs before uploading new one
+      // This ensures user always has only one CV (latest)
+      const existingCvs = await this.cvService.getUserCvs(userId, 10, 0);
+      if (existingCvs.length > 0) {
+        this.logger.log(`Deleting ${existingCvs.length} old CV(s) for user ${userId} (interview flow)`);
+        for (const oldCv of existingCvs) {
+          try {
+            await this.cvService.deleteCv(userId, oldCv.id);
+            this.logger.log(`Deleted old CV ${oldCv.id}`);
+          } catch (deleteError: any) {
+            this.logger.warn(`Failed to delete old CV ${oldCv.id}: ${deleteError.message}`);
+          }
+        }
+      }
+
       // Upload CV
       const cv = await this.cvService.uploadCv(userId, multerFile, {
         jobDescription: `Position: ${ctx.session.interviewPosition}, Company: ${ctx.session.interviewCompany}`,
@@ -2072,16 +3000,58 @@ export class TelegramCommandsService {
 
       // Start interview
       await this.startInterviewSession(ctx);
-    } catch (error) {
-      this.logger.error(`Error handling document: ${error.message}`, error.stack);
-      const errorText: Record<string, string> = {
-        uz: `CV yuklashda xatolik yuz berdi. Iltimos qayta urinib ko'ring.`,
-        ru: `Произошла ошибка при загрузке CV. Пожалуйста, попробуйте снова.`,
-        en: `An error occurred while uploading CV. Please try again.`,
-      };
-      await ctx.reply(errorText[lang] || errorText['en']);
+    } catch (error: any) {
+      if (error instanceof Error && error.message.includes('Security check failed')) {
+          this.logger.warn(`Security check blocked file upload: ${error.message}`);
+      } else {
+          this.logger.error(`Error handling document: ${error.message}`, error.stack);
+      }
+
+      // Reset session state on error
+      ctx.session.interviewStep = 'cv';
+
+      // Provide specific error messages
+      let errorText: Record<string, string>;
+
+      // Use specific error message if it's a known error (like security validation)
+      const isSecurityError = error.status === 400 || (error.message && (error.message.includes('Security') || error.message.includes('integrity') || error.message.includes('size')));
+
+      if (isSecurityError) {
+        errorText = {
+          uz: `❌ Xavfsizlik tekshiruvi xatosi: ${error.message}`,
+          ru: `❌ Ошибка проверки безопасности: ${error.message}`,
+          en: `❌ Security check error: ${error.message}`,
+        };
+      } else if (error.message?.includes('parse') || error.message?.includes('Failed to parse')) {
+        errorText = {
+          uz:
+            `❌ <b>CV faylini tahlil qilishda xatolik</b>\n\n` +
+            `Faylning ichidagi matnni o'qib bo'lmadi. Iltimos, boshqa fayl yuklab ko'ring.\n` +
+            `Tavsiya: PDF yoki oddiy DOCX fayl yuklang (skaner qilingan rasm emas).`,
+          ru:
+            `❌ <b>Ошибка анализа файла CV</b>\n\n` +
+            `Не удалось прочитать текст файла. Пожалуйста, попробуйте загрузить другой файл.\n` +
+            `Совет: Загрузите PDF или обычный DOCX файл (не скан-копию).`,
+          en:
+            `❌ <b>Error parsing CV file</b>\n\n` +
+            `Could not read text from file. Please try uploading another file.\n` +
+            `Tip: Upload a PDF or standard DOCX file (not a scanned image).`,
+        };
+      } else {
+        errorText = {
+          uz: `Xatolik yuz berdi. Iltimos qayta urinib ko'ring.`,
+          ru: `Произошла ошибка. Пожалуйста, попробуйте снова.`,
+          en: `An error occurred. Please try again.`,
+        };
+      }
+      
+      await ctx.reply(errorText[lang] || errorText['en'], {
+        parse_mode: 'HTML',
+      });
     }
   }
+
+
 
   /**
    * Poll for CV analysis completion
@@ -2155,6 +3125,8 @@ export class TelegramCommandsService {
    * Display CV analysis results
    */
   private async displayCvAnalysis(ctx: BotContext, cv: any) {
+    this.logger.debug(`displayCvAnalysis called for CV ${cv.id}`);
+
     const telegramId = ctx.from?.id as number;
     const user = await this.usersService.findByTelegramId(telegramId);
 
@@ -2175,6 +3147,7 @@ export class TelegramCommandsService {
     const analysis = cv.analysis;
 
     if (!analysis) {
+      this.logger.warn(`CV ${cv.id} has no analysis data`);
       const noAnalysisText: Record<string, string> = {
         uz: `Tahlil natijalari hali tayyor emas.`,
         ru: `Результаты анализа еще не готовы.`,
@@ -2184,65 +3157,163 @@ export class TelegramCommandsService {
       return;
     }
 
-    // Format analysis results
+    // Validate analysis structure
+    if (!analysis.atsScore && !analysis.strengths && !analysis.weaknesses) {
+      this.logger.warn(`CV ${cv.id} has incomplete analysis data`);
+      const incompleteText: Record<string, string> = {
+        uz: `Tahlil natijalari to'liq emas. Qayta tahlil qilishni tavsiya qilamiz.`,
+        ru: `Результаты анализа неполные. Рекомендуем переанализировать.`,
+        en: `Analysis results are incomplete. We recommend re-analyzing.`,
+      };
+      await ctx.reply(incompleteText[lang] || incompleteText['en']);
+      return;
+    }
+
+    // Format analysis results with safe access to nested properties
+    const atsScore = analysis.atsScore ?? 0;
+    const overallRating = analysis.overallRating ?? 0;
+    const aiRejectionRisk = analysis.aiRejectionRisk || 'Unknown';
+    const sixSecondVerdict = analysis.sixSecondVerdict || 'Unknown';
+    const isPass = sixSecondVerdict.toUpperCase().includes('PASS');
+    
+    const strengths = Array.isArray(analysis.strengths) ? analysis.strengths : [];
+    const criticalWeaknesses = Array.isArray(analysis.criticalWeaknesses) ? analysis.criticalWeaknesses : [];
+    const missingKeywords = Array.isArray(analysis.missingKeywords) ? analysis.missingKeywords : [];
+    const transformationRoadmap = Array.isArray(analysis.transformationRoadmap) ? analysis.transformationRoadmap : [];
+    const aiBypassTips = Array.isArray(analysis.aiBypassTips) ? analysis.aiBypassTips : [];
+    const quickWins = Array.isArray(analysis.quickWins) ? analysis.quickWins : [];
+
+    // Format Transformation Roadmap (Limit to 3 to avoid msg length limits)
+    const formatRoadmap = (items: any[]) => {
+      if (!items || items.length === 0) return '';
+      return items.slice(0, 3).map((item, idx) => 
+        `🛠 <b>${idx + 1}. ${item.problem || 'Issue'}</b>\n` +
+        `❌ Before: <i>"${item.before || ''}"</i>\n` +
+        `✅ After: <b>"${item.after || ''}"</b>\n` +
+        `📈 Impact: ${item.impactOnScore || 'High'}`
+      ).join('\n\n');
+    };
+
     const analysisText: Record<string, string> = {
       uz:
-        `📊 <b>CV Tahlil Natijalari</b>\n\n` +
-        `📈 <b>ATS Balli:</b> ${analysis.atsScore}%\n` +
-        `⭐ <b>Umumiy Reyting:</b> ${analysis.overallRating}/10\n\n` +
-        `✅ <b>Kuchli tomonlar:</b>\n${analysis.strengths.map((s: string) => `• ${s}`).join('\n')}\n\n` +
-        `⚠️ <b>Zaif tomonlar:</b>\n${analysis.weaknesses.map((w: string) => `• ${w}`).join('\n')}\n\n` +
-        `💡 <b>Tavsiyalar:</b>\n${analysis.suggestions
-          .slice(0, 5)
-          .map((s: any) => `• ${s.message}`)
-          .join('\n')}`,
+        `📊 <b>KUCHAYTIRILGAN CV TAHLIL</b>\n\n` +
+        `🎯 <b>ATS Balli:</b> ${atsScore}%\n` +
+        `⚠️ <b>AI Rad Etish Xavfi:</b> ${aiRejectionRisk.toUpperCase()}\n` +
+        `👀 <b>6-Soniyalik Hukm:</b> ${isPass ? '✅ O\'TDI' : '❌ YIQILDI'}\n\n` +
+        
+        (strengths.length > 0
+          ? `💪 <b>KUCHLI TOMONLAR:</b>\n${strengths.slice(0, 3).map((s: string) => `• ${s}`).join('\n')}\n\n`
+          : '') +
+
+        (criticalWeaknesses.length > 0
+          ? `🚫 <b>KRITIK XATOLAR (Rad etilish sabablari):</b>\n${criticalWeaknesses.map((w: string) => `• ${w}`).join('\n')}\n\n`
+          : '') +
+
+        (missingKeywords.length > 0
+          ? `🔑 <b>YETISHMAYOTGAN KALIT SO'ZLAR (Juda muhim):</b>\n${missingKeywords.slice(0, 10).map((k: string) => `• <code>${k}</code>`).join(', ')}\n\n`
+          : '') +
+
+        (transformationRoadmap.length > 0
+          ? `🔄 <b>TRANSFORMATSIYA REJASI (Before/After):</b>\n\n${formatRoadmap(transformationRoadmap)}\n\n`
+          : '') +
+
+        (aiBypassTips.length > 0
+          ? `🤖 <b>AI SKRININGDAN O'TISH SIRLARI:</b>\n${aiBypassTips.map((s: string) => `• ${s}`).join('\n')}\n\n`
+          : '') +
+
+        (quickWins.length > 0
+            ? `⚡ <b>5-Daqiqalik Tezkor G'alabalar:</b>\n${quickWins.map((s: string) => `• ${s}`).join('\n')}\n`
+            : ''),
+
       ru:
-        `📊 <b>Результаты анализа CV</b>\n\n` +
-        `📈 <b>ATS Балл:</b> ${analysis.atsScore}%\n` +
-        `⭐ <b>Общий Рейтинг:</b> ${analysis.overallRating}/10\n\n` +
-        `✅ <b>Сильные стороны:</b>\n${analysis.strengths.map((s: string) => `• ${s}`).join('\n')}\n\n` +
-        `⚠️ <b>Слабые стороны:</b>\n${analysis.weaknesses.map((w: string) => `• ${w}`).join('\n')}\n\n` +
-        `💡 <b>Рекомендации:</b>\n${analysis.suggestions
-          .slice(0, 5)
-          .map((s: any) => `• ${s.message}`)
-          .join('\n')}`,
+        `📊 <b>ГЛУБОКИЙ АНАЛИЗ CV</b>\n\n` +
+        `🎯 <b>Балл ATS:</b> ${atsScore}%\n` +
+        `⚠️ <b>Риск отказа ИИ:</b> ${aiRejectionRisk.toUpperCase()}\n` +
+        `👀 <b>6-Секундный Вердикт:</b> ${isPass ? '✅ ПРОШЕЛ' : '❌ НЕ ПРОШЕЛ'}\n\n` +
+        
+        (strengths.length > 0
+          ? `💪 <b>СИЛЬНЫЕ СТОРОНЫ:</b>\n${strengths.slice(0, 3).map((s: string) => `• ${s}`).join('\n')}\n\n`
+          : '') +
+
+        (criticalWeaknesses.length > 0
+          ? `🚫 <b>КРИТИЧЕСКИЕ ОШИБКИ (Причины отказа):</b>\n${criticalWeaknesses.map((w: string) => `• ${w}`).join('\n')}\n\n`
+          : '') +
+
+        (missingKeywords.length > 0
+          ? `🔑 <b>ПРОПУЩЕННЫЕ КЛЮЧЕВЫЕ СЛОВА:</b>\n${missingKeywords.slice(0, 10).map((k: string) => `• <code>${k}</code>`).join(', ')}\n\n`
+          : '') +
+
+        (transformationRoadmap.length > 0
+          ? `🔄 <b>ПЛАН ТРАНСФОРМАЦИИ (До/После):</b>\n\n${formatRoadmap(transformationRoadmap)}\n\n`
+          : '') +
+
+        (aiBypassTips.length > 0
+          ? `🤖 <b>СЕКРЕТЫ ПРОХОЖДЕНИЯ ИИ:</b>\n${aiBypassTips.map((s: string) => `• ${s}`).join('\n')}\n\n`
+          : '') +
+          
+        (quickWins.length > 0
+            ? `⚡ <b>Быстрые Победы (5 мин):</b>\n${quickWins.map((s: string) => `• ${s}`).join('\n')}\n`
+            : ''),
+
       en:
-        `📊 <b>CV Analysis Results</b>\n\n` +
-        `📈 <b>ATS Score:</b> ${analysis.atsScore}%\n` +
-        `⭐ <b>Overall Rating:</b> ${analysis.overallRating}/10\n\n` +
-        `✅ <b>Strengths:</b>\n${analysis.strengths.map((s: string) => `• ${s}`).join('\n')}\n\n` +
-        `⚠️ <b>Weaknesses:</b>\n${analysis.weaknesses.map((w: string) => `• ${w}`).join('\n')}\n\n` +
-        `💡 <b>Suggestions:</b>\n${analysis.suggestions
-          .slice(0, 5)
-          .map((s: any) => `• ${s.message}`)
-          .join('\n')}`,
+        `📊 <b>DEEP DIVE CV FORENSICS</b>\n\n` +
+        `🎯 <b>ATS Score:</b> ${atsScore}%\n` +
+        `⚠️ <b>AI Rejection Risk:</b> ${aiRejectionRisk.toUpperCase()}\n` +
+        `👀 <b>6-Second Verdict:</b> ${isPass ? '✅ PASS' : '❌ FAIL'}\n\n` +
+        
+        (strengths.length > 0
+          ? `💪 <b>STRENGTHS:</b>\n${strengths.slice(0, 3).map((s: string) => `• ${s}`).join('\n')}\n\n`
+          : '') +
+
+        (criticalWeaknesses.length > 0
+          ? `🚫 <b>CRITICAL WEAKNESSES (Rejection Reasons):</b>\n${criticalWeaknesses.map((w: string) => `• ${w}`).join('\n')}\n\n`
+          : '') +
+
+        (missingKeywords.length > 0
+          ? `🔑 <b>MISSING KEYWORDS (Critical):</b>\n${missingKeywords.slice(0, 10).map((k: string) => `• <code>${k}</code>`).join(', ')}\n\n`
+          : '') +
+
+        (transformationRoadmap.length > 0
+          ? `🔄 <b>TRANSFORMATION ROADMAP (Before/After):</b>\n\n${formatRoadmap(transformationRoadmap)}\n\n`
+          : '') +
+
+        (aiBypassTips.length > 0
+          ? `🤖 <b>AI BYPASS STRATEGIES:</b>\n${aiBypassTips.map((s: string) => `• ${s}`).join('\n')}\n\n`
+          : '') +
+
+        (quickWins.length > 0
+            ? `⚡ <b>5-Minute Quick Wins:</b>\n${quickWins.map((s: string) => `• ${s}`).join('\n')}\n`
+            : ''),
     };
 
-    // CV analysis buttons - multi-language
-    const cvButtonTexts: Record<string, { details: string; reanalyze: string; all: string }> = {
+    // CV analysis buttons - simplified: only reanalyze and back
+    const cvButtonTexts: Record<string, { reanalyze: string; back: string }> = {
       uz: {
-        details: '📄 Batafsil',
         reanalyze: '🔄 Qayta tahlil qilish',
-        all: "📋 Barcha CV'lar",
+        back: '🔙 Bosh menyu',
       },
       ru: {
-        details: '📄 Подробнее',
         reanalyze: '🔄 Переанализировать',
-        all: '📋 Все CV',
+        back: '🔙 Главное меню',
       },
       en: {
-        details: '📄 Details',
         reanalyze: '🔄 Re-analyze',
-        all: '📋 All CVs',
+        back: '🔙 Main Menu',
       },
     };
 
+    // Check CV analysis usage limits to determine if "Re-analyze" button should be shown
+    const canAnalyzeCv = await this.subscriptionService.checkCvAnalysisLimit(ctx, user, lang, false); // false = don't notify, just check status
+
     const cvButtons = cvButtonTexts[lang] || cvButtonTexts['en'];
-    const keyboard = new InlineKeyboard()
-      .text(cvButtons.details, `cv_detail_${cv.id}`)
-      .row()
-      .text(cvButtons.reanalyze, `cv_reanalyze_${cv.id}`)
-      .text(cvButtons.all, 'cv_list');
+    const keyboard = new InlineKeyboard();
+    
+    // Only show Re-analyze button if user has remaining limit
+    if (canAnalyzeCv) {
+      keyboard.text(cvButtons.reanalyze, `cv_reanalyze_${cv.id}`).row();
+    }
+    
+    keyboard.text(cvButtons.back, 'back_to_menu');
 
     await ctx.reply(analysisText[lang] || analysisText['en'], {
       reply_markup: keyboard,
@@ -2337,14 +3408,27 @@ export class TelegramCommandsService {
         try {
           // Use direct OpenAI API call for faster, simpler translation
           const languageName = lang === 'uz' ? "O'zbek" : lang === 'ru' ? 'Русский' : 'English';
-          const translationPrompt = `Translate the following interview question to ${languageName} language. Return ONLY the translated question text, nothing else, no explanations, no JSON, no quotes, just the pure translation:\n\n${question.question}`;
+
+          // Professional translation prompt with context
+          const translationPrompt = `Translate the following interview question to ${languageName} language. 
+
+CRITICAL REQUIREMENTS:
+1. Return ONLY the translated question text
+2. No explanations, no JSON, no quotes, no markdown
+3. Maintain the original meaning and technical accuracy
+4. Use natural, professional language appropriate for interviews
+5. Preserve any technical terms, code concepts, or proper nouns correctly
+6. Keep the question format (question mark at the end)
+
+Interview Question to Translate:
+${question.question}`;
 
           const completion = await this.openai.chat.completions.create({
-            model: getModelName(this.configService, 'gpt-3.5-turbo', 'openai/gpt-5-nano'),
+            model: getModelName(this.configService, 'gpt-3.5-turbo', 'openai/gpt-4o-mini'),
             messages: [
               {
                 role: 'system',
-                content: `You are a professional translator. Translate interview questions accurately and naturally. Return only the translated text, no explanations.`,
+                content: `You are a professional translator specializing in technical and interview content. Translate interview questions accurately, naturally, and professionally. Maintain technical accuracy and preserve the original meaning. Return only the translated text without any additional formatting, explanations, or metadata.`,
               },
               {
                 role: 'user',
@@ -2352,7 +3436,7 @@ export class TelegramCommandsService {
               },
             ],
             max_tokens: 200,
-            temperature: 0.3, // Lower temperature for more consistent translations
+            temperature: 0.2, // Lower temperature for more consistent, accurate translations
           });
 
           const translated = completion.choices[0]?.message?.content?.trim();
@@ -2381,15 +3465,15 @@ export class TelegramCommandsService {
         uz:
           `❓ <b>Savol ${questionNumber}/${totalQuestions}</b>\n\n` +
           `${questionTextTranslated}\n\n` +
-          `Javobingizni yuboring (matn yoki ovozli xabar):`,
+          `Javobingizni matn shaklida yuboring:`,
         ru:
           `❓ <b>Вопрос ${questionNumber}/${totalQuestions}</b>\n\n` +
           `${questionTextTranslated}\n\n` +
-          `Отправьте ваш ответ (текст или голосовое сообщение):`,
+          `Отправьте ваш ответ текстом:`,
         en:
           `❓ <b>Question ${questionNumber}/${totalQuestions}</b>\n\n` +
           `${questionTextTranslated}\n\n` +
-          `Send your answer (text or voice message):`,
+          `Send your answer as text:`,
       };
 
       // Interview control buttons - multi-language
@@ -2496,6 +3580,16 @@ export class TelegramCommandsService {
         return;
       }
 
+      // Get question ID - handle both populated objects and ObjectId strings
+      let questionId: string;
+      if (typeof currentQuestion === 'object' && currentQuestion._id) {
+        questionId = currentQuestion._id.toString();
+      } else if (currentQuestion.id) {
+        questionId = currentQuestion.id.toString();
+      } else {
+        questionId = currentQuestion.toString();
+      }
+
       // Show processing message
       const processingText: Record<string, string> = {
         uz: `⏳ Javobingiz tahlil qilinmoqda...`,
@@ -2504,21 +3598,31 @@ export class TelegramCommandsService {
       };
       await ctx.reply(processingText[lang] || processingText['en']);
 
-      // Submit answer
-      await this.interviewsService.submitAnswer(userId, sessionId, {
-        questionId: currentQuestion.id || currentQuestion._id.toString(),
+      // Submit answer (this saves to DB and queues feedback generation)
+      const answer = await this.interviewsService.submitAnswer(userId, sessionId, {
+        questionId,
         answerType: 'text',
         answerText,
         duration: 0, // Can be calculated if needed
       });
 
-      // Show success and move to next question
-      const successText: Record<string, string> = {
-        uz: `✅ Javob qabul qilindi!\n\nKeyingi savolga o'tamiz...`,
-        ru: `✅ Ответ принят!\n\nПереходим к следующему вопросу...`,
-        en: `✅ Answer submitted!\n\nMoving to next question...`,
+      // OPTIMIZATION: Immediate feedback is disabled to save tokens.
+      // Feedback will be provided at the end of the session in a batch.
+      
+      const savedText: Record<string, string> = {
+        uz: `✅ Javob qabul qilindi.`,
+        ru: `✅ Ответ принят.`,
+        en: `✅ Answer saved.`,
       };
-      await ctx.reply(successText[lang] || successText['en']);
+      await ctx.reply(savedText[lang] || savedText['en']);
+
+      // Show success and move to next question
+      const nextQuestionText: Record<string, string> = {
+        uz: `➡️ Keyingi savolga o'tamiz...`,
+        ru: `➡️ Переходим к следующему вопросу...`,
+        en: `➡️ Moving to next question...`,
+      };
+      await ctx.reply(nextQuestionText[lang] || nextQuestionText['en']);
 
       // Show next question
       ctx.session.currentQuestionIndex = questionIndex + 1;
@@ -2618,7 +3722,7 @@ export class TelegramCommandsService {
     userId: string,
     attempts = 0,
   ) {
-    const maxAttempts = 30; // 30 attempts = ~2.5 minutes
+    const maxAttempts = 60; // 60 attempts = 5 minutes (extended for batch processing)
 
     // Get language from session, user preferences, or database
     let lang = ctx.session?.language;
@@ -2681,6 +3785,10 @@ export class TelegramCommandsService {
   private async displayInterviewResults(ctx: BotContext, session: any) {
     const telegramId = ctx.from?.id as number;
     const user = await this.usersService.findByTelegramId(telegramId);
+    if (!user) return;
+    
+    // Get user ID
+    const userId = (user as any)._id?.toString() || (user as any).id?.toString() || user.id;
 
     // Get language from session, user preferences, or database
     let lang = ctx.session?.language;
@@ -2702,40 +3810,72 @@ export class TelegramCommandsService {
       return;
     }
 
+    // Calculate score difference
+    let trendText = '';
+    try {
+      // Get history to compare with previous session
+      // history[0] is current session (newest), history[1] is previous session
+      const history = await this.interviewsService.getHistory(userId, 2, 0);
+      
+      if (history.length >= 2 && history[0].id.toString() === session.id.toString()) {
+         const prevScore = history[1].overallScore;
+         if (prevScore !== undefined) {
+            const diff = session.overallScore - prevScore;
+            const diffStr = diff > 0 ? `+${diff.toFixed(1)}` : diff.toFixed(1);
+            const icon = diff > 0 ? '📈' : diff < 0 ? '📉' : '➡️';
+            
+            const diffMessages: Record<string, string> = {
+                uz: `${icon} Avvalgi natijadan ${diffStr} ball`,
+                ru: `${icon} ${diffStr} баллов от прошлого`,
+                en: `${icon} ${diffStr} points from previous`,
+            };
+            trendText = diffMessages[lang] || diffMessages['en'];
+         }
+      }
+    } catch (e) {
+      // Ignore error in trend calculation
+    }
+
     const resultsText: Record<string, string> = {
       uz:
         `📊 <b>Intervyu Natijalari</b>\n\n` +
-        `⭐ <b>Umumiy Ball:</b> ${session.overallScore}/10\n\n` +
+        `⭐ <b>Umumiy Ball:</b> ${session.overallScore}/10\n` +
+        (trendText ? `<b>${trendText}</b>\n\n` : `\n`) +
         `✅ <b>Kuchli tomonlar:</b>\n${feedback.summary?.strengths?.map((s: string) => `• ${s}`).join('\n') || 'N/A'}\n\n` +
         `⚠️ <b>Zaif tomonlar:</b>\n${feedback.summary?.weaknesses?.map((w: string) => `• ${w}`).join('\n') || 'N/A'}\n\n` +
         `💡 <b>Tavsiyalar:</b>\n${feedback.recommendations?.map((r: string) => `• ${r}`).join('\n') || 'N/A'}`,
       ru:
         `📊 <b>Результаты интервью</b>\n\n` +
-        `⭐ <b>Общий Балл:</b> ${session.overallScore}/10\n\n` +
+        `⭐ <b>Общий Балл:</b> ${session.overallScore}/10\n` +
+        (trendText ? `<b>${trendText}</b>\n\n` : `\n`) +
         `✅ <b>Сильные стороны:</b>\n${feedback.summary?.strengths?.map((s: string) => `• ${s}`).join('\n') || 'N/A'}\n\n` +
         `⚠️ <b>Слабые стороны:</b>\n${feedback.summary?.weaknesses?.map((w: string) => `• ${w}`).join('\n') || 'N/A'}\n\n` +
         `💡 <b>Рекомендации:</b>\n${feedback.recommendations?.map((r: string) => `• ${r}`).join('\n') || 'N/A'}`,
       en:
         `📊 <b>Interview Results</b>\n\n` +
-        `⭐ <b>Overall Score:</b> ${session.overallScore}/10\n\n` +
+        `⭐ <b>Overall Score:</b> ${session.overallScore}/10\n` +
+        (trendText ? `<b>${trendText}</b>\n\n` : `\n`) +
         `✅ <b>Strengths:</b>\n${feedback.summary?.strengths?.map((s: string) => `• ${s}`).join('\n') || 'N/A'}\n\n` +
         `⚠️ <b>Weaknesses:</b>\n${feedback.summary?.weaknesses?.map((w: string) => `• ${w}`).join('\n') || 'N/A'}\n\n` +
         `💡 <b>Recommendations:</b>\n${feedback.recommendations?.map((r: string) => `• ${r}`).join('\n') || 'N/A'}`,
     };
 
     // Interview results buttons - multi-language
-    const resultButtonTexts: Record<string, { details: string; new: string }> = {
+    const resultButtonTexts: Record<string, { details: string; new: string; back: string }> = {
       uz: {
         details: '📄 Batafsil',
         new: '🔄 Yangi intervyu',
+        back: '🔙 Bosh menyu',
       },
       ru: {
         details: '📄 Подробнее',
         new: '🔄 Новое интервью',
+        back: '🔙 Главное меню',
       },
       en: {
         details: '📄 Details',
         new: '🔄 New Interview',
+        back: '🔙 Main Menu',
       },
     };
 
@@ -2743,11 +3883,51 @@ export class TelegramCommandsService {
     const keyboard = new InlineKeyboard()
       .text(resultButtons.details, `interview_detail_${session.id}`)
       .row()
-      .text(resultButtons.new, 'interview_new');
+      .text(resultButtons.new, 'interview_new')
+      .row()
+      .text(resultButtons.back, 'back_to_menu');
 
     await ctx.reply(resultsText[lang] || resultsText['en'], {
       reply_markup: keyboard,
       parse_mode: 'HTML',
     });
+  }
+
+  private getBackKeyboard(lang: string): InlineKeyboard {
+    const backText: Record<string, string> = {
+      uz: '⬅️ Asosiy menyu',
+      ru: '⬅️ Главное меню',
+      en: '⬅️ Main Menu',
+    };
+
+    return new InlineKeyboard().text(backText[lang] || backText['en'], 'back_to_menu');
+  }
+
+  /**
+   * Helper to reply or edit message (for smoother UX)
+   * UPDATE: User requested "dissolve/shred" animation. 
+   * This requires deleting the old message and sending a new one.
+   */
+  private async replyOrEdit(ctx: BotContext, text: string, extra: any = {}) {
+    // Check if it's a callback query
+    if (ctx.callbackQuery?.message) {
+      try {
+        // 1. Answer callback to stop loading state
+        await ctx.answerCallbackQuery().catch(() => {});
+
+        // 2. Delete old message (triggers "shredding" animation on compliant clients)
+        await ctx.deleteMessage().catch(() => {});
+
+        // 3. Send new message
+        await ctx.reply(text, extra);
+        return;
+      } catch (e) {
+        // Fallback if something fails
+        this.logger.warn(`Optimization failed: ${e.message}`);
+      }
+    }
+    
+    // Fallback: just reply
+    await ctx.reply(text, extra);
   }
 }

@@ -105,6 +105,40 @@ export class GenerateAnswerDto {
   @IsOptional()
   @IsEnum(['uz', 'ru', 'en'])
   language?: string;
+
+  @ApiPropertyOptional({
+    description: 'Interview domain (e.g., Frontend, Backend, Full Stack)',
+    example: 'Backend',
+  })
+  @IsOptional()
+  @IsString()
+  domain?: string;
+
+  @ApiPropertyOptional({
+    description: 'Technologies used in the interview',
+    type: [String],
+    example: ['Node.js', 'TypeScript', 'PostgreSQL'],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  technologies?: string[];
+
+  @ApiPropertyOptional({
+    description: 'Position level (e.g., Junior, Middle, Senior)',
+    example: 'Senior',
+  })
+  @IsOptional()
+  @IsString()
+  position?: string;
+
+  @ApiPropertyOptional({
+    description: 'Company name',
+    example: 'Google',
+  })
+  @IsOptional()
+  @IsString()
+  company?: string;
 }
 
 export class GeneratedAnswerDto {

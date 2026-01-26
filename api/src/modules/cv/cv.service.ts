@@ -38,7 +38,7 @@ import {
 export class CvService {
   private readonly logger = new Logger(CvService.name);
   private readonly openai: OpenAI | null;
-  private readonly maxVersions = 5;
+  private readonly maxVersions = 1; // User can only have 1 CV at a time
 
   constructor(
     private readonly cvRepository: CvRepository,
@@ -89,10 +89,11 @@ export class CvService {
         file.mimetype,
       );
 
-      // Upload to S3
+      // Upload to storage (local or S3)
+      // CRITICAL: Pass userId, not file.originalname, to avoid creating folders with filename
       const { storageUrl, key: storageKey } = await this.storageService.uploadCv(
         file as any,
-        file.originalname,
+        userId,
       );
 
       // Create CV record
@@ -186,6 +187,18 @@ export class CvService {
       throw new BadRequestException('CV analysis already in progress');
     }
 
+    // Check if this is a RE-analysis (CV was already analyzed before)
+    // First-time analysis usage is counted in uploadCv, so only count re-analysis
+    const isReanalysis = cv.analysisStatus === 'completed' || cv.analysisStatus === 'failed';
+    
+    if (isReanalysis) {
+      // Check usage limits for re-analysis
+      await this.checkUsageLimits(userId);
+      // Increment usage counter for re-analysis
+      await this.usersService.incrementUsage(userId, 'cvAnalysis');
+      this.logger.log(`CV re-analysis usage incremented for user ${userId}`);
+    }
+
     // Update status to processing
     await this.cvRepository.update(cvId, { analysisStatus: 'processing' });
 
@@ -210,8 +223,22 @@ export class CvService {
         language,
       );
 
-      // Update CV with analysis
-      const updatedCv = await this.cvRepository.updateAnalysis(cvId, analysis, 'completed');
+      // Update CV with analysis AND corrected parsed Data
+      const updateData: any = {
+        analysis,
+        analysisStatus: 'completed',
+        analyzedAt: new Date(),
+      };
+
+      // If Analysis returned better parsed data, update it in DB
+      if (analysis.extractedData) {
+        updateData.parsedData = analysis.extractedData;
+        // Don't save extractedData into analysis field to avoid duplication, or keep it if needed.
+        // It's already in parsedData column now.
+        delete analysis.extractedData;
+      }
+
+      const updatedCv = await this.cvRepository.update(cvId, updateData);
 
       this.logger.log(`CV analysis completed for CV ${cvId}`);
       return updatedCv!;
@@ -276,6 +303,10 @@ export class CvService {
   /**
    * Perform CV analysis using OpenAI
    */
+  /**
+   * Perform CV analysis using OpenAI
+   * Production-grade implementation with bulletproof JSON extraction
+   */
   private async performCvAnalysis(
     cvText: string,
     parsedData: any,
@@ -291,45 +322,155 @@ export class CvService {
 
     const prompt = this.buildAnalysisPrompt(cvText, parsedData, jobDescription, language);
 
-    const completion = await this.openai.chat.completions.create({
-      model,
-      messages: [
-        {
-          role: 'system',
-          content:
-            'You are an expert CV analyst and ATS (Applicant Tracking System) specialist. Analyze CVs and provide detailed, actionable feedback.',
-        },
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-      max_tokens: OPENAI_MAX_TOKENS_ANALYSIS,
-      temperature: OPENAI_TEMPERATURE,
-      response_format: { type: 'json_object' },
-    });
-
-    const analysisText = completion.choices[0].message.content || '{}';
-    const analysis = JSON.parse(analysisText);
-
-    return {
-      atsScore: analysis.atsScore || 0,
-      overallRating: analysis.overallRating || 0,
-      strengths: analysis.strengths || [],
-      weaknesses: analysis.weaknesses || [],
-      missingKeywords: analysis.missingKeywords || [],
-      suggestions: analysis.suggestions || [],
-      sectionScores: analysis.sectionScores || {
-        personalInfo: 0,
-        summary: 0,
-        experience: 0,
-        education: 0,
-        skills: 0,
-        formatting: 0,
-      },
-      analyzedAt: new Date(),
-      aiModel: model,
+    // Execute AI request
+    const executeAnalysis = async (targetModel: string) => {
+      if (!this.openai) throw new Error('OpenAI client not initialized');
+      this.logger.log(`Performing CV analysis using model: ${targetModel}`);
+      
+      const completion = await this.openai.chat.completions.create({
+        model: targetModel,
+        messages: [
+          {
+            role: 'system',
+            content: 'You are an expert CV analyst. Return ONLY valid JSON. No explanations, no markdown.',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        max_tokens: OPENAI_MAX_TOKENS_ANALYSIS,
+        temperature: 0.3, // Lower temperature for more consistent JSON
+        response_format: { type: 'json_object' },
+      });
+      return completion;
     };
+
+    // Extract JSON from any text format
+    const extractJSON = (text: string): any => {
+      // Try direct parse first
+      try {
+        return JSON.parse(text);
+      } catch (e) {
+        // Continue to other methods
+      }
+
+      // Remove markdown code blocks
+      let cleaned = text.replace(/```json\n?|```\n?/g, '').trim();
+      try {
+        return JSON.parse(cleaned);
+      } catch (e) {
+        // Continue
+      }
+
+      // Try to find JSON object in text
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          return JSON.parse(jsonMatch[0]);
+        } catch (e) {
+          // Continue
+        }
+      }
+
+      // Return null if nothing works
+      return null;
+    };
+
+    try {
+      let completion;
+      let usedModel = model;
+      
+      // First attempt with requested model
+      try {
+        completion = await executeAnalysis(model);
+      } catch (err) {
+        // Fallback for API errors
+        if ((err.status === 402 || err.status === 404 || err.status === 429) && model !== AI_MODELS.GPT35) {
+          this.logger.warn(`Model ${model} API error (${err.status}). Falling back to ${AI_MODELS.GPT35}`);
+          completion = await executeAnalysis(AI_MODELS.GPT35);
+          usedModel = AI_MODELS.GPT35;
+        } else {
+          throw err;
+        }
+      }
+      // Validate API response structure (some free models return malformed responses)
+      if (!completion || !completion.choices || !completion.choices[0] || !completion.choices[0].message) {
+        this.logger.error(`Model ${usedModel} returned malformed response: ${JSON.stringify(completion)}`);
+        
+        if (usedModel !== AI_MODELS.GPT35) {
+          this.logger.log(`Malformed response. Retrying with reliable model: ${AI_MODELS.GPT35}`);
+          completion = await executeAnalysis(AI_MODELS.GPT35);
+          usedModel = AI_MODELS.GPT35;
+          
+          if (!completion || !completion.choices || !completion.choices[0]) {
+            throw new Error('Both models returned malformed responses');
+          }
+        } else {
+          throw new Error('AI model returned malformed response');
+        }
+      }
+
+      const rawText = completion.choices[0].message.content || '';
+      const finishReason = completion.choices[0].finish_reason;
+      const usage = completion.usage;
+
+      // Debug logging
+      this.logger.debug(`AI Metadata: model=${completion.model}, finish=${finishReason}, tokens=${JSON.stringify(usage)}`);
+      this.logger.debug(`Raw Response (first 500 chars): ${rawText.substring(0, 500)}`);
+
+      // Extract JSON from response
+      let analysis = extractJSON(rawText);
+
+      // If extraction failed or empty, try fallback model
+      if (!analysis || (typeof analysis === 'object' && Object.keys(analysis).length === 0)) {
+        this.logger.warn(`Model ${usedModel} returned empty/invalid JSON. Raw: "${rawText.substring(0, 200)}"`);
+        
+        if (usedModel !== AI_MODELS.GPT35) {
+          this.logger.log(`Retrying with reliable model: ${AI_MODELS.GPT35}`);
+          completion = await executeAnalysis(AI_MODELS.GPT35);
+          const retryText = completion.choices[0].message.content || '';
+          analysis = extractJSON(retryText);
+          usedModel = AI_MODELS.GPT35;
+          
+          if (!analysis) {
+            this.logger.error(`Fallback model also failed. Raw: "${retryText.substring(0, 200)}"`);
+            throw new Error('Both primary and fallback models failed to return valid JSON');
+          }
+        } else {
+          throw new Error('AI model returned invalid JSON');
+        }
+      }
+
+      // Validate and normalize the response with new Senior-level fields
+      return {
+        atsScore: typeof analysis.atsScore === 'number' ? analysis.atsScore : 0,
+        overallRating: typeof analysis.overallRating === 'number' ? analysis.overallRating : 0,
+        aiRejectionRisk: analysis.aiRejectionRisk || 'medium',
+        sixSecondVerdict: analysis.sixSecondVerdict || 'unknown',
+        strengths: Array.isArray(analysis.strengths) ? analysis.strengths : [],
+        criticalWeaknesses: Array.isArray(analysis.criticalWeaknesses) ? analysis.criticalWeaknesses : [],
+        weaknesses: Array.isArray(analysis.weaknesses) ? analysis.weaknesses : (analysis.criticalWeaknesses || []),
+        missingKeywords: Array.isArray(analysis.missingKeywords) ? analysis.missingKeywords : [],
+        transformationRoadmap: Array.isArray(analysis.transformationRoadmap) ? analysis.transformationRoadmap : [],
+        suggestions: Array.isArray(analysis.suggestions) ? analysis.suggestions : [],
+        quickWins: Array.isArray(analysis.quickWins) ? analysis.quickWins : [],
+        aiBypassTips: Array.isArray(analysis.aiBypassTips) ? analysis.aiBypassTips : [],
+        sectionScores: analysis.sectionScores || {
+          summary: 0,
+          experience: 0,
+          education: 0,
+          skills: 0,
+          formatting: 0,
+        },
+        extractedData: analysis.extractedData || null,
+        analyzedAt: new Date(),
+        aiModel: usedModel,
+      };
+    } catch (error) {
+      this.logger.error(`CV analysis execution failed: ${error.message}`, error.stack);
+      throw error;
+    }
   }
 
   /**
@@ -384,7 +525,8 @@ export class CvService {
 
   /**
    * Build analysis prompt
-   * Professional Senior Prompt Engineer Logic: ATS-focused, industry-specific, comprehensive analysis
+   * SENIOR CONTEXT ENGINEER LOGIC: Deep forensic analysis with actionable step-by-step fixes
+   * Focus: ATS bypass strategies, HR AI screening, power statements, quantification
    */
   private buildAnalysisPrompt(
     cvText: string,
@@ -393,107 +535,112 @@ export class CvService {
     language: string = 'en',
   ): string {
     const languageName = this.getLanguageName(language);
-    let prompt = `You are an expert CV analyst and ATS (Applicant Tracking System) specialist with 10+ years of experience in recruitment and HR technology. Analyze the following CV comprehensively and provide detailed, actionable feedback.\n\n`;
+    
+    let prompt = `# ROLE & EXPERTISE\n`;
+    prompt += `You are a world-class CV Strategist and ATS Systems Expert with:\n`;
+    prompt += `- 15+ years recruiting at FAANG companies (Google, Meta, Amazon)\n`;
+    prompt += `- Deep knowledge of AI screening systems (Workday, Greenhouse, Lever, HireVue)\n`;
+    prompt += `- Expertise in bypassing automated rejection filters\n`;
+    prompt += `- Track record of transforming rejected CVs into interview-winning documents\n\n`;
 
-    // CRITICAL: Language instruction must be at the beginning
-    prompt += `## LANGUAGE REQUIREMENT\n`;
-    prompt += `IMPORTANT: You MUST respond in ${languageName} (${language.toUpperCase()}). All your output, including strengths, weaknesses, suggestions, messages, examples, and all text fields, must be in ${languageName}.\n\n`;
+    prompt += `# YOUR MISSION\n`;
+    prompt += `Perform a FORENSIC DEEP-DIVE analysis of this CV. Your goal is NOT just to find problems, but to:\n`;
+    prompt += `1. Identify EXACTLY why AI systems might reject this CV\n`;
+    prompt += `2. Provide STEP-BY-STEP fixes with BEFORE/AFTER examples\n`;
+    prompt += `3. Give a COMPLETE TRANSFORMATION ROADMAP to achieve 90%+ ATS score\n\n`;
 
-    prompt += `## CV CONTENT\n`;
-    prompt += `${cvText}\n\n`;
+    prompt += `# LANGUAGE REQUIREMENT (CRITICAL)\n`;
+    prompt += `ALL your output MUST be in ${languageName} (${language.toUpperCase()}).\n`;
+    prompt += `Every field, message, suggestion, and example must be written in ${languageName}.\n\n`;
 
-    prompt += `## PARSED CV DATA\n`;
-    prompt += `${JSON.stringify(parsedData, null, 2)}\n\n`;
+    prompt += `# CV TO ANALYZE\n`;
+    prompt += `\`\`\`\n${cvText}\n\`\`\`\n\n`;
 
     if (jobDescription) {
-      prompt += `## TARGET JOB DESCRIPTION\n`;
-      prompt += `${jobDescription}\n\n`;
-      prompt += `IMPORTANT: Compare the CV against this specific job description. Identify:\n`;
-      prompt += `- Missing required skills and keywords\n`;
-      prompt += `- Experience gaps\n`;
-      prompt += `- Alignment with job requirements\n`;
-      prompt += `- How well the CV matches the role\n\n`;
+      prompt += `# TARGET JOB DESCRIPTION (Benchmark)\n`;
+      prompt += `\`\`\`\n${jobDescription}\n\`\`\`\n`;
+      prompt += `**IMPORTANT:** Analyze the CV specifically against this job. Missing keywords = automatic rejection.\n\n`;
     }
 
-    prompt += `## ANALYSIS REQUIREMENTS\n\n`;
+    prompt += `# ANALYSIS FRAMEWORK (Follow Each Step)\n\n`;
 
-    prompt += `### 1. ATS (Applicant Tracking System) Compatibility\n`;
-    prompt += `Evaluate how well the CV will pass through ATS systems:\n`;
-    prompt += `- **Keyword Optimization:** Check if relevant keywords from the job description (if provided) are present\n`;
-    prompt += `- **Formatting:** Assess if the CV uses ATS-friendly formatting (standard fonts, clear sections, no complex tables/graphics)\n`;
-    prompt += `- **File Structure:** Check if sections are clearly labeled and parseable\n`;
-    prompt += `- **Keyword Density:** Ensure important skills and technologies appear naturally throughout the CV\n`;
-    prompt += `- **ATS Score (0-100):** Calculate based on:\n`;
-    prompt += `  - Keyword match (40%)\n`;
-    prompt += `  - Formatting compatibility (20%)\n`;
-    prompt += `  - Section completeness (20%)\n`;
-    prompt += `  - Content quality (20%)\n\n`;
+    prompt += `## 1. THE 6-SECOND SCAN (What Recruiters See First)\n`;
+    prompt += `Recruiters spend only 6 seconds on initial scan. Analyze:\n`;
+    prompt += `- Is the candidate's VALUE PROPOSITION visible in first 3 lines?\n`;
+    prompt += `- Are KEY SKILLS immediately scannable?\n`;
+    prompt += `- Is contact info professional (GitHub, LinkedIn, clean email)?\n`;
+    prompt += `- Is there a powerful SUMMARY or just generic filler?\n\n`;
 
-    prompt += `### 2. Content Quality Assessment\n`;
-    prompt += `Evaluate the quality and impact of the CV content:\n`;
-    prompt += `- **Professional Summary:** Is it compelling, concise, and tailored?\n`;
-    prompt += `- **Work Experience:** Are achievements quantified with metrics? Are responsibilities clear?\n`;
-    prompt += `- **Skills Section:** Are skills relevant, well-organized, and aligned with the role?\n`;
-    prompt += `- **Education:** Is education presented clearly and relevantly?\n`;
-    prompt += `- **Achievements:** Are accomplishments highlighted with specific results?\n`;
-    prompt += `- **Grammar & Language:** Check for spelling, grammar, and professional language use\n\n`;
+    prompt += `## 2. AI/ATS COMPATIBILITY AUDIT\n`;
+    prompt += `Modern AI screening rejects 75% of CVs. Check for:\n`;
+    prompt += `- **KEYWORD DENSITY:** Are job-critical keywords naturally integrated?\n`;
+    prompt += `- **FORMAT KILLERS:** Tables, columns, graphics, icons = parsing failures\n`;
+    prompt += `- **SECTION HEADERS:** Standard names (Experience, Education, Skills) vs creative names AI won't understand\n`;
+    prompt += `- **FILE STRUCTURE:** Can text be extracted cleanly?\n`;
+    prompt += `- **SKILLS MATCH:** For tech roles, specific tools (React, AWS, Docker) must be explicit\n\n`;
 
-    prompt += `### 3. Industry-Specific Analysis\n`;
-    prompt += `If a job description is provided, analyze industry-specific requirements:\n`;
-    prompt += `- **Technical Skills:** Match technical requirements with CV skills\n`;
-    prompt += `- **Soft Skills:** Identify soft skills mentioned in job description\n`;
-    prompt += `- **Experience Level:** Assess if experience level matches job requirements\n`;
-    prompt += `- **Certifications:** Check if relevant certifications are present\n\n`;
+    prompt += `## 3. POWER STATEMENT ANALYSIS (Experience Section)\n`;
+    prompt += `Each bullet should follow the XYZ Formula: "Accomplished X, as measured by Y, by doing Z"\n`;
+    prompt += `Analyze EACH work experience bullet for:\n`;
+    prompt += `- **ACTION VERB:** Weak (Worked, Helped, Did) vs Strong (Architected, Reduced, Deployed)\n`;
+    prompt += `- **QUANTIFICATION:** Numbers, percentages, dollars, time saved\n`;
+    prompt += `- **IMPACT:** Is the RESULT clear, or just activities listed?\n`;
+    prompt += `- **Example Fix:** "Worked on backend" → "Architected microservices backend serving 50K daily users, reducing latency by 40%"\n\n`;
 
-    prompt += `### 4. Missing Elements & Gaps\n`;
-    prompt += `Identify what's missing or could be improved:\n`;
-    prompt += `- **Missing Keywords:** List important keywords from job description not found in CV\n`;
-    prompt += `- **Experience Gaps:** Identify any gaps in work history or skills\n`;
-    prompt += `- **Weak Sections:** Highlight sections that need improvement\n`;
-    prompt += `- **Missing Information:** Note any critical information that should be included\n\n`;
+    prompt += `## 4. MISSING ELEMENTS DETECTION\n`;
+    prompt += `Identify what's MISSING that top candidates include:\n`;
+    prompt += `- Certifications relevant to the role\n`;
+    prompt += `- Specific project outcomes and metrics\n`;
+    prompt += `- Keywords from the job description\n`;
+    prompt += `- Industry-specific terminology\n`;
+    prompt += `- Links to portfolio, GitHub, LinkedIn\n\n`;
 
-    prompt += `## OUTPUT FORMAT\n`;
-    prompt += `Provide your comprehensive analysis in the following JSON format (strictly valid JSON):\n`;
+    prompt += `## 5. TRANSFORMATION ROADMAP\n`;
+    prompt += `For each weakness, provide:\n`;
+    prompt += `- **WHAT TO FIX:** Specific issue\n`;
+    prompt += `- **HOW TO FIX:** Step-by-step instructions\n`;
+    prompt += `- **BEFORE:** Current problematic text\n`;
+    prompt += `- **AFTER:** Improved version ready to copy-paste\n`;
+    prompt += `- **IMPACT:** How this fix increases ATS score\n\n`;
+
+    prompt += `# OUTPUT FORMAT (Strictly Valid JSON)\n`;
     prompt += `{\n`;
-    prompt += `  "atsScore": <number 0-100, calculated based on ATS compatibility criteria above>,\n`;
-    prompt += `  "overallRating": <number 1-5, where 1=poor, 2=below average, 3=average, 4=good, 5=excellent>,\n`;
-    prompt += `  "strengths": [<array of 5-10 specific strengths in ${languageName}>],\n`;
-    prompt += `  "weaknesses": [<array of 5-10 specific weaknesses in ${languageName}>],\n`;
-    prompt += `  "missingKeywords": [<array of important keywords from job description not found in CV, if job description provided>],\n`;
-    prompt += `  "suggestions": [\n`;
+    prompt += `  "atsScore": <number 0-100>,\n`;
+    prompt += `  "overallRating": <1-5>,\n`;
+    prompt += `  "aiRejectionRisk": "<low|medium|high|critical> - likelihood of AI auto-rejection",\n`;
+    prompt += `  "sixSecondVerdict": "<pass|fail> - would recruiter continue reading?",\n`;
+    prompt += `  "strengths": ["<5-10 specific strengths in ${languageName}>"],\n`;
+    prompt += `  "criticalWeaknesses": ["<3-5 most damaging issues causing rejections in ${languageName}>"],\n`;
+    prompt += `  "missingKeywords": ["<keywords from JD not found in CV>"],\n`;
+    prompt += `  "transformationRoadmap": [\n`;
     prompt += `    {\n`;
-    prompt += `      "category": "content|formatting|keywords|grammar|achievements|structure|personalization",\n`;
-    prompt += `      "severity": "low|medium|high|critical",\n`;
-    prompt += `      "message": "<clear description of the issue in ${languageName}>",\n`;
-    prompt += `      "suggestion": "<specific, actionable advice on how to fix it in ${languageName}>",\n`;
-    prompt += `      "example": "<optional example of improved version in ${languageName}>"\n`;
+    prompt += `      "priority": <1-5, where 1 is most urgent>,\n`;
+    prompt += `      "category": "ats_optimization|power_statement|quantification|keywords|formatting|summary|skills",\n`;
+    prompt += `      "problem": "<clear description of the issue in ${languageName}>",\n`;
+    prompt += `      "stepByStepFix": ["<step 1>", "<step 2>", "<step 3>"],\n`;
+    prompt += `      "before": "<current problematic text from CV>",\n`;
+    prompt += `      "after": "<improved version ready to use in ${languageName}>",\n`;
+    prompt += `      "impactOnScore": "<how many % this fix adds to ATS score>"\n`;
     prompt += `    }\n`;
     prompt += `  ],\n`;
     prompt += `  "sectionScores": {\n`;
-    prompt += `    "personalInfo": <number 0-100, completeness and clarity>,\n`;
-    prompt += `    "summary": <number 0-100, impact and relevance>,\n`;
-    prompt += `    "experience": <number 0-100, detail, metrics, relevance>,\n`;
-    prompt += `    "education": <number 0-100, clarity and relevance>,\n`;
-    prompt += `    "skills": <number 0-100, relevance and organization>,\n`;
-    prompt += `    "formatting": <number 0-100, ATS compatibility and readability>\n`;
+    prompt += `    "summary": <0-100>,\n`;
+    prompt += `    "experience": <0-100>,\n`;
+    prompt += `    "skills": <0-100>,\n`;
+    prompt += `    "education": <0-100>,\n`;
+    prompt += `    "formatting": <0-100>\n`;
     prompt += `  },\n`;
-    prompt += `  "keywordDensity": {\n`;
-    prompt += `    "totalKeywords": <number of unique keywords found>,\n`;
-    prompt += `    "jobDescriptionKeywords": <number of keywords from job description found in CV, if job description provided>,\n`;
-    prompt += `    "keywordMatchPercentage": <percentage of job description keywords found in CV, if job description provided>\n`;
-    prompt += `  },\n`;
-    prompt += `  "industryAlignment": <if job description provided, score 0-100 indicating how well CV aligns with industry/role requirements>\n`;
+    prompt += `  "quickWins": ["<3 changes that take <5 min but boost score significantly, in ${languageName}>"],\n`;
+    prompt += `  "aiBypassTips": ["<3 specific strategies to pass AI screening in ${languageName}>"]\n`;
     prompt += `}\n\n`;
 
-    prompt += `## FINAL INSTRUCTIONS\n`;
-    prompt += `1. **CRITICAL:** Generate ALL content in ${languageName} (${language.toUpperCase()}) - strengths, weaknesses, suggestions, messages, examples\n`;
-    prompt += `2. Be thorough and specific in your analysis\n`;
-    prompt += `3. Provide actionable, concrete suggestions\n`;
-    prompt += `4. Focus on ATS compatibility if job description is provided\n`;
-    prompt += `5. Consider industry best practices and standards\n`;
-    prompt += `6. Be constructive and professional in your feedback\n`;
-    prompt += `7. Ensure all scores are justified by the analysis\n`;
-    prompt += `8. **REMEMBER:** All JSON output fields must be in ${languageName}\n`;
+    prompt += `# CRITICAL REMINDERS\n`;
+    prompt += `1. ALL text in ${languageName} - strengths, weaknesses, roadmap, examples\n`;
+    prompt += `2. Provide MINIMUM 5 items in transformationRoadmap with BEFORE/AFTER\n`;
+    prompt += `3. Be SPECIFIC - don't say "improve summary", say EXACTLY how\n`;
+    prompt += `4. Include REAL NUMBERS in "after" examples (%, time, users)\n`;
+    prompt += `5. aiBypassTips must be ACTIONABLE, not generic advice\n`;
+    prompt += `6. Focus on what will get this CV PAST AI filters\n`;
 
     return prompt;
   }
@@ -666,12 +813,8 @@ export class CvService {
    */
   private async checkUsageLimits(userId: string): Promise<void> {
     const user = await this.usersService.findById(userId);
-    const plan = user.subscription?.plan || 'free';
-    const limit = USAGE_LIMITS[plan]?.cvAnalyses || USAGE_LIMITS.free.cvAnalyses;
-
-    if (limit === -1) {
-      return; // Unlimited
-    }
+    const plan = user.subscription?.plan || 'free_trial';
+    const limit = USAGE_LIMITS[plan as keyof typeof USAGE_LIMITS]?.cvAnalyses || USAGE_LIMITS.free_trial.cvAnalyses;
 
     if (user.usage.cvAnalysesThisMonth >= limit) {
       throw new ForbiddenException(

@@ -1,11 +1,13 @@
 import { UserRole } from '@common/enums/user-role.enum';
 
 export interface ISubscription {
-  plan: 'free' | 'pro' | 'elite' | 'enterprise';
-  status: 'active' | 'cancelled' | 'expired' | 'trialing';
+  plan: 'free_trial' | 'starter' | 'pro' | 'elite';
+  status: 'trialing' | 'active' | 'expired' | 'cancelled';
   startDate: Date;
   endDate?: Date;
+  trialStartDate?: Date;
   trialEndsAt?: Date;
+  billingCycle?: 'monthly' | 'annual';
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
   cancelAtPeriodEnd?: boolean;
@@ -31,8 +33,10 @@ export interface IUserPreferences {
 
 export interface IUsage {
   mockInterviewsThisMonth: number;
+  liveInterviewMinutesThisMonth: number;
   cvAnalysesThisMonth: number;
   chromeQuestionsThisMonth: number;
+  aiTokensThisMonth: number;
   lastResetDate: Date;
 }
 

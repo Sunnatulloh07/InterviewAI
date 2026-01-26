@@ -65,7 +65,7 @@ export class InterviewsService {
       await this.checkUsageLimits(userId);
 
       // Generate questions
-      const questions = await this.generateQuestions(dto);
+      const questions = await this.generateQuestions(userId, dto);
 
       if (questions.length === 0) {
         throw new BadRequestException('No questions available for the selected criteria');
@@ -153,8 +153,27 @@ export class InterviewsService {
       }
 
       // Verify question belongs to session
-      const questionExists = session.questions.some((q: any) => q.toString() === dto.questionId);
+      // Handle both populated objects and ObjectId strings
+      const questionExists = session.questions.some((q: any) => {
+        if (!q) return false;
+        // If q is a populated object, check _id or id
+        if (typeof q === 'object' && q._id) {
+          return q._id.toString() === dto.questionId || q.id?.toString() === dto.questionId;
+        }
+        // If q is an ObjectId or string, compare directly
+        return q.toString() === dto.questionId;
+      });
       if (!questionExists) {
+        this.logger.error(
+          `Question ${dto.questionId} not found in session ${sessionId}. Session questions: ${JSON.stringify(
+            session.questions.map((q: any) => {
+              if (typeof q === 'object' && q._id) {
+                return q._id.toString();
+              }
+              return q.toString();
+            }),
+          )}`,
+        );
         throw new BadRequestException('Question not found in this session');
       }
 
@@ -193,23 +212,9 @@ export class InterviewsService {
         currentQuestionIndex: session.currentQuestionIndex + 1,
       });
 
-      // Queue feedback generation
-      await this.feedbackQueue.add(
-        'generate-answer-feedback',
-        {
-          answerId: answer.id,
-          questionId: dto.questionId,
-          sessionId,
-          userId,
-        },
-        {
-          attempts: 3,
-          backoff: {
-            type: 'exponential',
-            delay: 2000,
-          },
-        },
-      );
+      // Feedback generation is now deferred to the end of the session (Batch Processing)
+      // to save tokens and optimize performance.
+      // See generateSessionFeedback implementation.
 
       this.logger.log(`Answer submitted for session ${sessionId}`);
       return answer;
@@ -353,9 +358,9 @@ export class InterviewsService {
    * Generate interview questions
    * ALWAYS generates questions using AI - no hardcode or DB lookup
    */
-  private async generateQuestions(dto: StartInterviewDto): Promise<InterviewQuestionDocument[]> {
+  private async generateQuestions(userId: string, dto: StartInterviewDto): Promise<InterviewQuestionDocument[]> {
     // Always generate questions using AI
-    const questions = await this.generateSeedQuestions(dto, dto.numQuestions);
+    const questions = await this.generateSeedQuestions(userId, dto, dto.numQuestions);
     return questions;
   }
 
@@ -364,6 +369,7 @@ export class InterviewsService {
    * No hardcode or DB lookup - always generates fresh questions
    */
   private async generateSeedQuestions(
+    userId: string,
     dto: StartInterviewDto,
     count: number,
   ): Promise<InterviewQuestionDocument[]> {
@@ -377,22 +383,22 @@ export class InterviewsService {
     }
 
     try {
-      const aiQuestions = await this.generateQuestionsWithAI(dto, count);
-      for (let i = 0; i < aiQuestions.length; i++) {
-        const question = await this.repository.createQuestion({
-          order: i + 1,
-          category: dto.type,
-          difficulty: dto.difficulty,
-          question: aiQuestions[i],
-          expectedKeyPoints: [],
-          hints: [],
-          tags: dto.technology || [],
-          domain: dto.domain,
-          technology: dto.technology,
-          createdBy: 'system',
-        });
-        questions.push(question);
-      }
+      const aiQuestions = await this.generateQuestionsWithAI(userId, dto, count);
+      const questionsData = aiQuestions.map((q, i) => ({
+        order: i + 1,
+        category: dto.type,
+        difficulty: dto.difficulty,
+        question: q,
+        expectedKeyPoints: [],
+        hints: [],
+        tags: dto.technology || [],
+        domain: dto.domain,
+        technology: dto.technology,
+        createdBy: 'system',
+      }));
+
+      const createdQuestions = await this.repository.createQuestions(questionsData);
+      questions.push(...createdQuestions);
       this.logger.log(`Generated ${aiQuestions.length} AI questions for ${dto.type} interview`);
       return questions;
     } catch (error: any) {
@@ -414,7 +420,7 @@ export class InterviewsService {
   /**
    * Generate interview questions using AI
    */
-  private async generateQuestionsWithAI(dto: StartInterviewDto, count: number): Promise<string[]> {
+  private async generateQuestionsWithAI(userId: string, dto: StartInterviewDto, count: number): Promise<string[]> {
     if (!this.openai) {
       throw new Error('OpenAI client not initialized');
     }
@@ -424,53 +430,143 @@ export class InterviewsService {
     const difficultyName = this.getDifficultyName(dto.difficulty);
     const categoryName = this.getCategoryName(dto.type);
 
+    // Get user interview context for personalized questions
+    const historyContext = await this.getUserInterviewContext(userId);
+    const { incorrectQuestions, allQuestions } = historyContext;
+
     // Build prompt for question generation
-    let prompt = `You are an expert interview question generator. Generate ${count} unique, professional interview questions for a ${difficultyName}-level ${categoryName} interview.\n\n`;
+    // CRITICAL: Language instruction MUST be at the beginning for maximum enforcement
+    let prompt = `You are an expert interview question generator with 10+ years of experience in technical recruitment and interview design. Generate ${count} unique, professional interview questions for a ${difficultyName}-level ${categoryName} interview.\n\n`;
+
+    // CRITICAL LANGUAGE REQUIREMENT - Must be at the beginning
+    prompt += `## CRITICAL LANGUAGE REQUIREMENT - READ THIS FIRST\n`;
+    prompt += `**MANDATORY:** You MUST generate ALL questions EXCLUSIVELY in ${languageName} (${language.toUpperCase()}).\n`;
+    prompt += `**DO NOT** use English or any other language for the questions.\n`;
+
+    // Language-specific examples
+    const languageExamples: Record<string, string> = {
+      uz: `Masalan: "Node.js da event loop qanday ishlaydi?" (to'g'ri), "How does event loop work in Node.js?" (noto'g'ri)`,
+      ru: `Например: "Как работает event loop в Node.js?" (правильно), "How does event loop work in Node.js?" (неправильно)`,
+      en: `Example: "How does event loop work in Node.js?" (correct)`,
+    };
+    prompt += `${languageExamples[language] || languageExamples['en']}\n\n`;
+    prompt += `**ALL** questions in the "questions" array MUST be in ${languageName}.\n`;
+    prompt += `**If you generate any question in English or another language, the response will be rejected.**\n\n`;
+
+    // Interview Context
+    prompt += `## INTERVIEW CONTEXT\n`;
+    prompt += `- **Interview Type:** ${categoryName}\n`;
+    prompt += `- **Difficulty Level:** ${difficultyName}\n`;
 
     if (dto.domain) {
-      prompt += `Domain: ${dto.domain}\n`;
+      prompt += `- **Domain:** ${dto.domain}\n`;
     }
 
     if (dto.technology && dto.technology.length > 0) {
-      prompt += `Technologies: ${dto.technology.join(', ')}\n`;
+      prompt += `- **Technologies:** ${dto.technology.join(', ')}\n`;
     }
 
-    prompt += `\nRequirements:\n`;
-    prompt += `- Generate ${count} unique questions\n`;
-    prompt += `- Questions should be appropriate for ${difficultyName} level\n`;
-    prompt += `- Questions should be ${categoryName} type\n`;
-    prompt += `- All questions must be in ${languageName} language\n`;
-    prompt += `- Questions should be specific and relevant to the domain/technologies mentioned\n`;
-    prompt += `- Avoid generic questions, make them specific and practical\n\n`;
+    // Add CV Context if available (personalized questions based on candidate's CV)
+    if (dto.cvContext) {
+      prompt += `\n## CANDIDATE CV CONTEXT (IMPORTANT - Use this for personalized questions)\n`;
+      if (dto.cvContext.skills && dto.cvContext.skills.length > 0) {
+        prompt += `- **Candidate Skills:** ${dto.cvContext.skills.slice(0, 10).join(', ')}\n`;
+      }
+      if (dto.cvContext.experience) {
+        prompt += `- **Experience Summary:** ${dto.cvContext.experience.substring(0, 500)}\n`;
+      }
+      if (dto.cvContext.strengths && dto.cvContext.strengths.length > 0) {
+        prompt += `- **Key Strengths:** ${dto.cvContext.strengths.slice(0, 5).join(', ')}\n`;
+      }
+      prompt += `\n**IMPORTANT:** Generate questions that are directly relevant to the candidate's skills and experience listed above. Ask about their specific technologies and projects.\n`;
+    }
+    prompt += `\n`;
 
-    prompt += `\nCRITICAL OUTPUT FORMAT:\n`;
+    // Add History Context - Intelligent Question Generation
+    if (allQuestions.length > 0) {
+      prompt += `\n## PREVIOUS INTERVIEW HISTORY (INTELLIGENT GENERATION)\n`;
+      
+      // 1. Avoid repetition
+      prompt += `### DO NOT REPEAT THESE QUESTIONS (Generate FRESH questions):\n`;
+      // Limit to last 50 questions to avoid huge prompt
+      const recentQuestions = allQuestions.slice(0, 50);
+      prompt += recentQuestions.map((q, i) => `${i + 1}. "${q}"`).join('\n') + '\n\n';
+      
+      // 2. Focus on weak areas
+      if (incorrectQuestions.length > 0) {
+        prompt += `### WEAK AREAS (Ask SIMILAR but NEW questions on these topics):\n`;
+        const recentWeaknesses = incorrectQuestions.slice(0, 10);
+        prompt += recentWeaknesses.map((q, i) => `${i + 1}. "${q}"`).join('\n') + '\n\n';
+        prompt += `**INSTRUCTION:** Generate 3-5 questions that test the concepts from the "WEAK AREAS" list above, but use DIFFERENT wording and scenarios.\n`;
+      }
+    }
+    prompt += `\n`;
+
+    // Requirements
+    prompt += `## REQUIREMENTS\n`;
+    prompt += `- Generate exactly ${count} unique, non-repetitive questions\n`;
+    prompt += `- Questions must be appropriate for ${difficultyName} level candidates\n`;
+    prompt += `- Questions must be ${categoryName} type (technical, behavioral, case study, or mixed)\n`;
+    prompt += `- Questions should be specific and relevant to the domain/technologies mentioned\n`;
+    prompt += `- Avoid generic questions - make them practical, real-world, and interview-relevant\n`;
+    prompt += `- Questions should test both knowledge and problem-solving ability\n`;
+    prompt += `- For technical questions: focus on concepts, implementation, and best practices\n`;
+    prompt += `- For behavioral questions: focus on past experiences, teamwork, and leadership\n`;
+    prompt += `- For case study questions: provide realistic scenarios with clear problem statements\n\n`;
+
+    prompt += `## CRITICAL OUTPUT FORMAT\n`;
     prompt += `You MUST return a valid JSON object with this EXACT structure:\n`;
     prompt += `{\n`;
-    prompt += `  "questions": ["question 1", "question 2", "question 3", ...]\n`;
+    prompt += `  "questions": ["question 1 in ${languageName}", "question 2 in ${languageName}", "question 3 in ${languageName}", ...]\n`;
     prompt += `}\n\n`;
-    prompt += `IMPORTANT RULES:\n`;
-    prompt += `- Return ONLY valid JSON, no markdown code blocks, no explanations, no text before or after\n`;
+    prompt += `## IMPORTANT RULES\n`;
+    prompt += `- Return ONLY valid JSON, no markdown code blocks (\`\`\`json), no explanations, no text before or after\n`;
     prompt += `- The "questions" array MUST contain exactly ${count} question strings\n`;
     prompt += `- Each question must be a string with at least 10 characters\n`;
+    prompt += `- Each question MUST be in ${languageName} (${language.toUpperCase()})\n`;
     prompt += `- Do NOT include \`\`\`json or \`\`\` code blocks\n`;
     prompt += `- Do NOT add any explanatory text\n`;
     prompt += `- The response must be parseable as JSON\n`;
+    prompt += `- **FINAL CHECK:** Before returning, verify ALL questions are in ${languageName}. If any question is in English or another language, translate it to ${languageName}.\n\n`;
 
     try {
       // Determine model based on OpenRouter or OpenAI
       // Note: GPT-5 doesn't exist - using GPT-4o-mini as production-ready alternative
-      const model = getModelName(
+      // IMPORTANT: gpt-5-nano uses reasoning mode which can exhaust tokens, so we use gpt-4o-mini instead
+      let model = getModelName(
+        this.configService,
+        AI_MODELS.GPT35,
+        'openai/gpt-4o-mini', // Use gpt-4o-mini instead of gpt-5-nano to avoid reasoning mode issues
+      );
+
+      // If user explicitly wants gpt-5-nano, warn them about reasoning mode
+      const requestedModel = getModelName(
         this.configService,
         AI_MODELS.GPT35,
         OPENROUTER_MODELS['gpt-5-nano'] || 'openai/gpt-4o-mini',
       );
+      if (requestedModel.includes('gpt-5')) {
+        this.logger.warn(
+          `Model ${requestedModel} uses reasoning mode which may cause token limit issues. Using ${model} instead.`,
+        );
+      }
 
-      const completion = await this.openai.chat.completions.create({
+      this.logger.debug(`Generating ${count} questions using model: ${model}`);
+      this.logger.debug(`Prompt preview: ${prompt.substring(0, 200)}...`);
+
+      // Check if model supports JSON mode (OpenRouter models may vary)
+      const apiKey = this.configService.get<string>('OPENAI_API_KEY');
+      const isOpenRouter =
+        apiKey?.startsWith('sk-or-v1-') ||
+        this.configService.get<string>('OPENROUTER_ENABLED') === 'true';
+
+      // Some models don't support response_format, so we'll try with it first, then without if it fails
+      const requestConfig: any = {
         model,
         messages: [
           {
             role: 'system',
-            content: `You are a professional interview question generator. Your task is to generate interview questions and return them in valid JSON format.
+            content: `You are a professional interview question generator with expertise in technical recruitment. Your task is to generate interview questions and return them in valid JSON format.
 
 CRITICAL RULES:
 1. ALWAYS return a valid JSON object with a "questions" array
@@ -478,6 +574,8 @@ CRITICAL RULES:
 3. NEVER add explanatory text before or after the JSON
 4. The JSON must be directly parseable
 5. Each question must be a string in the "questions" array
+6. ALL questions MUST be in the language specified in the user prompt (${languageName})
+7. DO NOT use English or any other language unless explicitly requested
 
 Example of correct response:
 {"questions": ["Question 1?", "Question 2?", "Question 3?"]}
@@ -487,22 +585,142 @@ Example of INCORRECT response (DO NOT DO THIS):
 {"questions": ["Question 1?"]}
 \`\`\`
 
-Your response must be valid JSON that can be parsed directly.`,
+Your response must be valid JSON that can be parsed directly. All questions must be in ${languageName}.`,
           },
           {
             role: 'user',
             content: prompt,
           },
         ],
-        max_tokens: 2000,
+        max_tokens: 4000, // Increased for reasoning models and longer responses
         temperature: 0.8, // Higher temperature for more variety
-        response_format: { type: 'json_object' },
-      });
+      };
 
-      const responseText = completion.choices[0]?.message?.content || '{}';
+      // For reasoning models (like gpt-5-nano), we need to handle them differently
+      // Reasoning models use tokens for "thinking" which can exhaust the limit before generating content
+      if (isOpenRouter && model.includes('gpt-5')) {
+        // Increase max_tokens significantly for reasoning models
+        requestConfig.max_tokens = 8000; // Much higher for reasoning models
+        // Note: Reasoning models may still have issues, so we prefer gpt-4o-mini
+        this.logger.warn(
+          `Using reasoning model ${model} - this may cause token limit issues. Consider using gpt-4o-mini instead.`,
+        );
+      }
 
-      // Log raw response for debugging (first 500 chars)
+      // Try to use JSON mode if supported (OpenAI models support it, but some OpenRouter models may not)
+      // We'll try with JSON mode first, and if we get an empty response, retry without it
+      requestConfig.response_format = { type: 'json_object' };
+
+      let completion;
+      try {
+        completion = await this.openai.chat.completions.create(requestConfig);
+      } catch (jsonModeError: any) {
+        // If JSON mode is not supported, try without it
+        if (jsonModeError.message?.includes('response_format') || jsonModeError.status === 400) {
+          this.logger.warn(
+            `Model ${model} may not support JSON mode, retrying without response_format`,
+          );
+          delete requestConfig.response_format;
+          completion = await this.openai.chat.completions.create(requestConfig);
+        } else {
+          throw jsonModeError;
+        }
+      }
+
+      // Log full completion object for debugging
+      this.logger.debug(
+        `Completion object: ${JSON.stringify(completion, null, 2).substring(0, 1000)}`,
+      );
+
+      // Check if completion has choices
+      if (!completion.choices || completion.choices.length === 0) {
+        this.logger.error(
+          `No choices in completion response. Full response: ${JSON.stringify(completion, null, 2)}`,
+        );
+        throw new Error('AI API returned no choices in response');
+      }
+
+      const choice = completion.choices[0];
+      const responseText = choice?.message?.content || '{}';
+
+      // Log raw response for debugging
       this.logger.debug(`AI response (first 500 chars): ${responseText.substring(0, 500)}`);
+      this.logger.debug(
+        `Response length: ${responseText.length}, isEmpty: ${responseText === '{}' || responseText.trim() === ''}`,
+      );
+
+      // Check if response is actually empty
+      if (!responseText || responseText.trim() === '' || responseText === '{}') {
+        // If we used JSON mode and got empty response, try again without JSON mode
+        if (requestConfig.response_format) {
+          this.logger.warn(
+            `Empty response with JSON mode, retrying without JSON mode for model: ${model}`,
+          );
+          delete requestConfig.response_format;
+
+          try {
+            completion = await this.openai.chat.completions.create(requestConfig);
+            const retryChoice = completion.choices[0];
+            const retryResponseText = retryChoice?.message?.content || '';
+
+            if (
+              retryResponseText &&
+              retryResponseText.trim() !== '' &&
+              retryResponseText !== '{}'
+            ) {
+              this.logger.log(`Successfully got response without JSON mode`);
+              // Use the retry response
+              const retryParsed = JSON.parse(retryResponseText.trim());
+              if (retryParsed.questions && Array.isArray(retryParsed.questions)) {
+                const retryQuestions = retryParsed.questions
+                  .filter((q: any) => q && typeof q === 'string' && q.trim().length >= 5)
+                  .slice(0, count)
+                  .map((q: string) => q.trim());
+
+                if (retryQuestions.length > 0) {
+                  this.logger.log(
+                    `Successfully extracted ${retryQuestions.length} questions from retry response`,
+                  );
+                  return retryQuestions;
+                }
+              }
+            }
+          } catch (retryError: any) {
+            this.logger.error(`Retry without JSON mode also failed: ${retryError.message}`);
+          }
+        }
+
+        this.logger.error(
+          `Empty AI response. Completion details: ${JSON.stringify(
+            {
+              finish_reason: choice?.finish_reason,
+              index: choice?.index,
+              message: choice?.message,
+              model: completion.model,
+              usage: completion.usage,
+            },
+            null,
+            2,
+          )}`,
+        );
+
+        // Check finish_reason to understand why response is empty
+        if (choice?.finish_reason === 'length') {
+          throw new Error(
+            'AI response was cut off due to token limit. Try reducing the number of questions or increasing max_tokens.',
+          );
+        } else if (choice?.finish_reason === 'content_filter') {
+          throw new Error('AI response was filtered by content policy. Please adjust your prompt.');
+        } else if (choice?.finish_reason === 'stop' && !responseText) {
+          throw new Error(
+            'AI API returned empty response. The model may not support JSON mode or there may be a configuration issue. Please check your API key and model configuration.',
+          );
+        } else {
+          throw new Error(
+            'AI API returned empty response. This might be due to API configuration, model limitations, or quota issues.',
+          );
+        }
+      }
 
       // Try to parse JSON response
       let parsed: any;
@@ -650,12 +868,8 @@ Your response must be valid JSON that can be parsed directly.`,
    */
   private async checkUsageLimits(userId: string): Promise<void> {
     const user = await this.usersService.findById(userId);
-    const plan = user.subscription?.plan || 'free';
-    const limit = USAGE_LIMITS[plan]?.mockInterviews || USAGE_LIMITS.free.mockInterviews;
-
-    if (limit === -1) {
-      return; // Unlimited
-    }
+    const plan = user.subscription?.plan || 'free_trial';
+    const limit = USAGE_LIMITS[plan as keyof typeof USAGE_LIMITS]?.mockInterviews || USAGE_LIMITS.free_trial.mockInterviews;
 
     if (user.usage.mockInterviewsThisMonth >= limit) {
       throw new ForbiddenException(
@@ -680,6 +894,90 @@ Your response must be valid JSON that can be parsed directly.`,
     });
 
     return topics;
+  }
+
+  /**
+   * Get user interview history for context
+   * Analyzes previous sessions to identify correct/incorrect answers and avoid repetition
+   */
+  async getUserInterviewContext(userId: string, limit = 5): Promise<{
+    correctQuestions: string[];
+    incorrectQuestions: string[];
+    allQuestions: string[]; // To avoid repetition
+    averageScore: number;
+    lastScore?: number;
+  }> {
+    try {
+      // Get last N sessions
+      const sessions = await this.repository.findSessionsByUserId(userId, limit);
+      
+      const correctQuestions: string[] = [];
+      const incorrectQuestions: string[] = [];
+      const allQuestions: string[] = [];
+      
+      let totalScore = 0;
+      let scoredSessionsCount = 0;
+      let lastScore: number | undefined;
+
+      // Sessions are sorted by createdAt desc (newest first)
+      if (sessions.length > 0 && sessions[0].overallScore !== undefined) {
+        lastScore = sessions[0].overallScore;
+      }
+
+      // OPTIMIZATION: Batch fetch all answers for these sessions to avoid N+1 problem
+      const sessionIds = sessions.map(s => s.id);
+      const allAnswers = await this.repository.findAnswersBySessionIds(sessionIds);
+
+      // Map answers to sessions for easier processing if needed, or process flat list
+      // We need to process session scores separately from answers
+      
+      for (const session of sessions) {
+        // Calculate average score trend
+        if (session.overallScore !== undefined) {
+          totalScore += session.overallScore;
+          scoredSessionsCount++;
+        }
+      }
+
+      // Process answers
+      for (const answer of allAnswers) {
+        // Safe access to question text (populated)
+        const questionObj = answer.questionId as any;
+        const questionText = questionObj?.question || '';
+        
+        if (!questionText) continue;
+
+        allQuestions.push(questionText);
+
+        // Categorize based on score (if analyzed)
+        // Score >= 7: Considered correct (Mastered)
+        // Score < 7: Considered incorrect/partial (needs improvement)
+        if (answer.score !== undefined) {
+          if (answer.score >= 7) {
+            correctQuestions.push(questionText);
+          } else {
+            incorrectQuestions.push(questionText);
+          }
+        }
+      }
+
+      return {
+        correctQuestions: [...new Set(correctQuestions)], // Unique
+        incorrectQuestions: [...new Set(incorrectQuestions)], // Unique
+        allQuestions: [...new Set(allQuestions)], // Unique
+        averageScore: scoredSessionsCount > 0 ? Number((totalScore / scoredSessionsCount).toFixed(1)) : 0,
+        lastScore,
+      };
+    } catch (error) {
+      this.logger.error(`Failed to get interview context for user ${userId}: ${error.message}`);
+      // Return empty context on error
+      return {
+        correctQuestions: [],
+        incorrectQuestions: [],
+        allQuestions: [],
+        averageScore: 0,
+      };
+    }
   }
 
   /**

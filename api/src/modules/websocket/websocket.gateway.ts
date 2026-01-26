@@ -14,6 +14,8 @@ import { AiAnswerService } from '../ai/ai-answer.service';
 import { UsersService } from '../users/users.service';
 import { WsJwtGuard } from './ws-jwt.guard';
 
+import { SubscriptionService } from '../payments/subscription.service';
+
 @WebSocketGateway({
   cors: {
     origin: '*',
@@ -26,19 +28,25 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
   server: Server;
 
   private readonly logger = new Logger(WebsocketGateway.name);
+  // Map to track session start time: socketId -> startTime (ms)
+  private readonly sessionStartTimes = new Map<string, number>();
 
   constructor(
     private readonly sttService: AiSttService,
     private readonly answerService: AiAnswerService,
     private readonly usersService: UsersService,
+    private readonly subscriptionService: SubscriptionService,
   ) {}
 
-  handleConnection(client: Socket) {
+  async handleConnection(client: Socket) {
     this.logger.log(`Client connected: ${client.id}`);
+    // We don't start tracking here because we don't know the user ID yet
+    // Tracking starts at handleJoinSession
   }
 
-  handleDisconnect(client: Socket) {
+  async handleDisconnect(client: Socket) {
     this.logger.log(`Client disconnected: ${client.id}`);
+    await this.processSessionEnd(client);
   }
 
   @UseGuards(WsJwtGuard)
@@ -48,6 +56,12 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
     @MessageBody() data: { audioData: string; sessionId: string },
   ) {
     try {
+      // Check if usage limit is reached (double check in real-time)
+      const userId = client.data.userId;
+      if (userId) {
+         // Optionally check remaining minutes here if strict enforcement is needed
+      }
+
       // Transcribe audio chunk
       const transcription = await this.sttService.transcribe({
         audioData: data.audioData,
@@ -89,18 +103,47 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
 
   @UseGuards(WsJwtGuard)
   @SubscribeMessage('session:join')
-  handleJoinSession(@ConnectedSocket() client: Socket, @MessageBody() data: { sessionId: string }) {
+  async handleJoinSession(@ConnectedSocket() client: Socket, @MessageBody() data: { sessionId: string }) {
     client.join(data.sessionId);
+    
+    // Start tracking duration
+    this.sessionStartTimes.set(client.id, Date.now());
+    this.logger.debug(`Session tracking started for ${client.id} (User: ${client.data.userId})`);
+
     client.emit('session:status', { joined: true, sessionId: data.sessionId });
   }
 
   @UseGuards(WsJwtGuard)
   @SubscribeMessage('session:leave')
-  handleLeaveSession(
+  async handleLeaveSession(
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { sessionId: string },
   ) {
     client.leave(data.sessionId);
+    await this.processSessionEnd(client);
     client.emit('session:status', { left: true, sessionId: data.sessionId });
+  }
+
+  /**
+   * Calculate duration and deduct minutes
+   */
+  private async processSessionEnd(client: Socket) {
+    const startTime = this.sessionStartTimes.get(client.id);
+    if (startTime && client.data.userId) {
+      const endTime = Date.now();
+      const durationMs = endTime - startTime;
+      const minutesUsed = Math.ceil(durationMs / (1000 * 60)); // Round up to nearest minute
+
+      if (minutesUsed > 0) {
+        this.logger.log(`Deducting ${minutesUsed} live minutes for user ${client.data.userId}`);
+        try {
+          await this.subscriptionService.addLiveMinutes(client.data.userId, minutesUsed);
+        } catch (error) {
+          this.logger.error(`Failed to deduct minutes for user ${client.data.userId}: ${error.message}`);
+        }
+      }
+      
+      this.sessionStartTimes.delete(client.id);
+    }
   }
 }

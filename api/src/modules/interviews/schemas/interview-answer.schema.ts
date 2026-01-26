@@ -51,6 +51,8 @@ export class InterviewAnswer {
     keyPointsMissed: string[];
     suggestions: string[];
     exampleAnswer?: string;
+    authenticityWarning?: boolean;
+    pacingFeedback?: string;
   };
 
   @Prop({ type: String })

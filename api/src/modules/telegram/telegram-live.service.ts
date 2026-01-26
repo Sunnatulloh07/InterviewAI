@@ -8,6 +8,8 @@ import { AiSttService } from '../ai/ai-stt.service';
 import { UsersService } from '../users/users.service';
 import { AiContextService } from '../ai/ai-context.service';
 import { AnalyticsService } from '../analytics/analytics.service';
+import { SubscriptionService } from '../payments/subscription.service';
+import { InlineKeyboard } from 'grammy';
 
 @Injectable()
 export class TelegramLiveService {
@@ -20,6 +22,7 @@ export class TelegramLiveService {
     private readonly sttService: AiSttService,
     private readonly usersService: UsersService,
     private readonly contextService: AiContextService,
+    private readonly subscriptionService: SubscriptionService,
   ) {}
 
   async handleStartLive(ctx: BotContext) {
@@ -49,20 +52,73 @@ export class TelegramLiveService {
       }
     }
 
+    // Check if metadata is already collected
+    const hasMetadata =
+      ctx.session.liveSessionMetadata?.domain &&
+      (ctx.session.liveSessionMetadata?.technologies?.length ?? 0) > 0 &&
+      ctx.session.liveSessionMetadata?.position &&
+      ctx.session.liveSessionMetadata?.company;
+
+    if (!hasMetadata) {
+      // Start metadata collection flow
+      ctx.session.liveSessionMetadata = ctx.session.liveSessionMetadata || {};
+      ctx.session.liveSessionStep = 'domain';
+
+      const welcomeText: Record<string, string> = {
+        uz:
+          `🎯 <b>Live Intervyu Rejimi</b>\n\n` +
+          `Real intervyuda sizga yordam berish uchun bir nechta ma'lumotlar kerak.\n\n` +
+          `Keling, boshlaymiz!`,
+        ru:
+          `🎯 <b>Режим Live Интервью</b>\n\n` +
+          `Для помощи в реальном интервью нужна некоторая информация.\n\n` +
+          `Давайте начнем!`,
+        en:
+          `🎯 <b>Live Interview Mode</b>\n\n` +
+          `To help you in a real interview, I need some information.\n\n` +
+          `Let's get started!`,
+      };
+
+      await ctx.reply(welcomeText[lang] || welcomeText['en'], {
+        parse_mode: 'HTML',
+      });
+
+      // Ask for domain
+      await this.askLiveDomain(ctx, lang);
+      return;
+    }
+
+    // Metadata already collected - start live session
+    const sessionMetadata = ctx.session.liveSessionMetadata!;
     const startText: Record<string, string> = {
       uz:
         `🎯 <b>Live Intervyu Rejimi Faollashtirildi</b>\n\n` +
         `Men endi real vaqtda sizga yordam bera olaman!\n\n` +
+        `📋 <b>Intervyu ma'lumotlari:</b>\n` +
+        `• Soha: ${sessionMetadata.domain}\n` +
+        `• Texnologiyalar: ${sessionMetadata.technologies?.join(', ') || 'N/A'}\n` +
+        `• Pozitsiya: ${sessionMetadata.position}\n` +
+        `• Kompaniya: ${sessionMetadata.company}\n\n` +
         `Savollaringizni yuboring yoki ovozli xabarlardan foydalaning, men darhol javob beraman.\n\n` +
         `To'xtatish uchun /end_live buyrug'ini yuboring.`,
       ru:
         `🎯 <b>Режим Live Интервью Активирован</b>\n\n` +
         `Я теперь готов помочь вам в реальном времени!\n\n` +
+        `📋 <b>Информация об интервью:</b>\n` +
+        `• Область: ${sessionMetadata.domain}\n` +
+        `• Технологии: ${sessionMetadata.technologies?.join(', ') || 'N/A'}\n` +
+        `• Позиция: ${sessionMetadata.position}\n` +
+        `• Компания: ${sessionMetadata.company}\n\n` +
         `Отправляйте вопросы или используйте голосовые сообщения, я предоставлю мгновенные ответы.\n\n` +
         `Используйте /end_live для остановки.`,
       en:
         `🎯 <b>Live Interview Mode Activated</b>\n\n` +
         `I'm now ready to assist you in real-time!\n\n` +
+        `📋 <b>Interview Information:</b>\n` +
+        `• Domain: ${sessionMetadata.domain}\n` +
+        `• Technologies: ${sessionMetadata.technologies?.join(', ') || 'N/A'}\n` +
+        `• Position: ${sessionMetadata.position}\n` +
+        `• Company: ${sessionMetadata.company}\n\n` +
         `Send me questions or use voice messages, and I'll provide instant answers.\n\n` +
         `Use /end_live to stop.`,
     };
@@ -71,11 +127,27 @@ export class TelegramLiveService {
       parse_mode: 'HTML',
     });
 
-    // Create or update session
+    // Get user ID (handle both _id and id fields)
+    const userId = (user as any)._id?.toString() || (user as any).id?.toString() || user.id;
+    if (!userId) {
+      this.logger.error(`User ID is undefined for Telegram ID: ${telegramId}`);
+      const errorText: Record<string, string> = {
+        uz: `❌ Xatolik: Foydalanuvchi ID topilmadi.`,
+        ru: `❌ Ошибка: ID пользователя не найден.`,
+        en: `❌ Error: User ID not found.`,
+      };
+      await ctx.reply(errorText[lang] || errorText['en'], {
+        parse_mode: 'HTML',
+      });
+      return;
+    }
+
+    // Create or update session with full metadata
+    const liveMetadata = ctx.session.liveSessionMetadata || {};
     await this.sessionModel.findOneAndUpdate(
       { telegramChatId: telegramId },
       {
-        userId: user.id as any,
+        userId: userId as any,
         telegramChatId: telegramId,
         status: 'live_session',
         sessionStartedAt: new Date(),
@@ -83,9 +155,14 @@ export class TelegramLiveService {
         messages: [],
         context: '',
         metadata: {
-          jobRole: ctx.session.liveSessionMetadata?.jobRole,
-          company: ctx.session.liveSessionMetadata?.company,
-          interviewType: ctx.session.liveSessionMetadata?.interviewType,
+          // New metadata fields
+          domain: liveMetadata.domain,
+          technologies: liveMetadata.technologies || [],
+          position: liveMetadata.position,
+          company: liveMetadata.company,
+          // Legacy fields (for backward compatibility)
+          jobRole: liveMetadata.jobRole || liveMetadata.position,
+          interviewType: liveMetadata.interviewType || 'technical',
           language: lang,
         },
       },
@@ -93,7 +170,7 @@ export class TelegramLiveService {
     );
 
     // Create AI context session
-    const aiSession = await this.contextService.createSession(user.id, 'live_interview');
+    const aiSession = await this.contextService.createSession(userId, 'live_interview');
     await this.sessionModel.findOneAndUpdate(
       { telegramChatId: telegramId },
       { context: aiSession.id },
@@ -134,6 +211,12 @@ export class TelegramLiveService {
       { status: 'idle', lastActivityAt: new Date() },
     );
 
+    // Clear metadata from session
+    if (ctx.session) {
+      ctx.session.liveSessionMetadata = undefined;
+      ctx.session.liveSessionStep = undefined;
+    }
+
     const endText: Record<string, string> = {
       uz: `✅ <b>Live sessiya yakunlandi</b>\n\nIntervyu uchun omad tilaymiz!`,
       ru: `✅ <b>Live сессия завершена</b>\n\nУдачи на интервью!`,
@@ -160,9 +243,509 @@ export class TelegramLiveService {
     return this.sessionModel;
   }
 
+  /**
+   * Ask for domain in live session setup
+   */
+  private async askLiveDomain(ctx: BotContext, lang: string) {
+    const domainKeyboard = new InlineKeyboard()
+      .text('Frontend', 'live_domain_frontend')
+      .text('Backend', 'live_domain_backend')
+      .row()
+      .text('Full Stack', 'live_domain_fullstack')
+      .text('Mobile', 'live_domain_mobile')
+      .row()
+      .text('DevOps', 'live_domain_devops')
+      .text('Data Science', 'live_domain_datascience');
+
+    const domainText: Record<string, string> = {
+      uz: `📋 <b>Qaysi soha bo'yicha intervyu?</b>\n\nTugmalardan birini tanlang:`,
+      ru: `📋 <b>По какой области интервью?</b>\n\nВыберите одну из кнопок:`,
+      en: `📋 <b>What domain is the interview for?</b>\n\nSelect one of the buttons:`,
+    };
+
+    await this.replyOrTransition(ctx, domainText[lang] || domainText['en'], {
+      reply_markup: domainKeyboard,
+      parse_mode: 'HTML',
+    });
+  }
+
+  /**
+   * Ask for technologies in live session setup
+   */
+  private async askLiveTechnologies(ctx: BotContext, lang: string, shouldEdit: boolean = false) {
+    const selectedTechs = ctx.session.liveSessionMetadata?.technologies || [];
+    const techKeyboard = new InlineKeyboard();
+
+    // Add technologies with checkmark if selected
+    const techs = [
+      { key: 'react', label: 'React' },
+      { key: 'vue', label: 'Vue.js' },
+      { key: 'angular', label: 'Angular' },
+      { key: 'nodejs', label: 'Node.js' },
+      { key: 'python', label: 'Python' },
+      { key: 'java', label: 'Java' },
+      { key: 'csharp', label: 'C#' },
+      { key: 'go', label: 'Go' },
+      { key: 'rust', label: 'Rust' },
+    ];
+
+    techs.forEach((tech, index) => {
+      const isSelected = selectedTechs.includes(tech.key);
+      const label = isSelected ? `✅ ${tech.label}` : tech.label;
+      techKeyboard.text(label, `live_tech_${tech.key}`);
+      if ((index + 1) % 3 === 0) {
+        techKeyboard.row();
+      }
+    });
+
+    techKeyboard.row().text("➕ Qo'lda kiritish", 'live_tech_custom');
+    techKeyboard.row().text('✅ Tugadi', 'live_tech_done');
+
+    const techText: Record<string, string> = {
+      uz:
+        `💻 <b>Qaysi texnologiyalar ishlatiladi?</b>\n\n` +
+        `Bir nechta texnologiyalarni tanlashingiz mumkin:\n` +
+        `• Tugmalardan tanlash\n` +
+        `• Yoki "➕ Qo'lda kiritish" tugmasini bosib, texnologiyalarni vergul bilan ajratib yozing\n` +
+        `Masalan: "React, Node.js, PostgreSQL"\n\n` +
+        `Tanlaganingizdan keyin "✅ Tugadi" tugmasini bosing.`,
+      ru:
+        `💻 <b>Какие технологии используются?</b>\n\n` +
+        `Вы можете выбрать несколько технологий:\n` +
+        `• Выбрать из кнопок\n` +
+        `• Или нажать "➕ Ввести вручную" и написать технологии через запятую\n` +
+        `Например: "React, Node.js, PostgreSQL"\n\n` +
+        `После выбора нажмите "✅ Готово".`,
+      en:
+        `💻 <b>What technologies are used?</b>\n\n` +
+        `You can select multiple technologies:\n` +
+        `• Select from buttons\n` +
+        `• Or press "➕ Enter manually" and type technologies separated by commas\n` +
+        `Example: "React, Node.js, PostgreSQL"\n\n` +
+        `After selecting, press "✅ Done".`,
+    };
+
+    await this.replyOrTransition(ctx, techText[lang] || techText['en'], {
+      reply_markup: techKeyboard,
+      parse_mode: 'HTML',
+    }, shouldEdit);
+  }
+
+  /**
+   * Ask for position in live session setup
+   */
+  private async askLivePosition(ctx: BotContext, lang: string) {
+    const positionKeyboard = new InlineKeyboard()
+      .text('Junior', 'live_position_junior')
+      .text('Middle', 'live_position_middle')
+      .row()
+      .text('Senior', 'live_position_senior')
+      .text('Lead', 'live_position_lead');
+
+    const positionText: Record<string, string> = {
+      uz: `👔 <b>Qaysi pozitsiya uchun intervyu?</b>\n\nTugmalardan birini tanlang:`,
+      ru: `👔 <b>На какую позицию интервью?</b>\n\nВыберите одну из кнопок:`,
+      en: `👔 <b>What position is the interview for?</b>\n\nSelect one of the buttons:`,
+    };
+
+    await this.replyOrTransition(ctx, positionText[lang] || positionText['en'], {
+      reply_markup: positionKeyboard,
+      parse_mode: 'HTML',
+    });
+  }
+
+  /**
+   * Ask for company in live session setup
+   */
+  private async askLiveCompany(ctx: BotContext, lang: string) {
+    const companyText: Record<string, string> = {
+      uz: `🏢 <b>Qaysi kompaniya uchun intervyu?</b>\n\nKompaniya nomini yuboring:`,
+      ru: `🏢 <b>Для какой компании интервью?</b>\n\nОтправьте название компании:`,
+      en: `🏢 <b>What company is the interview for?</b>\n\nSend the company name:`,
+    };
+
+    await this.replyOrTransition(ctx, companyText[lang] || companyText['en'], {
+      parse_mode: 'HTML',
+    });
+  }
+
+  /**
+   * Handle live session metadata callbacks
+   */
+  async handleLiveMetadataCallback(ctx: BotContext, data: string) {
+    const lang = ctx.session?.language || 'en';
+
+    // Initialize metadata if not exists
+    if (!ctx.session.liveSessionMetadata) {
+      ctx.session.liveSessionMetadata = {};
+    }
+
+    // Domain selection
+    if (data.startsWith('live_domain_')) {
+      const domain = data.replace('live_domain_', '');
+      ctx.session.liveSessionMetadata.domain = domain;
+      ctx.session.liveSessionStep = 'technologies';
+      ctx.session.liveSessionMetadata.technologies = []; // Initialize technologies array
+
+      // Save to DB immediately for persistence
+      const telegramId = ctx.from?.id as number;
+      if (telegramId) {
+        try {
+          await this.sessionModel.findOneAndUpdate(
+            { telegramChatId: telegramId },
+            {
+              $set: {
+                'metadata.domain': domain,
+                'metadata.technologies': [],
+              },
+            },
+            { upsert: false },
+          );
+        } catch (error) {
+          this.logger.warn(`Failed to save metadata to DB: ${error.message}`);
+          // Continue anyway - session state is still valid
+        }
+      }
+
+      await this.askLiveTechnologies(ctx, lang);
+      await ctx.answerCallbackQuery();
+      return;
+    }
+
+    // Technology selection (multiple)
+    if (data.startsWith('live_tech_')) {
+      const tech = data.replace('live_tech_', '');
+      if (tech === 'custom') {
+        // User wants to enter technologies manually
+        ctx.session.liveSessionStep = 'technologies_custom';
+        const customText: Record<string, string> = {
+          uz:
+            `✍️ <b>Texnologiyalarni qo'lda kiriting</b>\n\n` +
+            `Texnologiyalarni vergul bilan ajratib yozing:\n` +
+            `Masalan: <code>React, Node.js, PostgreSQL, MongoDB</code>\n\n` +
+            `Yoki bir nechta xabar sifatida yuborishingiz mumkin.`,
+          ru:
+            `✍️ <b>Введите технологии вручную</b>\n\n` +
+            `Напишите технологии через запятую:\n` +
+            `Например: <code>React, Node.js, PostgreSQL, MongoDB</code>\n\n` +
+            `Или вы можете отправить их несколькими сообщениями.`,
+          en:
+            `✍️ <b>Enter technologies manually</b>\n\n` +
+            `Type technologies separated by commas:\n` +
+            `Example: <code>React, Node.js, PostgreSQL, MongoDB</code>\n\n` +
+            `Or you can send them as multiple messages.`,
+        };
+        await ctx.reply(customText[lang] || customText['en'], {
+          parse_mode: 'HTML',
+        });
+        await ctx.answerCallbackQuery();
+        return;
+      }
+      if (tech === 'done') {
+        // Check if at least one technology selected
+        if (!ctx.session.liveSessionMetadata.technologies?.length) {
+          const errorText: Record<string, string> = {
+            uz: `⚠️ Iltimos, kamida bitta texnologiyani tanlang!`,
+            ru: `⚠️ Пожалуйста, выберите хотя бы одну технологию!`,
+            en: `⚠️ Please select at least one technology!`,
+          };
+          await ctx.answerCallbackQuery({
+            text: errorText[lang] || errorText['en'],
+            show_alert: true,
+          });
+          return;
+        }
+        ctx.session.liveSessionStep = 'position';
+        await this.askLivePosition(ctx, lang);
+        await ctx.answerCallbackQuery();
+        return;
+      }
+      // Toggle technology
+      if (!ctx.session.liveSessionMetadata.technologies) {
+        ctx.session.liveSessionMetadata.technologies = [];
+      }
+      const techIndex = ctx.session.liveSessionMetadata.technologies.indexOf(tech);
+      if (techIndex === -1) {
+        ctx.session.liveSessionMetadata.technologies.push(tech);
+      } else {
+        ctx.session.liveSessionMetadata.technologies.splice(techIndex, 1);
+      }
+
+      // Save to DB immediately for persistence
+      const telegramId = ctx.from?.id as number;
+      if (telegramId) {
+        try {
+          await this.sessionModel.findOneAndUpdate(
+            { telegramChatId: telegramId },
+            {
+              $set: {
+                'metadata.technologies': ctx.session.liveSessionMetadata.technologies,
+              },
+            },
+            { upsert: false },
+          );
+        } catch (error) {
+          this.logger.warn(`Failed to save technologies to DB: ${error.message}`);
+          // Continue anyway - session state is still valid
+        }
+      }
+
+      // Update keyboard with selected state
+      await this.askLiveTechnologies(ctx, lang, true);
+      await ctx.answerCallbackQuery();
+      return;
+    }
+
+    // Position selection
+    if (data.startsWith('live_position_')) {
+      const position = data.replace('live_position_', '');
+      ctx.session.liveSessionMetadata.position = position;
+      ctx.session.liveSessionStep = 'company';
+
+      // Save to DB immediately for persistence
+      const telegramId = ctx.from?.id as number;
+      if (telegramId) {
+        try {
+          await this.sessionModel.findOneAndUpdate(
+            { telegramChatId: telegramId },
+            {
+              $set: {
+                'metadata.position': position,
+              },
+            },
+            { upsert: false },
+          );
+        } catch (error) {
+          this.logger.warn(`Failed to save position to DB: ${error.message}`);
+          // Continue anyway - session state is still valid
+        }
+      }
+
+      await this.askLiveCompany(ctx, lang);
+      await ctx.answerCallbackQuery();
+      return;
+    }
+  }
+
+  /**
+   * Handle text input for technologies (custom input)
+   */
+  async handleLiveTechnologiesInput(ctx: BotContext, text: string) {
+    if (ctx.session.liveSessionStep === 'technologies_custom') {
+      const lang = ctx.session?.language || 'en';
+
+      // Parse technologies from text (comma-separated or newline-separated)
+      const technologies = text
+        .split(/[,\n]/)
+        .map((t) => t.trim())
+        .filter((t) => t.length > 0)
+        .map((t) => {
+          // Normalize common technology names
+          const normalized = t.toLowerCase();
+          const techMap: Record<string, string> = {
+            react: 'react',
+            vue: 'vue',
+            'vue.js': 'vue',
+            vuejs: 'vue',
+            angular: 'angular',
+            node: 'nodejs',
+            'node.js': 'nodejs',
+            nodejs: 'nodejs',
+            python: 'python',
+            java: 'java',
+            'c#': 'csharp',
+            csharp: 'csharp',
+            go: 'go',
+            golang: 'go',
+            rust: 'rust',
+            typescript: 'typescript',
+            ts: 'typescript',
+            javascript: 'javascript',
+            js: 'javascript',
+            postgresql: 'postgresql',
+            postgres: 'postgresql',
+            mysql: 'mysql',
+            mongodb: 'mongodb',
+            mongo: 'mongodb',
+            redis: 'redis',
+            docker: 'docker',
+            kubernetes: 'kubernetes',
+            k8s: 'kubernetes',
+            aws: 'aws',
+            azure: 'azure',
+            gcp: 'gcp',
+            'next.js': 'nextjs',
+            nextjs: 'nextjs',
+            express: 'express',
+            nestjs: 'nestjs',
+            nest: 'nestjs',
+          };
+          return techMap[normalized] || t.toLowerCase().replace(/\s+/g, '').replace(/\./g, '');
+        });
+
+      if (technologies.length === 0) {
+        const errorText: Record<string, string> = {
+          uz: `⚠️ Iltimos, kamida bitta texnologiya nomini kiriting.`,
+          ru: `⚠️ Пожалуйста, введите хотя бы одно название технологии.`,
+          en: `⚠️ Please enter at least one technology name.`,
+        };
+        await ctx.reply(errorText[lang] || errorText['en']);
+        return;
+      }
+
+      // Initialize technologies array if not exists
+      if (!ctx.session.liveSessionMetadata!.technologies) {
+        ctx.session.liveSessionMetadata!.technologies = [];
+      }
+
+      // Add new technologies (avoid duplicates)
+      technologies.forEach((tech) => {
+        if (!ctx.session.liveSessionMetadata!.technologies!.includes(tech)) {
+          ctx.session.liveSessionMetadata!.technologies!.push(tech);
+        }
+      });
+
+      // Save to DB immediately
+      const telegramId = ctx.from?.id as number;
+      if (telegramId) {
+        try {
+          await this.sessionModel.findOneAndUpdate(
+            { telegramChatId: telegramId },
+            {
+              $set: {
+                'metadata.technologies': ctx.session.liveSessionMetadata!.technologies,
+              },
+            },
+            { upsert: false },
+          );
+        } catch (error) {
+          this.logger.warn(`Failed to save technologies to DB: ${error.message}`);
+        }
+      }
+
+      // Show confirmation with Done button
+      const confirmText: Record<string, string> = {
+        uz:
+          `✅ <b>Texnologiyalar qo'shildi!</b>\n\n` +
+          `Tanlangan texnologiyalar: <b>${ctx.session.liveSessionMetadata!.technologies!.join(', ')}</b>\n\n` +
+          `Yana qo'shish uchun yozishingiz mumkin. Agar tugatgan bo'lsangiz:`,
+        ru:
+          `✅ <b>Технологии добавлены!</b>\n\n` +
+          `Выбранные технологии: <b>${ctx.session.liveSessionMetadata!.technologies!.join(', ')}</b>\n\n` +
+          `Можете написать еще. Если закончили:`,
+        en:
+          `✅ <b>Technologies added!</b>\n\n` +
+          `Selected technologies: <b>${ctx.session.liveSessionMetadata!.technologies!.join(', ')}</b>\n\n` +
+          `You can type more. If finished:`,
+      };
+
+      const doneButtonText = lang === 'uz' ? '✅ Tugadi' : lang === 'ru' ? '✅ Готово' : '✅ Done';
+      const keyboard = new InlineKeyboard().text(doneButtonText, 'live_tech_done');
+
+      await ctx.reply(confirmText[lang] || confirmText['en'], {
+        parse_mode: 'HTML',
+        reply_markup: keyboard,
+      });
+
+      // Do NOT call askLiveTechnologies(ctx, lang) again to avoid spamming the big keyboard
+    }
+  }
+
+  /**
+   * Handle text input for company name
+   */
+  async handleLiveCompanyInput(ctx: BotContext, text: string) {
+    if (ctx.session.liveSessionStep === 'company') {
+      let companyName = text.trim();
+
+      // Extract company name if user sends "Kompaniya nomi: AWS" or "Company: AWS" format
+      // Check for colon separator first (most common case)
+      const colonIndex = companyName.indexOf(':');
+      if (colonIndex !== -1) {
+        companyName = companyName.substring(colonIndex + 1).trim();
+      } else {
+        // Try to match patterns like "Kompaniya nomi AWS" or "Company AWS"
+        const patternMatch = companyName.match(
+          /^(?:kompaniya\s*nomi?|company\s*name?|компания)[\s:]*:?\s*(.+)$/i,
+        );
+        if (patternMatch && patternMatch[1]) {
+          companyName = patternMatch[1].trim();
+        }
+      }
+
+      // Validate company name
+      if (!companyName || companyName.length < 2) {
+        const lang = ctx.session?.language || 'en';
+        const errorText: Record<string, string> = {
+          uz: `⚠️ Kompaniya nomi juda qisqa. Iltimos, to'liq nomini yuboring.`,
+          ru: `⚠️ Название компании слишком короткое. Пожалуйста, отправьте полное название.`,
+          en: `⚠️ Company name is too short. Please send the full company name.`,
+        };
+        await ctx.reply(errorText[lang] || errorText['en']);
+        return;
+      }
+
+      if (companyName.length > 100) {
+        const lang = ctx.session?.language || 'en';
+        const errorText: Record<string, string> = {
+          uz: `⚠️ Kompaniya nomi juda uzun. Iltimos, qisqaroq nom yuboring (maksimal 100 belgi).`,
+          ru: `⚠️ Название компании слишком длинное. Пожалуйста, отправьте более короткое название (максимум 100 символов).`,
+          en: `⚠️ Company name is too long. Please send a shorter name (max 100 characters).`,
+        };
+        await ctx.reply(errorText[lang] || errorText['en']);
+        return;
+      }
+
+      try {
+        ctx.session.liveSessionMetadata!.company = companyName;
+        ctx.session.liveSessionStep = 'complete';
+
+        // Now start the live session
+        await this.handleStartLive(ctx);
+      } catch (error) {
+        this.logger.error(
+          `Failed to start live session after company input: ${error.message}`,
+          error.stack,
+        );
+        const lang = ctx.session?.language || 'en';
+        const errorText: Record<string, string> = {
+          uz: `❌ Live sessiyani boshlashda xatolik yuz berdi. Iltimos, /start_live buyrug'ini qayta yuboring.`,
+          ru: `❌ Ошибка при запуске live сессии. Пожалуйста, отправьте команду /start_live снова.`,
+          en: `❌ Error starting live session. Please send /start_live command again.`,
+        };
+        await ctx.reply(errorText[lang] || errorText['en']);
+      }
+    }
+  }
+
   async handleLiveMessage(ctx: BotContext) {
     const telegramId = ctx.from?.id as number;
     const text = ctx.message?.text;
+
+    // Check if we're collecting metadata
+    if (ctx.session.liveSessionStep && ctx.session.liveSessionStep !== 'complete') {
+      if (text) {
+        if (ctx.session.liveSessionStep === 'company') {
+          await this.handleLiveCompanyInput(ctx, text);
+          return;
+        } else if (ctx.session.liveSessionStep === 'technologies_custom') {
+          await this.handleLiveTechnologiesInput(ctx, text);
+          return;
+        } else {
+          // User sent text during domain/position selection
+          const lang = ctx.session?.language || 'en';
+          const errorText: Record<string, string> = {
+            uz: `⚠️ Iltimos, tugmalardan birini tanlang. Matn yuborish hozircha mumkin emas.`,
+            ru: `⚠️ Пожалуйста, выберите одну из кнопок. Отправка текста сейчас недоступна.`,
+            en: `⚠️ Please select one of the buttons. Text input is not available at this step.`,
+          };
+          await ctx.reply(errorText[lang] || errorText['en']);
+          return;
+        }
+      }
+      // If no text and we're in metadata collection, ignore
+      return;
+    }
 
     if (!text) {
       return;
@@ -198,9 +781,24 @@ export class TelegramLiveService {
         status: 'live_session',
       });
 
+      // Get user ID (handle both _id and id fields)
+      const userId = (user as any)._id?.toString() || (user as any).id?.toString() || user.id;
+      if (!userId) {
+        this.logger.error(`User ID is undefined for Telegram ID: ${telegramId}`);
+        const errorText: Record<string, string> = {
+          uz: `❌ Xatolik: Foydalanuvchi ID topilmadi.`,
+          ru: `❌ Ошибка: ID пользователя не найден.`,
+          en: `❌ Error: User ID not found.`,
+        };
+        await ctx.reply(errorText[lang] || errorText['en'], {
+          parse_mode: 'HTML',
+        });
+        return;
+      }
+
       let sessionId = telegramSession?.context;
       if (!sessionId) {
-        const aiSession = await this.contextService.createSession(user.id, 'live_interview');
+        const aiSession = await this.contextService.createSession(userId, 'live_interview');
         sessionId = aiSession.id;
         await this.sessionModel.findOneAndUpdate(
           { telegramChatId: telegramId },
@@ -208,20 +806,60 @@ export class TelegramLiveService {
         );
       }
 
-      // Generate answer with error handling
+      // Show generating message for better UX (optimized)
+      const generatingText: Record<string, string> = {
+        uz: `🤖 <b>Javob tayyorlanmoqda...</b>\n⏳ Iltimos kuting...`,
+        ru: `🤖 <b>Генерируется ответ...</b>\n⏳ Пожалуйста, подождите...`,
+        en: `🤖 <b>Generating answer...</b>\n⏳ Please wait...`,
+      };
+      let generatingMsg;
+      try {
+        generatingMsg = await ctx.reply(generatingText[lang] || generatingText['en'], {
+          parse_mode: 'HTML',
+        });
+      } catch {
+        // Ignore if message sending fails
+      }
+
+      // Get live session metadata for context
+      const session = await this.sessionModel.findOne({
+        telegramChatId: telegramId,
+        status: 'live_session',
+      });
+      const sessionMetadata = session?.metadata as any;
+      const sessionLiveMetadata = ctx.session.liveSessionMetadata;
+      const metadata = sessionMetadata || sessionLiveMetadata || {};
+
+      // Generate answer with error handling (optimized for speed)
       let answerResponse;
       let answer;
       try {
         // Use the language we already retrieved (lang is already from DB if session was empty)
-        answerResponse = await this.answerService.generateAnswer(user.id, {
+        // Optimized: Use medium length for faster generation in live mode
+        // Pass metadata for better context-aware answers
+        answerResponse = await this.answerService.generateAnswer(userId, {
           question: text,
           sessionId,
           variations: 1,
           style: 'professional',
-          length: 'medium',
+          length: 'medium', // Optimized: medium length for speed
           language: lang, // Pass user's language preference
+          // Pass live session metadata for context
+          domain: (metadata as any).domain,
+          technologies: (metadata as any).technologies || [],
+          position: (metadata as any).position,
+          company: (metadata as any).company,
         });
         answer = answerResponse.answers[0];
+
+        // Delete generating message if exists (cleanup)
+        if (generatingMsg) {
+          try {
+            await ctx.api.deleteMessage(generatingMsg.chat.id, generatingMsg.message_id);
+          } catch {
+            // Ignore delete errors
+          }
+        }
       } catch (error) {
         this.logger.error(`AI answer generation failed: ${error.message}`, error.stack);
         const errorText: Record<string, string> = {
@@ -276,6 +914,30 @@ export class TelegramLiveService {
         parse_mode: 'HTML',
       });
 
+      // Save question and answer to AI context for conversation history
+      if (sessionId) {
+        try {
+          // Add user question to context
+          await this.contextService.addMessage(sessionId, {
+            role: 'user',
+            content: text,
+            type: 'question',
+            timestamp: new Date(),
+          });
+
+          // Add AI answer to context
+          await this.contextService.addMessage(sessionId, {
+            role: 'assistant',
+            content: answer.content,
+            type: 'answer',
+            timestamp: new Date(),
+          });
+        } catch (error) {
+          this.logger.warn(`Failed to save message to context: ${error.message}`);
+          // Continue - not critical for functionality
+        }
+      }
+
       // Update session
       await this.sessionModel.findOneAndUpdate(
         { telegramChatId: telegramId },
@@ -292,6 +954,26 @@ export class TelegramLiveService {
           lastActivityAt: new Date(),
         },
       );
+
+      // Deduct live interview minutes from user's subscription
+      // Each Q&A interaction costs 1 minute
+      try {
+        const allowed = await this.subscriptionService.addLiveMinutes(userId, 1);
+        if (!allowed) {
+          // User has exceeded their live interview minutes limit
+          const limitText: Record<string, string> = {
+            uz: `⚠️ <b>Live intervyu daqiqalari tugadi</b>\n\nSizning oylik live intervyu limitingiz tugadi.\n\nKo'proq daqiqalar uchun rejangizni yangilang: /upgrade`,
+            ru: `⚠️ <b>Минуты live-интервью закончились</b>\n\nВаш месячный лимит live-интервью исчерпан.\n\nОбновите тариф для получения большего времени: /upgrade`,
+            en: `⚠️ <b>Live interview minutes exhausted</b>\n\nYour monthly live interview limit has been reached.\n\nUpgrade your plan for more minutes: /upgrade`,
+          };
+          await ctx.reply(limitText[lang] || limitText['en'], {
+            parse_mode: 'HTML',
+          });
+        }
+      } catch (error) {
+        this.logger.warn(`Failed to deduct live minutes: ${error.message}`);
+        // Continue - billing is important but shouldn't break functionality
+      }
     } catch (error) {
       this.logger.error(`Error handling live message: ${error.message}`, error.stack);
 
@@ -338,5 +1020,36 @@ export class TelegramLiveService {
         parse_mode: 'HTML',
       });
     }
+  }
+
+  /**
+   * Helper to reply or transition message
+   * Transitions (navigation) should use delete+reply for animation.
+   * Edits (toggles) should use editMessageText for instant update.
+   */
+  private async replyOrTransition(ctx: BotContext, text: string, extra: any, isToggle: boolean = false) {
+    // If it's a toggle action, try to edit in-place for speed
+    if (isToggle && ctx.callbackQuery?.message) {
+      try {
+        await ctx.editMessageText(text, extra);
+        return;
+      } catch (e) {
+        if (e.description?.includes('message is not modified')) {
+          return;
+        }
+      }
+    }
+
+    // For navigation/transitions:
+    // 1. Answer callback
+    if (ctx.callbackQuery) {
+      await ctx.answerCallbackQuery().catch(() => {});
+      
+      // 2. Delete old message (animation)
+      await ctx.deleteMessage().catch(() => {});
+    }
+
+    // 3. Send new message
+    await ctx.reply(text, extra);
   }
 }
