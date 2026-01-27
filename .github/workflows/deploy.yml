@@ -70,27 +70,46 @@ jobs:
             cat > .env << 'EOF'
             NODE_ENV=production
             PORT=3000
-            MONGODB_URI=${{ secrets.MONGODB_URI }}
+            ALLOWED_ORIGINS=https://interviewai.pro,https://www.interviewai.pro
+            FRONTEND_URL=https://interviewai.pro
+            WEB_APP_URL=https://interviewai.pro
+            
+            MONGODB_URI=mongodb://${{ secrets.MONGODB_ROOT_USERNAME }}:${{ secrets.MONGODB_ROOT_PASSWORD }}@mongodb:27017/${{ secrets.MONGODB_DB_NAME }}?authSource=admin
             MONGODB_DB_NAME=${{ secrets.MONGODB_DB_NAME }}
             MONGODB_ROOT_USERNAME=${{ secrets.MONGODB_ROOT_USERNAME }}
             MONGODB_ROOT_PASSWORD=${{ secrets.MONGODB_ROOT_PASSWORD }}
+            
             REDIS_HOST=redis
             REDIS_PORT=6379
             REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
+            REDIS_DB=0
+            
             JWT_ACCESS_SECRET=${{ secrets.JWT_ACCESS_SECRET }}
             JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}
-            OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+            JWT_ACCESS_EXPIRATION=900
+            JWT_REFRESH_EXPIRATION=604800
+            
+            OTP_LENGTH=6
+            OTP_EXPIRY_MINUTES=5
+            OTP_MAX_ATTEMPTS=3
+            
             TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
             TELEGRAM_BOT_USERNAME=${{ secrets.TELEGRAM_BOT_USERNAME }}
+            ADMIN_TELEGRAM_IDS=${{ secrets.ADMIN_TELEGRAM_IDS }}
+            ADMIN_BOT_TOKEN=${{ secrets.ADMIN_BOT_TOKEN }}
+            
+            OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
             OPENROUTER_MODEL=${{ secrets.OPENROUTER_MODEL }}
             OPENROUTER_BASE_URL=${{ secrets.OPENROUTER_BASE_URL }}
             OPENROUTER_HTTP_REFERER=${{ secrets.OPENROUTER_HTTP_REFERER }}
             OPENROUTER_X_TITLE=${{ secrets.OPENROUTER_X_TITLE }}
+            
             GEMINI_AUDIO_ENABLED=${{ secrets.GEMINI_AUDIO_ENABLED }}
             GEMINI_AUDIO_MODEL=${{ secrets.GEMINI_AUDIO_MODEL }}
-            ADMIN_TELEGRAM_IDS=${{ secrets.ADMIN_TELEGRAM_IDS }}
-            ADMIN_BOT_TOKEN=${{ secrets.ADMIN_BOT_TOKEN }}
+            
+            LOCAL_UPLOAD_PATH=./uploads
             EOF
+            
             
             echo "📦 Creating docker-compose.prod.yml..."
             cat > docker-compose.prod.yml << 'COMPOSE_EOF'
