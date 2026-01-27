@@ -37,6 +37,36 @@ export class TelegramCommandsService {
     this.openai = createOpenAIClient(this.configService);
   }
 
+  /**
+   * Get user language with proper fallback chain and session sync
+   * Priority: session.language -> user.preferences.language -> user.language -> 'uz' (default)
+   * Also syncs session.language from database if session was lost (e.g., after bot restart)
+   */
+  private getUserLanguage(ctx: BotContext, user: any): string {
+    // If session has language, use it
+    if (ctx.session?.language) {
+      return ctx.session.language;
+    }
+
+    // Session doesn't have language - get from user database
+    const dbLang = user?.preferences?.language || user?.language || 'uz';
+    
+    // Sync to session for future use (fixes language after bot restart)
+    if (ctx.session) {
+      ctx.session.language = dbLang;
+    }
+    
+    return dbLang;
+  }
+
+  /**
+   * Get language when user object is not available
+   * Falls back to 'uz' instead of 'en' for Uzbekistan users
+   */
+  private getLanguageFromSession(ctx: BotContext): string {
+    return ctx.session?.language || 'uz';
+  }
+
   async handleStart(ctx: BotContext) {
     const telegramId = ctx.from?.id as number;
 
@@ -311,28 +341,21 @@ export class TelegramCommandsService {
     const user = await this.usersService.findByTelegramId(telegramId);
 
     if (!user) {
-      const lang = ctx.session?.language || 'en';
+      const lang = this.getLanguageFromSession(ctx);
       const notRegisteredText: Record<string, string> = {
         uz: `Iltimos avval /start buyrug'i bilan ro'yxatdan o'ting`,
         ru: `Пожалуйста, сначала зарегистрируйтесь используя /start`,
         en: `Please register first using /start`,
       };
-      await ctx.reply(notRegisteredText[lang] || notRegisteredText['en']);
+      await ctx.reply(notRegisteredText[lang] || notRegisteredText['uz']);
       return;
     }
 
     // Get user ID for subscription check
     const userId = (user as any)._id?.toString() || (user as any).id?.toString() || user.id;
 
-    // Get language from session, user preferences, or database
-    let lang = ctx.session?.language;
-    if (!lang) {
-      lang = user.preferences?.language || user.language || 'en';
-      // Save to session for future use
-      if (ctx.session) {
-        ctx.session.language = lang;
-      }
-    }
+    // Get language with proper fallback and session sync
+    const lang = this.getUserLanguage(ctx, user);
 
     // Check subscription status (trial expired, subscription expired)
     // Pass user object directly to avoid duplicate database query
@@ -809,7 +832,7 @@ export class TelegramCommandsService {
 
   async handleCallback(ctx: BotContext, data: string) {
     // Subscription-related callbacks (show_plans, upgrade_*, contact_support)
-    const lang = ctx.session?.language || 'en';
+    const lang = this.getLanguageFromSession(ctx);
     const subscriptionHandled = await this.subscriptionService.handleSubscriptionCallback(ctx, data, lang);
     if (subscriptionHandled) {
       return;
