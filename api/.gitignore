@@ -77,10 +77,7 @@ uploads/
 .cache
 .eslintcache
 
-# Dependencies
-package-lock.json
-yarn.lock
-pnpm-lock.yaml
+
 
 # Backup files
 *.bak
