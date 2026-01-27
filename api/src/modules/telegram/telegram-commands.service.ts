@@ -2545,7 +2545,23 @@ export class TelegramCommandsService {
       return;
     }
 
+    // Valid Position check before starting
+    if (!ctx.session.interviewPosition) {
+       // Handle missing position if necessary, though logic usually prevents this
+    }
+
+    let loadingMessageId: number | undefined;
+
     try {
+      // Send loading message
+      const loadingText: Record<string, string> = {
+        uz: `⏳ <b>AI savollarni generatsiya qilmoqda...</b>\n\nIltimos kuting, bu biroz vaqt olishi mumkin.`,
+        ru: `⏳ <b>AI генерирует вопросы...</b>\n\nПожалуйста, подождите, это может занять некоторое время.`,
+        en: `⏳ <b>AI is generating questions...</b>\n\nPlease wait, this may take a moment.`,
+      };
+      const sentMessage = await ctx.reply(loadingText[lang] || loadingText['en'], { parse_mode: 'HTML' });
+      loadingMessageId = sentMessage.message_id;
+
       const mode = ctx.session.interviewMode;
       const domain = ctx.session.interviewDomain;
       const technology = ctx.session.interviewTechnology;
@@ -2602,6 +2618,15 @@ export class TelegramCommandsService {
 
         // Start interview session
         const session = await this.interviewsService.startInterview(userId, interviewDto);
+        
+        // Delete loading message
+        if (loadingMessageId && ctx.chat) {
+          try {
+            await ctx.api.deleteMessage(ctx.chat.id, loadingMessageId);
+          } catch (e) {
+            // Ignore delete error (message might be too old or already deleted)
+          }
+        }
 
         // Store session ID
         ctx.session.currentInterviewSessionId = session.id;
