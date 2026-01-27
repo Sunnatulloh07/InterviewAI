@@ -44,7 +44,19 @@ export class InterviewSession {
   mode: string;
 
   @Prop({ type: Number })
-  timeLimit?: number; // Minutes per question
+  timeLimit?: number; // Minutes per question (legacy, use questionTimeLimit)
+
+  @Prop({ type: Number })
+  totalTimeLimit?: number; // Total interview time in minutes
+
+  @Prop({ type: Number })
+  questionTimeLimit?: number; // Per-question time in minutes (calculated from difficulty)
+
+  @Prop({ type: Date })
+  questionStartedAt?: Date; // When current question was shown
+
+  @Prop({ type: Date })
+  expiresAt?: Date; // When interview auto-expires
 
   @Prop({
     type: String,

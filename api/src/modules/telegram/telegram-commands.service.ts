@@ -2457,15 +2457,19 @@ export class TelegramCommandsService {
           }
         }
 
-        // Create interview DTO with CV context
+        // Calculate time limits based on difficulty
+        const numQuestions = 30; // Default 30 questions
+        const timeLimits = this.calculateInterviewTimeLimit(position, numQuestions);
+
+        // Create interview DTO with CV context and calculated time limits
         const interviewDto = {
           type: interviewType,
           difficulty,
           domain: domain?.toLowerCase(),
           technology: technology ? [technology.toLowerCase()] : [],
-          numQuestions: 30, // Default 30 questions
+          numQuestions,
           mode: 'text' as const, // Default to text mode for Telegram
-          timeLimit: 5, // 5 minutes per question
+          timeLimit: timeLimits.questionTimeLimit, // Per-question time based on difficulty
           language: lang, // Pass user's language preference
           cvContext, // Pass CV context for personalized questions
         };
@@ -2485,21 +2489,24 @@ export class TelegramCommandsService {
             `Soha: <b>${domain}</b>\n` +
             `Texnologiya: <b>${technology}</b>\n` +
             `Pozitsiya: <b>${position}</b>\n` +
-            `Savollar soni: <b>${session.numQuestions}</b>\n\n` +
+            `Savollar soni: <b>${session.numQuestions}</b>\n` +
+            `⏱️ Vaqt: <b>${timeLimits.questionTimeLimit} daqiqa/savol</b> (jami ~${timeLimits.totalTimeLimit} daqiqa)\n\n` +
             `Birinchi savolga o'tamiz...`,
           ru:
             `🎭 <b>Начинается Mock интервью...</b>\n\n` +
             `Область: <b>${domain}</b>\n` +
             `Технология: <b>${technology}</b>\n` +
             `Позиция: <b>${position}</b>\n` +
-            `Количество вопросов: <b>${session.numQuestions}</b>\n\n` +
+            `Количество вопросов: <b>${session.numQuestions}</b>\n` +
+            `⏱️ Время: <b>${timeLimits.questionTimeLimit} мин/вопрос</b> (всего ~${timeLimits.totalTimeLimit} мин)\n\n` +
             `Переходим к первому вопросу...`,
           en:
             `🎭 <b>Starting Mock Interview...</b>\n\n` +
             `Domain: <b>${domain}</b>\n` +
             `Technology: <b>${technology}</b>\n` +
             `Position: <b>${position}</b>\n` +
-            `Number of questions: <b>${session.numQuestions}</b>\n\n` +
+            `Number of questions: <b>${session.numQuestions}</b>\n` +
+            `⏱️ Time: <b>${timeLimits.questionTimeLimit} min/question</b> (total ~${timeLimits.totalTimeLimit} min)\n\n` +
             `Moving to the first question...`,
         };
 
@@ -3395,6 +3402,40 @@ export class TelegramCommandsService {
   }
 
   /**
+   * Calculate interview time limits based on difficulty and question count
+   * Time includes: reading question + thinking + typing answer
+   */
+  private calculateInterviewTimeLimit(
+    position: string,
+    numQuestions: number,
+  ): { questionTimeLimit: number; totalTimeLimit: number } {
+    const posLower = position.toLowerCase();
+
+    // Per-question time based on difficulty (includes text typing time)
+    let questionTime: number;
+    if (
+      posLower.includes('senior') ||
+      posLower.includes('lead') ||
+      posLower.includes('principal')
+    ) {
+      questionTime = 2; // Senior: 2 min (faster typing, concise answers)
+    } else if (
+      posLower.includes('junior') ||
+      posLower.includes('intern') ||
+      posLower.includes('entry')
+    ) {
+      questionTime = 4; // Junior: 4 min (more thinking + typing time)
+    } else {
+      questionTime = 3; // Middle: 3 min (balanced)
+    }
+
+    // Total time = questions × time per question
+    const totalTime = questionTime * numQuestions;
+
+    return { questionTimeLimit: questionTime, totalTimeLimit: totalTime };
+  }
+
+  /**
    * Show current question to user
    */
   private async showCurrentQuestion(ctx: BotContext, sessionId: string) {
@@ -3515,18 +3556,23 @@ ${question.question}`;
           questionTextTranslated = question.question;
         }
       }
+      // Get time limit from session
+      const questionTimeLimit = session.timeLimit || 3; // Default 3 min if not set
 
       const questionText: Record<string, string> = {
         uz:
-          `❓ <b>Savol ${questionNumber}/${totalQuestions}</b>\n\n` +
+          `❓ <b>Savol ${questionNumber}/${totalQuestions}</b>\n` +
+          `⏱️ <i>Vaqt: ${questionTimeLimit} daqiqa</i>\n\n` +
           `${questionTextTranslated}\n\n` +
           `Javobingizni matn shaklida yuboring:`,
         ru:
-          `❓ <b>Вопрос ${questionNumber}/${totalQuestions}</b>\n\n` +
+          `❓ <b>Вопрос ${questionNumber}/${totalQuestions}</b>\n` +
+          `⏱️ <i>Время: ${questionTimeLimit} мин</i>\n\n` +
           `${questionTextTranslated}\n\n` +
           `Отправьте ваш ответ текстом:`,
         en:
-          `❓ <b>Question ${questionNumber}/${totalQuestions}</b>\n\n` +
+          `❓ <b>Question ${questionNumber}/${totalQuestions}</b>\n` +
+          `⏱️ <i>Time: ${questionTimeLimit} min</i>\n\n` +
           `${questionTextTranslated}\n\n` +
           `Send your answer as text:`,
       };
