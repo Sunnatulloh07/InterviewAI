@@ -61,6 +61,7 @@ jobs:
           password: ${{ secrets.SERVER_PASSWORD }}
           source: "api/docker-compose.prod.yml"
           target: "~/interviewai-pro/"
+          strip_components: 1
 
       - name: Deploy to Server
         uses: appleboy/ssh-action@v1.0.3
