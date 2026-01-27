@@ -63,6 +63,7 @@ jobs:
           target: "~/interviewai-pro/"
           strip_components: 1
           timeout: 120s
+          
 
       - name: Deploy to Server
         uses: appleboy/ssh-action@v1.0.3
