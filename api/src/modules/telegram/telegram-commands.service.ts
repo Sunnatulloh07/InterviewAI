@@ -347,6 +347,42 @@ export class TelegramCommandsService {
       return; // Limit reached, user notified
     }
 
+    // Check for paused/active interview session - offer to resume
+    const pausedSessionId = ctx.session.pausedInterviewSessionId;
+    if (pausedSessionId) {
+      try {
+        const pausedSession = await this.interviewsService.getSession(userId, pausedSessionId);
+        if (pausedSession && pausedSession.status === 'active') {
+          // Offer to resume or start new
+          const resumeText: Record<string, string> = {
+            uz: `⏸️ <b>To'xtatilgan intervyu topildi</b>\n\nSizda davom ettirilmagan intervyu mavjud (${pausedSession.currentQuestionIndex + 1}/${pausedSession.numQuestions} savol).\n\nNima qilmoqchisiz?`,
+            ru: `⏸️ <b>Найдено приостановленное интервью</b>\n\nУ вас есть незавершенное интервью (${pausedSession.currentQuestionIndex + 1}/${pausedSession.numQuestions} вопросов).\n\nЧто хотите сделать?`,
+            en: `⏸️ <b>Paused interview found</b>\n\nYou have an unfinished interview (${pausedSession.currentQuestionIndex + 1}/${pausedSession.numQuestions} questions).\n\nWhat would you like to do?`,
+          };
+
+          const resumeButtons: Record<string, { resume: string; startNew: string }> = {
+            uz: { resume: '▶️ Davom ettirish', startNew: '🆕 Yangi boshlash' },
+            ru: { resume: '▶️ Продолжить', startNew: '🆕 Начать новое' },
+            en: { resume: '▶️ Resume', startNew: '🆕 Start New' },
+          };
+
+          const buttons = resumeButtons[lang] || resumeButtons['en'];
+          const keyboard = new InlineKeyboard()
+            .text(buttons.resume, 'interview_resume')
+            .text(buttons.startNew, 'interview_start_new');
+
+          await this.replyOrEdit(ctx, resumeText[lang] || resumeText['en'], {
+            parse_mode: 'HTML',
+            reply_markup: keyboard,
+          });
+          return;
+        }
+      } catch (error) {
+        // Session not found or error - clear paused session ID and continue
+        ctx.session.pausedInterviewSessionId = undefined;
+      }
+    }
+
     // Reset interview state
     ctx.session.interviewStep = 'mode';
     ctx.session.interviewMode = undefined;
@@ -1363,7 +1399,10 @@ export class TelegramCommandsService {
 
     // Interview control callbacks
     if (data === 'interview_skip') {
+      await ctx.answerCallbackQuery(); // Acknowledge button press
       const sessionId = ctx.session.currentInterviewSessionId;
+      const lang = ctx.session?.language || 'en';
+      
       if (sessionId) {
         const telegramId = ctx.from?.id as number;
         const user = await this.usersService.findByTelegramId(telegramId);
@@ -1425,9 +1464,19 @@ export class TelegramCommandsService {
     }
 
     if (data === 'interview_pause') {
+      await ctx.answerCallbackQuery(); // Acknowledge button press
       const lang = ctx.session?.language || 'en';
+      const sessionId = ctx.session.currentInterviewSessionId;
+      
+      // Save session ID for resume, then clear active session
+      if (sessionId) {
+        ctx.session.pausedInterviewSessionId = sessionId;
+      }
+      ctx.session.currentInterviewSessionId = undefined;
+      ctx.session.currentQuestionIndex = undefined;
+      
       const pauseText: Record<string, string> = {
-        uz: `⏸️ Intervyu to'xtatildi. Davom etish uchun /interview buyrug'ini qayta yuboring.`,
+        uz: `⏸️ Intervyu to'xtatildi. Davom etish uchun /interview buyrug'ini yuboring.`,
         ru: `⏸️ Интервью приостановлено. Отправьте /interview для продолжения.`,
         en: `⏸️ Interview paused. Send /interview to continue.`,
       };
@@ -1436,14 +1485,66 @@ export class TelegramCommandsService {
     }
 
     if (data === 'interview_end') {
+      await ctx.answerCallbackQuery(); // Acknowledge button press
       const sessionId = ctx.session.currentInterviewSessionId;
       if (sessionId) {
         await this.completeInterview(ctx, sessionId);
+      } else {
+        const lang = ctx.session?.language || 'en';
+        const noSessionText: Record<string, string> = {
+          uz: `❌ Faol intervyu topilmadi.`,
+          ru: `❌ Активное интервью не найдено.`,
+          en: `❌ No active interview found.`,
+        };
+        await ctx.reply(noSessionText[lang] || noSessionText['en']);
       }
       return;
     }
 
     if (data === 'interview_new') {
+      await this.handleInterview(ctx);
+      return;
+    }
+
+    // Resume paused interview
+    if (data === 'interview_resume') {
+      await ctx.answerCallbackQuery();
+      const pausedSessionId = ctx.session.pausedInterviewSessionId;
+      if (pausedSessionId) {
+        // Restore session and show current question
+        ctx.session.currentInterviewSessionId = pausedSessionId;
+        ctx.session.pausedInterviewSessionId = undefined;
+        
+        const lang = ctx.session?.language || 'en';
+        const resumingText: Record<string, string> = {
+          uz: `▶️ Intervyu davom etmoqda...`,
+          ru: `▶️ Продолжаем интервью...`,
+          en: `▶️ Resuming interview...`,
+        };
+        await ctx.reply(resumingText[lang] || resumingText['en']);
+        
+        await this.showCurrentQuestion(ctx, pausedSessionId);
+      }
+      return;
+    }
+
+    // Start new interview (abandon paused one)
+    if (data === 'interview_start_new') {
+      await ctx.answerCallbackQuery();
+      // Clear paused session  
+      ctx.session.pausedInterviewSessionId = undefined;
+      ctx.session.currentInterviewSessionId = undefined;
+      ctx.session.currentQuestionIndex = undefined;
+      
+      // Reset interview state and show mode selection
+      ctx.session.interviewStep = 'mode';
+      ctx.session.interviewMode = undefined;
+      ctx.session.interviewDomain = undefined;
+      ctx.session.interviewTechnology = undefined;
+      ctx.session.interviewPosition = undefined;
+      ctx.session.interviewCompany = undefined;
+      ctx.session.interviewCvId = undefined;
+      
       await this.handleInterview(ctx);
       return;
     }

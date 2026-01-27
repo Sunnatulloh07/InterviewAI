@@ -35,6 +35,7 @@ export interface BotContext extends Context {
     // Interview session state
     currentInterviewSessionId?: string;
     currentQuestionIndex?: number;
+    pausedInterviewSessionId?: string; // Session ID when interview is paused
     // Live session metadata
     liveSessionMetadata?: {
       domain?: string; // Frontend, Backend, Full Stack, etc.
@@ -103,6 +104,7 @@ export class TelegramService implements OnModuleInit {
             // Interview session state
             currentInterviewSessionId: undefined,
             currentQuestionIndex: undefined,
+            pausedInterviewSessionId: undefined,
             // Live session metadata
             liveSessionMetadata: undefined,
           }),
