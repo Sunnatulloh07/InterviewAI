@@ -645,6 +645,13 @@ Your response must be valid JSON that can be parsed directly. All questions must
 
       // Log raw response for debugging
       this.logger.debug(`AI response (first 500 chars): ${responseText.substring(0, 500)}`);
+      
+      // CRITICAL: Warn if response was truncated due to token limit
+      if (choice?.finish_reason === 'length') {
+        this.logger.warn(`⚠️ AI RESPONSE TRUNCATED! Model: ${completion.model}, Tokens: ${completion.usage?.total_tokens || 'unknown'}`);
+        this.logger.warn(`Full truncated response: ${responseText}`);
+      }
+
       this.logger.debug(
         `Response length: ${responseText.length}, isEmpty: ${responseText === '{}' || responseText.trim() === ''}`,
       );
@@ -735,7 +742,7 @@ Your response must be valid JSON that can be parsed directly. All questions must
         parsed = JSON.parse(jsonText);
       } catch (parseError) {
         this.logger.error(`Failed to parse AI response as JSON: ${parseError.message}`);
-        this.logger.error(`Response text: ${responseText.substring(0, 1000)}`);
+        this.logger.error(`FULL Raw Response: ${responseText}`); // Log full response on error
         throw new Error(`Invalid JSON response from AI: ${parseError.message}`);
       }
 

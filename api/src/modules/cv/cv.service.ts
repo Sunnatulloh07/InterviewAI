@@ -418,13 +418,20 @@ export class CvService {
       // Debug logging
       this.logger.debug(`AI Metadata: model=${completion.model}, finish=${finishReason}, tokens=${JSON.stringify(usage)}`);
       this.logger.debug(`Raw Response (first 500 chars): ${rawText.substring(0, 500)}`);
+      
+      // CRITICAL: Warn if response was truncated due to token limit
+      if (finishReason === 'length') {
+        this.logger.warn(`⚠️ AI RESPONSE TRUNCATED! Model: ${completion.model}, Tokens: ${usage?.total_tokens || 'unknown'}`);
+        this.logger.warn(`Full truncated response: ${rawText}`);
+      }
 
       // Extract JSON from response
       let analysis = extractJSON(rawText);
 
       // If extraction failed or empty, try fallback model
       if (!analysis || (typeof analysis === 'object' && Object.keys(analysis).length === 0)) {
-        this.logger.warn(`Model ${usedModel} returned empty/invalid JSON. Raw: "${rawText.substring(0, 200)}"`);
+        this.logger.warn(`Model ${usedModel} returned empty/invalid JSON.`);
+        this.logger.warn(`FULL RAW RESPONSE: ${rawText}`); // Log complete response for debugging
         
         if (usedModel !== AI_MODELS.GPT35) {
           this.logger.log(`Retrying with reliable model: ${AI_MODELS.GPT35}`);
