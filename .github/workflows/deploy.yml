@@ -7,7 +7,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  # Start the image name with a lowercase letter for compatibility
   IMAGE_NAME: sunnatulloh07/interviewai
 
 jobs:
@@ -35,7 +34,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=latest
-            type=sha,prefix={{sha}}
+            type=sha,prefix=sha-
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -53,34 +52,204 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Copy docker-compose.prod.yml to server
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          password: ${{ secrets.SERVER_PASSWORD }}
-          source: "api/docker-compose.prod.yml"
-          target: "~/interviewai-pro/"
-          strip_components: 1
-          timeout: 120s
-          
       - name: Deploy to Server
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           password: ${{ secrets.SERVER_PASSWORD }}
-          timeout: 120s
+          timeout: 180s
+          command_timeout: 30m
           script: |
+            set -e  # Exit on any error
+            
+            echo "🚀 Starting deployment..."
+            
+            # Create deployment directory
+            mkdir -p ~/interviewai-pro
             cd ~/interviewai-pro
             
-            # Login to GHCR to pull private image
-            # WARNING: You must set CR_PAT (Classic PAT with read:packages scope) in repository secrets
-            echo ${{ secrets.CR_PAT }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            # Create .env file from secrets
+            echo "📝 Creating environment configuration..."
+            cat > .env << 'ENVEOF'
+            NODE_ENV=production
+            PORT=3000
             
-            # Pull latest images and restart
-            docker compose -f docker-compose.prod.yml pull
-            docker compose -f docker-compose.prod.yml up -d --remove-orphans
+            # Database
+            MONGODB_URI=${{ secrets.MONGODB_URI }}
+            MONGODB_DB_NAME=${{ secrets.MONGODB_DB_NAME }}
+            MONGODB_ROOT_USERNAME=${{ secrets.MONGODB_ROOT_USERNAME }}
+            MONGODB_ROOT_PASSWORD=${{ secrets.MONGODB_ROOT_PASSWORD }}
             
-            # Cleanup unused images
+            # Redis
+            REDIS_HOST=redis
+            REDIS_PORT=6379
+            REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
+            
+            # JWT
+            JWT_ACCESS_SECRET=${{ secrets.JWT_ACCESS_SECRET }}
+            JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}
+            
+            # OpenAI
+            OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+            
+            # Telegram
+            TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
+            TELEGRAM_BOT_USERNAME=${{ secrets.TELEGRAM_BOT_USERNAME }}
+            
+            # Stripe (optional)
+            STRIPE_API_KEY=${{ secrets.STRIPE_API_KEY }}
+            
+            # AWS (optional)
+            AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
+            AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+            AWS_REGION=${{ secrets.AWS_REGION }}
+            ENVEOF
+            
+            # Create docker-compose.prod.yml
+            echo "📦 Creating Docker Compose configuration..."
+            cat > docker-compose.prod.yml << 'COMPOSEEOF'
+            services:
+              api:
+                image: ghcr.io/sunnatulloh07/interviewai:latest
+                container_name: interviewai-api
+                restart: unless-stopped
+                ports:
+                  - '3000:3000'
+                env_file:
+                  - .env
+                environment:
+                  - MONGODB_URI=mongodb://${MONGODB_ROOT_USERNAME}:${MONGODB_ROOT_PASSWORD}@mongodb:27017/${MONGODB_DB_NAME}?authSource=admin
+                  - REDIS_HOST=redis
+                  - REDIS_PORT=6379
+                  - REDIS_PASSWORD=${REDIS_PASSWORD}
+                depends_on:
+                  mongodb:
+                    condition: service_healthy
+                  redis:
+                    condition: service_healthy
+                networks:
+                  - interviewai-network
+                healthcheck:
+                  test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/health"]
+                  interval: 30s
+                  timeout: 10s
+                  retries: 3
+                  start_period: 40s
+
+              mongodb:
+                image: mongo:7.0
+                container_name: interviewai-mongodb
+                restart: unless-stopped
+                environment:
+                  MONGO_INITDB_ROOT_USERNAME: ${MONGODB_ROOT_USERNAME}
+                  MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_ROOT_PASSWORD}
+                  MONGO_INITDB_DATABASE: ${MONGODB_DB_NAME}
+                ports:
+                  - '127.0.0.1:27017:27017'
+                volumes:
+                  - mongodb_data:/data/db
+                  - mongodb_config:/data/configdb
+                networks:
+                  - interviewai-network
+                healthcheck:
+                  test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+                  interval: 10s
+                  timeout: 5s
+                  retries: 5
+                  start_period: 40s
+
+              redis:
+                image: redis:7-alpine
+                container_name: interviewai-redis
+                restart: unless-stopped
+                command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
+                ports:
+                  - '127.0.0.1:6379:6379'
+                volumes:
+                  - redis_data:/data
+                networks:
+                  - interviewai-network
+                healthcheck:
+                  test: ['CMD', 'redis-cli', '--raw', 'incr', 'ping']
+                  interval: 10s
+                  timeout: 5s
+                  retries: 5
+                  start_period: 20s
+
+            networks:
+              interviewai-network:
+                driver: bridge
+
+            volumes:
+              mongodb_data:
+              mongodb_config:
+              redis_data:
+            COMPOSEEOF
+            
+            # Login to GHCR
+            echo "🔐 Logging in to GitHub Container Registry..."
+            echo "${{ secrets.CR_PAT }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            
+            # Pull latest images
+            echo "⬇️ Pulling latest images..."
+            docker compose pull
+            
+            # Stop and remove old containers
+            echo "🛑 Stopping old containers..."
+            docker compose down --remove-orphans || true
+            
+            # Start new containers
+            echo "▶️ Starting new containers..."
+            docker compose up -d
+            
+            # Wait for services to be healthy
+            echo "⏳ Waiting for services to start..."
+            sleep 15
+            
+            # Verify deployment
+            echo "✅ Verifying deployment..."
+            if ! docker ps | grep -q interviewai-api; then
+              echo "❌ ERROR: API container is not running!"
+              docker logs interviewai-api --tail 50
+              exit 1
+            fi
+            
+            if ! docker ps | grep -q interviewai-mongodb; then
+              echo "❌ ERROR: MongoDB container is not running!"
+              docker logs interviewai-mongodb --tail 50
+              exit 1
+            fi
+            
+            if ! docker ps | grep -q interviewai-redis; then
+              echo "❌ ERROR: Redis container is not running!"
+              docker logs interviewai-redis --tail 50
+              exit 1
+            fi
+            
+            # Check API health
+            echo "🏥 Checking API health..."
+            for i in {1..10}; do
+              if docker exec interviewai-api wget -q -O- http://localhost:3000/health 2>/dev/null; then
+                echo "✅ API is healthy!"
+                break
+              fi
+              if [ $i -eq 10 ]; then
+                echo "❌ API health check failed after 10 attempts"
+                docker logs interviewai-api --tail 100
+                exit 1
+              fi
+              echo "Attempt $i/10 failed, retrying in 3s..."
+              sleep 3
+            done
+            
+            # Cleanup old images
+            echo "🧹 Cleaning up old images..."
             docker image prune -f
+            
+            # Show running containers
+            echo "📊 Running containers:"
+            docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+            
+            echo "🎉 Deployment completed successfully!"
+
