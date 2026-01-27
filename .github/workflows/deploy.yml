@@ -88,55 +88,12 @@ jobs:
             OPENROUTER_X_TITLE=${{ secrets.OPENROUTER_X_TITLE }}
             GEMINI_AUDIO_ENABLED=${{ secrets.GEMINI_AUDIO_ENABLED }}
             GEMINI_AUDIO_MODEL=${{ secrets.GEMINI_AUDIO_MODEL }}
+            ADMIN_TELEGRAM_IDS=${{ secrets.ADMIN_TELEGRAM_IDS }}
+            ADMIN_BOT_TOKEN=${{ secrets.ADMIN_BOT_TOKEN }}
             EOF
             
-            echo "📦 Creating docker-compose.prod.yml..."
-            cat > docker-compose.prod.yml << 'COMPOSE'
-            services:
-              api:
-                image: ghcr.io/sunnatulloh07/interviewai:latest
-                container_name: interviewai-api
-                restart: unless-stopped
-                ports:
-                  - '3000:3000'
-                env_file: [.env]
-                environment:
-                  - MONGODB_URI=mongodb://${MONGODB_ROOT_USERNAME}:${MONGODB_ROOT_PASSWORD}@mongodb:27017/${MONGODB_DB_NAME}?authSource=admin
-                  - REDIS_HOST=redis
-                depends_on:
-                  - mongodb
-                  - redis
-                networks: [app-network]
-              
-              mongodb:
-                image: mongo:7.0
-                container_name: interviewai-mongodb
-                restart: unless-stopped
-                environment:
-                  MONGO_INITDB_ROOT_USERNAME: ${MONGODB_ROOT_USERNAME}
-                  MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_ROOT_PASSWORD}
-                  MONGO_INITDB_DATABASE: ${MONGODB_DB_NAME}
-                ports: ['127.0.0.1:27017:27017']
-                volumes:
-                  - mongodb_data:/data/db
-                networks: [app-network]
-              
-              redis:
-                image: redis:7-alpine
-                container_name: interviewai-redis
-                restart: unless-stopped
-                command: redis-server --requirepass ${REDIS_PASSWORD}
-                ports: ['127.0.0.1:6379:6379']
-                volumes: [redis_data:/data]
-                networks: [app-network]
-            
-            networks:
-              app-network:
-            
-            volumes:
-              mongodb_data:
-              redis_data:
-            COMPOSE
+            echo "📦 Downloading docker-compose.prod.yml..."
+            wget -q https://raw.githubusercontent.com/Sunnatulloh07/InterviewAI/main/docker-compose.prod.yml -O docker-compose.prod.yml
             
             echo "🔐 Logging in to GHCR..."
             echo "${{ secrets.CR_PAT }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
@@ -150,14 +107,14 @@ jobs:
             echo "▶️ Starting containers..."
             docker compose up -d
             
-            echo "⏳ Waiting 20s for startup..."
+            echo "⏳ Waiting 20s..."
             sleep 20
             
-            echo "✅ Verifying..."
+            echo "✅ Checking status..."
             docker ps
             
             if ! docker ps | grep -q interviewai-api; then
-              echo "❌ API failed!"
+              echo "❌ API container failed!"
               docker logs interviewai-api --tail 100
               exit 1
             fi
