@@ -1041,6 +1041,23 @@ export class TelegramCommandsService {
       return;
     }
 
+    // Position selection (FIX: Add callback handler for position buttons)
+    if (data.startsWith('position_')) {
+      const position = data.replace('position_', ''); // junior, middle, senior
+      ctx.session.interviewPosition = position;
+      
+      if (ctx.session.interviewMode === 'real') {
+        // Real interview: ask for company
+        ctx.session.interviewStep = 'company';
+        await this.askInterviewCompany(ctx);
+      } else {
+        // Mock interview: ready to start
+        ctx.session.interviewStep = 'ready';
+        await this.startInterviewSession(ctx);
+      }
+      return;
+    }
+
     // CV management callbacks
     if (data === 'cv_upload_new') {
       ctx.session.cvUploadStep = 'waiting';
@@ -1364,7 +1381,31 @@ export class TelegramCommandsService {
         try {
           // Get current session to check current index
           const session = await this.interviewsService.getSession(userId, sessionId);
-          const newIndex = session.currentQuestionIndex + 1;
+          const currentIndex = session.currentQuestionIndex;
+          const questions = session.questions as any[];
+          const currentQuestion = questions[currentIndex];
+          
+          // FIX: Save empty answer for skipped question
+          if (currentQuestion) {
+            let questionId: string;
+            if (typeof currentQuestion === 'object' && currentQuestion._id) {
+              questionId = currentQuestion._id.toString();
+            } else if (currentQuestion.id) {
+              questionId = currentQuestion.id.toString();
+            } else {
+              questionId = currentQuestion.toString();
+            }
+            
+            // Submit empty answer marked as skipped
+            await this.interviewsService.submitAnswer(userId, sessionId, {
+              questionId,
+              answerType: 'text',
+              answerText: '[SKIPPED]',
+              duration: 0,
+            });
+          }
+          
+          const newIndex = currentIndex + 1;
 
           // Update both session state and database
           ctx.session.currentQuestionIndex = newIndex;
@@ -2247,8 +2288,22 @@ export class TelegramCommandsService {
     }
 
     if (step === 'position') {
-      // Save position and move to next step
-      ctx.session.interviewPosition = text;
+      // FIX: Accept any position text and intelligently extract difficulty level
+      // Examples: "Middle Developer", "Senior Engineer", "Junior", "Team Lead", etc.
+      const positionText = text.trim();
+      
+      if (!positionText || positionText.length < 2) {
+        const errorText: Record<string, string> = {
+          uz: `⚠️ Pozitsiya nomi juda qisqa. Iltimos, to'liq nomini yuboring.`,
+          ru: `⚠️ Название позиции слишком короткое. Пожалуйста, отправьте полное название.`,
+          en: `⚠️ Position name is too short. Please send the full name.`,
+        };
+        await ctx.reply(errorText[lang] || errorText['en']);
+        return;
+      }
+      
+      // Save the full position text (e.g., "Middle Developer", "Senior Engineer")
+      ctx.session.interviewPosition = positionText;
 
       if (ctx.session.interviewMode === 'real') {
         // Real interview: ask for company
@@ -3677,6 +3732,12 @@ ${question.question}`;
       // Clear session state
       ctx.session.currentInterviewSessionId = undefined;
       ctx.session.currentQuestionIndex = undefined;
+
+      // Calculate statistics
+      const totalQuestions = session.questions.length;
+      const answeredQuestions = session.answers.length;
+      const skippedQuestions = totalQuestions - answeredQuestions;
+      const completionRate = Math.round((answeredQuestions / totalQuestions) * 100);
 
       const completionText: Record<string, string> = {
         uz:
