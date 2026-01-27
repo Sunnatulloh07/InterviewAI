@@ -466,6 +466,38 @@ export class InterviewsService {
       prompt += `- **Technologies:** ${dto.technology.join(', ')}\n`;
     }
 
+    // ADAPTIVE DIFFICULTY LOGIC
+    // Use average score to determine if we should ramp up difficulty or focus on basics
+    // 0-50%: Foundational/Remedial
+    // 50-80%: Progressive/Standard
+    // 80-100%: Advanced/Challenging
+    const averageScore = historyContext.averageScore * 10; // Convert 0-10 to 0-100 scale for easier logic
+    
+    prompt += `\n## ADAPTIVE DIFFICULTY INSTRUCTIONS (USER LEVEL: ${averageScore}%)\n`;
+    
+    if (averageScore >= 80) {
+        // High performer - Challenge them
+        prompt += `\n🔥 **STRATEGY: ADVANCED CHALLENGE**\n`;
+        prompt += `The candidate has a high performance history (${averageScore}% avg). DO NOT ask basic questions.\n`;
+        prompt += `- Focus on **System Design, Architecture, Optimization, and Edge Cases**.\n`;
+        prompt += `- Ask "How would you design..." or "How to optimize..." style questions.\n`;
+        prompt += `- Test deep understanding of the core mechanics, not just syntax.\n`;
+    } else if (averageScore >= 50) {
+        // Average performer - Progressive growth
+        prompt += `\n📈 **STRATEGY: PROGRESSIVE GROWTH**\n`;
+        prompt += `The candidate is performing well (${averageScore}% avg). Challenge them to level up.\n`;
+        prompt += `- Mix 70% standard questions with 30% advanced concepts.\n`;
+        prompt += `- Push them slightly beyond standard "textbook" answers.\n`;
+        prompt += `- Focus on "Why" and "When" to use specific technologies.\n`;
+    } else {
+        // Struggling or New - Foundational
+        prompt += `\n🌱 **STRATEGY: FOUNDATIONAL REINFORCEMENT**\n`;
+        prompt += `The candidate needs to build stronger basics (Avg: ${averageScore}%).\n`;
+        prompt += `- Focus on **Core Concepts, Basic Syntax, and Fundamental Principles**.\n`;
+        prompt += `- ensure questions are clear and about the most essential parts of the technology.\n`;
+        prompt += `- Avoid obscure edge cases or complex architecture questions for now.\n`;
+    }
+
     // Add CV Context if available (personalized questions based on candidate's CV)
     if (dto.cvContext) {
       prompt += `\n## CANDIDATE CV CONTEXT (IMPORTANT - Use this for personalized questions)\n`;
@@ -486,18 +518,20 @@ export class InterviewsService {
     if (allQuestions.length > 0) {
       prompt += `\n## PREVIOUS INTERVIEW HISTORY (INTELLIGENT GENERATION)\n`;
       
-      // 1. Avoid repetition
-      prompt += `### DO NOT REPEAT THESE QUESTIONS (Generate FRESH questions):\n`;
-      // Limit to last 50 questions to avoid huge prompt
-      const recentQuestions = allQuestions.slice(0, 50);
+      // 1. Avoid repetition - STRICT
+      prompt += `### ⛔ DO NOT REPEAT THESE QUESTIONS:\n`;
+      prompt += `The candidate has recently answered these. You MUST generate COMPLETELY NEW questions:\n`;
+      // Limit to last 30 questions to save tokens, but enough to avoid recents
+      const recentQuestions = allQuestions.slice(0, 30); 
       prompt += recentQuestions.map((q, i) => `${i + 1}. "${q}"`).join('\n') + '\n\n';
       
-      // 2. Focus on weak areas
+      // 2. Focus on weak areas - TARGETED IMPROVEMENT
       if (incorrectQuestions.length > 0) {
-        prompt += `### WEAK AREAS (Ask SIMILAR but NEW questions on these topics):\n`;
-        const recentWeaknesses = incorrectQuestions.slice(0, 10);
-        prompt += recentWeaknesses.map((q, i) => `${i + 1}. "${q}"`).join('\n') + '\n\n';
-        prompt += `**INSTRUCTION:** Generate 3-5 questions that test the concepts from the "WEAK AREAS" list above, but use DIFFERENT wording and scenarios.\n`;
+        prompt += `### 🎯 TARGET AREAS FOR IMPROVEMENT:\n`;
+        prompt += `The candidate struggled with these specific questions/topics in the past:\n`;
+        const recentWeaknesses = incorrectQuestions.slice(0, 8);
+        prompt += recentWeaknesses.map((q, i) => `- Failed: "${q}"`).join('\n') + '\n';
+        prompt += `\n**INSTRUCTION:** Generate at least 2 questions that test the SAME underlying concepts as the failed questions above, but use **DIFFERENT wording, scenarios, or angles**. Do not simply repeat the failed question.\n\n`;
       }
     }
     prompt += `\n`;
