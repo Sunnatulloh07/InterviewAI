@@ -21,12 +21,13 @@ export class TelegramSubscriptionService {
   /**
    * Check user subscription and send appropriate warnings
    * Returns false if user is blocked (trial expired)
+   * @param ctx - Bot context
+   * @param user - User document (already fetched to avoid duplicate query)
    */
-  async checkAndNotify(ctx: BotContext, userId: string): Promise<boolean> {
-    const user = await this.userModel.findById(userId).select('subscription usage language');
+  async checkAndNotify(ctx: BotContext, user: any): Promise<boolean> {
     if (!user) return false;
 
-    const lang = user.language || 'uz';
+    const lang = user.language || user.preferences?.language || 'uz';
     const subscription = user.subscription;
 
     // Check trial expiry

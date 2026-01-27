@@ -335,7 +335,8 @@ export class TelegramCommandsService {
     }
 
     // Check subscription status (trial expired, subscription expired)
-    const canProceed = await this.subscriptionService.checkAndNotify(ctx, userId);
+    // Pass user object directly to avoid duplicate database query
+    const canProceed = await this.subscriptionService.checkAndNotify(ctx, user);
     if (!canProceed) {
       // User is blocked (trial/subscription expired) - message already sent by service
       return;
@@ -466,7 +467,8 @@ export class TelegramCommandsService {
     }
 
     // Check subscription status (trial expired or subscription expired)
-    const canProceed = await this.subscriptionService.checkAndNotify(ctx, userId);
+    // Pass user object directly to avoid duplicate database query
+    const canProceed = await this.subscriptionService.checkAndNotify(ctx, user);
     if (!canProceed) {
       return; // User is blocked, appropriate message already sent
     }
