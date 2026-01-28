@@ -9,6 +9,7 @@ import { UsersService } from '../users/users.service';
 import { AiContextService } from '../ai/ai-context.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { SubscriptionService } from '../payments/subscription.service';
+import { TelegramSubscriptionService } from './telegram-subscription.service';
 import { InlineKeyboard } from 'grammy';
 
 @Injectable()
@@ -23,6 +24,7 @@ export class TelegramLiveService {
     private readonly usersService: UsersService,
     private readonly contextService: AiContextService,
     private readonly subscriptionService: SubscriptionService,
+    private readonly telegramSubscriptionService: TelegramSubscriptionService,
   ) {}
 
   async handleStartLive(ctx: BotContext) {
@@ -47,25 +49,31 @@ export class TelegramLiveService {
     // Get language early for error messages
     const lang = ctx.session?.language || user.preferences?.language || user.language || 'uz';
 
-    // CRITICAL FIX: Check usage limits before starting
-    // We use checkAndIncrementUsage with amount=0 to get current usage without incrementing
-    const { current, limit } = await this.subscriptionService.checkAndIncrementUsage(
-      userId,
-      'liveInterviewMinutes',
-      0,
-    );
+    // Verify Plan Limits (Robust Logic)
+    // 1. Check status using business logic service
+    const status = await this.subscriptionService.getLiveInterviewStatus(userId);
 
-    // Check if limit is reached (limit !== -1 means limited plan)
-    // If user is AT or OVER the limit, block them
-    if (limit !== -1 && current >= limit) {
-      await (this.subscriptionService as any).sendUsageLimitWarning(
+    // 2. If not allowed, send warning via Telegram service (Fixes crash)
+    if (!status.allowed) {
+      await this.telegramSubscriptionService.sendUsageLimitWarning(
         ctx,
         lang,
         'liveInterviewMinutes',
-        current,
-        limit,
+        status.usage,
+        status.limit,
       );
       return;
+    }
+
+    // 3. Optional: Notify user of remaining minutes (Transparency)
+    // Only show if plan has limits (limit != -1)
+    if (status.limit !== -1 && status.remainingMinutes < 10) {
+      const warningText: Record<string, string> = {
+        uz: `⚠️ <b>Eslatma:</b> Sizda ${status.remainingMinutes} daqiqa qoldi.`,
+        ru: `⚠️ <b>Внимание:</b> У вас осталось ${status.remainingMinutes} минут.`,
+        en: `⚠️ <b>Note:</b> You have ${status.remainingMinutes} minutes remaining.`,
+      };
+      await ctx.reply(warningText[lang] || warningText['en'], { parse_mode: 'HTML' });
     }
 
     // Save language to session for future use (if not already set)

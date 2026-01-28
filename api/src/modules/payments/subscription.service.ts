@@ -159,6 +159,57 @@ export class SubscriptionService {
   }
 
   /**
+   * Get live interview status (allowed, remaining minutes)
+   */
+  async getLiveInterviewStatus(userId: string): Promise<{ 
+    allowed: boolean; 
+    reason?: 'expired' | 'limit_reached'; 
+    remainingMinutes: number; 
+    plan: SubscriptionPlan;
+    limit: number;
+    usage: number;
+  }> {
+    const user = await this.userModel.findById(userId).select('subscription usage');
+    if (!user) return { allowed: false, remainingMinutes: 0, plan: 'free_trial', limit: 0, usage: 0 };
+
+    if (await this.isTrialExpired(userId)) {
+      return { 
+        allowed: false, 
+        reason: 'expired', 
+        remainingMinutes: 0,
+        plan: (user.subscription?.plan || 'free_trial') as SubscriptionPlan,
+        limit: 0,
+        usage: 0
+      };
+    }
+
+    const plan = (user.subscription?.plan || 'free_trial') as SubscriptionPlan;
+    const limits = this.getPlanLimits(plan);
+    const limit = limits.liveInterviewMinutes;
+    const usage = user.usage?.liveInterviewMinutesThisMonth || 0;
+
+    // -1 means unlimited
+    if ((limit as number) === -1) {
+      return { allowed: true, remainingMinutes: 9999, plan, limit, usage };
+    }
+
+    const remaining = Math.max(0, limit - usage);
+    
+    if (remaining <= 0) {
+      return { 
+        allowed: false, 
+        reason: 'limit_reached', 
+        remainingMinutes: 0,
+        plan,
+        limit,
+        usage
+      };
+    }
+
+    return { allowed: true, remainingMinutes: remaining, plan, limit, usage };
+  }
+
+  /**
    * Reset monthly usage (called by cron job)
    */
   async resetMonthlyUsage(userId: string): Promise<void> {
