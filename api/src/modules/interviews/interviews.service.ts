@@ -355,6 +355,34 @@ export class InterviewsService {
   }
 
   /**
+   * Get simple stats for a user (used by EngagementService)
+   */
+  async getStats(userId: string): Promise<{ totalInterviews: number; averageScore: number }> {
+    try {
+      const totalInterviews = await this.repository.countSessionsByUserId(userId, 'completed');
+      const averageScore = await this.repository.getAverageScore(userId);
+      return { totalInterviews, averageScore };
+    } catch (error) {
+      this.logger.error(`Failed to get stats for user ${userId}: ${error.message}`);
+      return { totalInterviews: 0, averageScore: 0 };
+    }
+  }
+
+  /**
+   * Find paused/in-progress interview session for a user (used by EngagementService)
+   */
+  async findPausedSessionForUser(userId: string): Promise<InterviewSessionDocument | null> {
+    try {
+      const sessions = await this.repository.findSessionsByUserId(userId, 5, 0);
+      // Find the most recent paused or in_progress session
+      return sessions.find(s => s.status === 'paused' || s.status === 'in_progress') || null;
+    } catch (error) {
+      this.logger.error(`Failed to find paused session for user ${userId}: ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
    * Generate interview questions
    * ALWAYS generates questions using AI - no hardcode or DB lookup
    */

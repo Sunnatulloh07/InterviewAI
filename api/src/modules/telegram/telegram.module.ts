@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ConfigModule } from '@nestjs/config';
 import { TelegramService } from './telegram.service';
@@ -17,6 +17,7 @@ import { OtpModule } from '../otp/otp.module';
 import { CvModule } from '../cv/cv.module';
 import { AnalyticsModule } from '../analytics/analytics.module';
 import { PaymentsModule } from '../payments/payments.module';
+import { EngagementModule } from '../engagement/engagement.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { PaymentsModule } from '../payments/payments.module';
     CvModule,
     AnalyticsModule,
     PaymentsModule, // For SubscriptionService
+    forwardRef(() => EngagementModule),
   ],
   controllers: [TelegramController],
   providers: [

@@ -177,6 +177,45 @@ export class User {
   @Prop()
   blockedBy?: number;
 
+  /**
+   * Engagement tracking for Smart Assistant notifications
+   * Used to send personalized reminders, motivations, and progress updates
+   */
+  @Prop({
+    type: Object,
+    default: () => ({
+      lastActiveAt: new Date(),
+      lastNotificationSentAt: null,
+      lastNotificationRespondedAt: null,
+      consecutiveIgnores: 0,
+      nextNotificationAt: null,
+      isBotBlocked: false,
+      botBlockedAt: null,
+      notificationsPaused: false,
+      notificationsPausedUntil: null,
+    }),
+  })
+  engagement: {
+    /** Last time user interacted with the bot */
+    lastActiveAt: Date;
+    /** When we last sent a notification to this user */
+    lastNotificationSentAt: Date | null;
+    /** When user responded to our notification (within 24h window) */
+    lastNotificationRespondedAt: Date | null;
+    /** Count of consecutive notifications without response (for backoff) */
+    consecutiveIgnores: number;
+    /** Scheduled time for next notification (calculated by backoff algorithm) */
+    nextNotificationAt: Date | null;
+    /** Whether user has blocked the bot (detected via Telegram API error) */
+    isBotBlocked: boolean;
+    /** When user blocked the bot */
+    botBlockedAt: Date | null;
+    /** User opted out via /stop command */
+    notificationsPaused: boolean;
+    /** If paused temporarily, when to resume */
+    notificationsPausedUntil: Date | null;
+  };
+
   // Virtual property
   get fullName(): string {
     return `${this.firstName} ${this.lastName}`;
@@ -193,6 +232,9 @@ export const UserSchema = SchemaFactory.createForClass(User);
 UserSchema.index({ phoneNumber: 1, deletedAt: 1 });
 UserSchema.index({ telegramId: 1, deletedAt: 1 });
 UserSchema.index({ createdAt: -1 });
+// Engagement indexes for notification scheduling
+UserSchema.index({ 'engagement.nextNotificationAt': 1, 'engagement.isBotBlocked': 1, 'engagement.notificationsPaused': 1 });
+UserSchema.index({ 'engagement.lastActiveAt': 1 });
 
 // Virtual properties
 UserSchema.virtual('fullName').get(function (this: UserDocument) {

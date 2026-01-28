@@ -1,4 +1,4 @@
-import { Injectable, Logger, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, ForbiddenException, NotFoundException, forwardRef, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { UsersService } from '../users/users.service';
 import { BotContext } from './telegram.service';
@@ -12,6 +12,7 @@ import { TelegramSubscriptionService } from './telegram-subscription.service';
 import { SecurityService } from '../security/security.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { AiAnswerService } from '../ai/ai-answer.service';
+import { EngagementService } from '../engagement/engagement.service';
 import { OpenAI } from 'openai';
 import { createOpenAIClient, getModelName } from '@common/utils/openai-client.factory';
 
@@ -32,6 +33,8 @@ export class TelegramCommandsService {
     private readonly securityService: SecurityService,
     private readonly analyticsService: AnalyticsService,
     private readonly answerService: AiAnswerService,
+    @Inject(forwardRef(() => EngagementService))
+    private readonly engagementService: EngagementService,
   ) {
     // Initialize OpenAI client with support for both OpenAI and OpenRouter
     this.openai = createOpenAIClient(this.configService);
@@ -67,6 +70,23 @@ export class TelegramCommandsService {
     return ctx.session?.language || 'uz';
   }
 
+  /**
+   * Track user activity for engagement system
+   * - Updates lastActiveAt timestamp
+   * - Checks if user responded to a pending notification
+   * Fire-and-forget: does not block the main flow
+   */
+  private trackUserActivity(userId: string): void {
+    // Use void to explicitly mark fire-and-forget
+    // Use allSettled so one failure doesn't affect the other
+    void Promise.allSettled([
+      this.engagementService.updateLastActive(userId),
+      this.engagementService.checkAndMarkNotificationResponse(userId),
+    ]).catch((err) => {
+      this.logger.debug(`Engagement tracking failed: ${err.message}`);
+    });
+  }
+
   async handleStart(ctx: BotContext) {
     const telegramId = ctx.from?.id as number;
 
@@ -77,6 +97,9 @@ export class TelegramCommandsService {
       // Existing user - load language from database
       const savedLang = user.language || user.preferences?.language || 'uz';
       ctx.session.language = savedLang;
+
+      // Track user activity for engagement system
+      this.trackUserActivity(user.id);
 
       // Show main menu with saved language
       const welcomeText = this.getWelcomeText(savedLang);
@@ -577,6 +600,82 @@ export class TelegramCommandsService {
     });
   }
 
+  /**
+   * Handle /stop command to pause smart notifications
+   */
+  async handleStop(ctx: BotContext) {
+    const telegramId = ctx.from?.id as number;
+    const user = await this.usersService.findByTelegramId(telegramId);
+    
+    // Get language (with fallback)
+    let lang = ctx.session?.language;
+    if (!lang) {
+      lang = user?.language || user?.preferences?.language || 'uz';
+      if (ctx.session) ctx.session.language = lang;
+    }
+
+    if (!user) {
+      const texts: Record<string, string> = {
+        uz: "Avval ro'yxatdan o'ting.",
+        ru: 'Сначала зарегистрируйтесь.',
+        en: 'Please register first.',
+      };
+      await ctx.reply(texts[lang] || texts['uz']);
+      return;
+    }
+
+    if (user.id) {
+      // Pause notifications
+      await this.engagementService.pauseNotifications(user.id);
+      
+      const texts: Record<string, string> = {
+        uz: `✅ <b>Bildirishnomalar to'xtatildi.</b>\n\nSizni ortiqcha bezovta qilmaymiz. Qayta yoqish uchun /resume buyrug'ini yuboring.`,
+        ru: `✅ <b>Уведомления приостановлены.</b>\n\nМы не будем вас беспокоить. Отправьте /resume, чтобы включить снова.`,
+        en: `✅ <b>Notifications paused.</b>\n\nWe won't disturb you anymore. Send /resume to enable again.`,
+      };
+      
+      await ctx.reply(texts[lang] || texts['uz'], { parse_mode: 'HTML' });
+    }
+  }
+
+  /**
+   * Handle /resume command to resume smart notifications
+   */
+  async handleResume(ctx: BotContext) {
+    const telegramId = ctx.from?.id as number;
+    const user = await this.usersService.findByTelegramId(telegramId);
+    
+    // Get language
+    let lang = ctx.session?.language;
+    if (!lang) {
+      lang = user?.language || user?.preferences?.language || 'uz';
+      if (ctx.session) ctx.session.language = lang;
+    }
+
+    if (!user) {
+      const texts: Record<string, string> = {
+        uz: "Avval ro'yxatdan o'ting.",
+        ru: 'Сначала зарегистрируйтесь.',
+        en: 'Please register first.',
+      };
+      await ctx.reply(texts[lang] || texts['uz']);
+      return;
+    }
+
+    if (user.id) {
+      // Resume notifications
+      await this.engagementService.resumeNotifications(user.id);
+      
+      const texts: Record<string, string> = {
+        uz: `🎉 <b>Bildirishnomalar qayta yoqildi!</b>\n\nEndi siz muhim eslatmalarni o'tkazib yubormaysiz.`,
+        ru: `🎉 <b>Уведомления снова включены!</b>\n\nТеперь вы не пропустите важные напоминания.`,
+        en: `🎉 <b>Notifications resumed!</b>\n\nYou won't miss important reminders now.`,
+      };
+      
+      await ctx.reply(texts[lang] || texts['uz'], { parse_mode: 'HTML' });
+    }
+  }
+
   async handleHelp(ctx: BotContext) {
     const telegramId = ctx.from?.id as number;
     const user = await this.usersService.findByTelegramId(telegramId);
@@ -831,6 +930,17 @@ export class TelegramCommandsService {
   }
 
   async handleCallback(ctx: BotContext, data: string) {
+    // Get user once and reuse for tracking and other operations
+    const callbackTelegramId = ctx.from?.id;
+    const cachedUser = callbackTelegramId 
+      ? await this.usersService.findByTelegramId(callbackTelegramId) 
+      : null;
+    
+    // Track user activity for engagement system
+    if (cachedUser?.id) {
+      this.trackUserActivity(cachedUser.id);
+    }
+
     // Subscription-related callbacks (show_plans, upgrade_*, contact_support)
     const lang = this.getLanguageFromSession(ctx);
     const subscriptionHandled = await this.subscriptionService.handleSubscriptionCallback(ctx, data, lang);
@@ -843,9 +953,8 @@ export class TelegramCommandsService {
       const lang = data.replace('lang_', '');
       ctx.session.language = lang;
 
-      // Check if user exists in database
-      const telegramId = ctx.from?.id as number;
-      const user = await this.usersService.findByTelegramId(telegramId);
+      // Reuse cached user from above (no duplicate DB query)
+      const user = cachedUser;
 
       if (user) {
         // Existing user - save language to database

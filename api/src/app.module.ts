@@ -46,6 +46,7 @@ import { WebsocketModule } from './modules/websocket/websocket.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { AdminBotModule } from './modules/admin-bot/admin-bot.module';
+import { EngagementModule } from './modules/engagement/engagement.module';
 
 @Module({
   imports: [
@@ -336,6 +337,7 @@ import { AdminBotModule } from './modules/admin-bot/admin-bot.module';
     NotificationsModule,
     AnalyticsModule,
     AdminBotModule,
+    EngagementModule,
   ],
   controllers: [AppController],
   providers: [AppService, RedisService],
