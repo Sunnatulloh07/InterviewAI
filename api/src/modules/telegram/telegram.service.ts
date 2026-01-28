@@ -113,6 +113,7 @@ export class TelegramService implements OnModuleInit {
 
       // Register command handlers
       this.bot.command('start', (ctx) => this.commandsService.handleStart(ctx));
+      this.bot.command('stop', (ctx) => this.commandsService.handleStop(ctx));
       this.bot.command('profile', (ctx) => this.commandsService.handleProfile(ctx));
       this.bot.command('interview', (ctx) => this.commandsService.handleInterview(ctx));
       this.bot.command('start_live', (ctx) => this.liveService.handleStartLive(ctx));

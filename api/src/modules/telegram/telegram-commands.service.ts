@@ -9,6 +9,7 @@ import { OtpService } from '../otp/otp.service';
 import { CvService } from '../cv/cv.service';
 import { TelegramLiveService } from './telegram-live.service';
 import { TelegramSubscriptionService } from './telegram-subscription.service';
+import { SubscriptionService } from '../payments/subscription.service';
 import { SecurityService } from '../security/security.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { AiAnswerService } from '../ai/ai-answer.service';
@@ -29,6 +30,7 @@ export class TelegramCommandsService {
     private readonly otpService: OtpService,
     private readonly cvService: CvService,
     private readonly liveService: TelegramLiveService,
+    private readonly coreSubscriptionService: SubscriptionService,
     private readonly subscriptionService: TelegramSubscriptionService,
     private readonly securityService: SecurityService,
     private readonly analyticsService: AnalyticsService,
@@ -98,22 +100,29 @@ export class TelegramCommandsService {
       const savedLang = user.language || user.preferences?.language || 'uz';
       ctx.session.language = savedLang;
 
-      // Track user activity for engagement system
+      // Track activity
       this.trackUserActivity(user.id);
 
-      // Show main menu with saved language
+      // Check for deep linking parameters (e.g., /start ref=123)
+      if (ctx.match && typeof ctx.match === 'string') {
+        const payload = ctx.match;
+        // Handle referral or other deep links here
+        this.logger.log(`Start command with payload: ${payload}`);
+      }
+
+      // Show welcome back message
       const welcomeText = this.getWelcomeText(savedLang);
-      const mainKeyboard = this.getMainKeyboard(savedLang);
+      const keyboard = this.getMainKeyboard(savedLang);
 
       await this.replyOrEdit(ctx, welcomeText, {
-        reply_markup: mainKeyboard,
+        reply_markup: keyboard,
         parse_mode: 'HTML',
       });
       return;
     }
 
     // New user - check if language already selected in session
-    if (!ctx.session.language) {
+    if (!ctx.session?.language) {
       // Show language selection
       const languageKeyboard = new InlineKeyboard()
         .text("🇺🇿 O'zbekcha", 'lang_uz')
@@ -136,7 +145,7 @@ export class TelegramCommandsService {
     }
 
     // Language is set but user not registered - show registration
-    const lang = ctx.session.language;
+    const lang = ctx.session.language || 'uz';
     const regText = this.getRegistrationText(lang);
     const regKeyboard = this.getRegistrationKeyboard(lang);
 
@@ -148,16 +157,16 @@ export class TelegramCommandsService {
 
   private getMainKeyboard(lang: string): InlineKeyboard {
     const webAppUrl =
-      this.configService.get<string>('WEB_APP_URL') || 'https://app.interviewai.pro';
+      this.configService.get<string>('WEB_APP_URL');
 
     // Check if URL is HTTPS (Telegram requires HTTPS for Web App buttons)
-    const isHttps = webAppUrl.startsWith('https://');
+    const isHttps = webAppUrl?.startsWith('https://');
     const isDevelopment = this.configService.get<string>('NODE_ENV') === 'development';
 
     // Only show Web App button if URL is HTTPS or explicitly enabled in development
     const showWebAppButton =
-      isHttps ||
-      (isDevelopment && this.configService.get<string>('WEB_APP_ENABLED_IN_DEV') === 'true');
+      (webAppUrl && isHttps) ||
+      (webAppUrl && isDevelopment && this.configService.get<string>('WEB_APP_ENABLED_IN_DEV') === 'true');
 
     const keyboards: Record<string, InlineKeyboard> = {
       uz: (() => {
@@ -2657,6 +2666,32 @@ export class TelegramCommandsService {
     // Valid Position check before starting
     if (!ctx.session.interviewPosition) {
        // Handle missing position if necessary, though logic usually prevents this
+    }
+
+    // CRITICAL FIX: Check and increment usage limit
+    // This ensures the user is charged for the interview (Mock or Real)
+    // We increment by 1
+    const { allowed, limit } = await this.coreSubscriptionService.checkAndIncrementUsage(
+      userId,
+      'mockInterviews',
+      1,
+    );
+
+    if (!allowed && limit !== -1) {
+      // Limit reached - send warning and abort
+      const usage = user.usage || {};
+      const current = usage.mockInterviewsThisMonth || 0;
+      
+      // Since allowed=false, the increment didn't happen, so 'current' is the actual usage
+      // We send the warning with current usage
+      await ((this.subscriptionService as any).sendUsageLimitWarning(
+        ctx,
+        lang,
+        'mockInterviews',
+        current,
+        limit,
+      ));
+      return;
     }
 
     let loadingMessageId: number | undefined;

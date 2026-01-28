@@ -41,6 +41,41 @@ export class TelegramLiveService {
       return;
     }
 
+    // Get user ID (handle both _id and id fields)
+    const userId = (user as any)._id?.toString() || (user as any).id?.toString() || user.id;
+
+    // CRITICAL FIX: Check usage limits before starting
+    // We pass 0 to check if usage > limit without incrementing yet
+    // Incrementing happens during the session usage
+    const { allowed, limit } = await this.subscriptionService.checkAndIncrementUsage(
+      userId,
+      'liveInterviewMinutes',
+      0,
+    );
+
+    // If limit is reached (and not unlimited i.e., -1)
+    if (!allowed && limit !== -1) {
+      // Use helper to send limit warning
+      const lang = user.preferences?.language || user.language || 'uz';
+      const usage = user.usage || {};
+      const current = usage.liveInterviewMinutesThisMonth || 0;
+      
+      // We manually verify if strictly >= limit, as checkAndIncrementUsage returns false if (current + amount) > limit
+      // With amount=0, it returns false if current > limit. 
+      // User might be at 15/15. 15 > 15 is False. So allowed=True.
+      // But we shouldn't allow starting if they are AT the limit.
+      if (current >= limit) {
+         await ((this.subscriptionService as any).sendUsageLimitWarning(
+           ctx,
+           lang,
+           'liveInterviewMinutes',
+           current,
+           limit,
+         ));
+         return;
+      }
+    }
+
     // Get language from session, user preferences, or database
     // Priority: session > user.preferences.language > user.language > 'en'
     let lang = ctx.session?.language;
@@ -127,20 +162,7 @@ export class TelegramLiveService {
       parse_mode: 'HTML',
     });
 
-    // Get user ID (handle both _id and id fields)
-    const userId = (user as any)._id?.toString() || (user as any).id?.toString() || user.id;
-    if (!userId) {
-      this.logger.error(`User ID is undefined for Telegram ID: ${telegramId}`);
-      const errorText: Record<string, string> = {
-        uz: `❌ Xatolik: Foydalanuvchi ID topilmadi.`,
-        ru: `❌ Ошибка: ID пользователя не найден.`,
-        en: `❌ Error: User ID not found.`,
-      };
-      await ctx.reply(errorText[lang] || errorText['en'], {
-        parse_mode: 'HTML',
-      });
-      return;
-    }
+    // userId is already obtained and validated above
 
     // Create or update session with full metadata
     const liveMetadata = ctx.session.liveSessionMetadata || {};
