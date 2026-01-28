@@ -157,10 +157,14 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
   }
 
   /**
-   * Pending surveys job - runs every 30 minutes between 09:00-21:00 (Tashkent time)
-   * Sends onboarding surveys to new users whose scheduled time has arrived
+   * Pending surveys job - runs every 15 minutes between 09:00-21:00 (Tashkent time)
+   * Handles two categories:
+   * 1. NEW USERS: Scheduled surveys (scheduledSurveyAt set by pre-save hook, 3-4h after registration)
+   * 2. EXISTING USERS: Backfill users who haven't completed survey and don't have scheduledSurveyAt
+   * 
+   * SCALABILITY: Processes max 1000 users per run = 4000/hour
    */
-  @Cron('*/30 9-21 * * *', { name: 'process-pending-surveys', timeZone: 'Asia/Tashkent' })
+  @Cron('*/15 9-21 * * *', { name: 'process-pending-surveys', timeZone: 'Asia/Tashkent' })
   async handlePendingSurveys(): Promise<void> {
     if (!this.isEnabled) {
       return;
@@ -170,30 +174,65 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
 
     try {
       const now = new Date();
+      const BATCH_SIZE = 1000; // Scalability: 1000 per run = 4000/hour (3.3 min processing time)
 
-      // Find users with scheduled surveys that are due and not yet completed
-      const pendingUsers = await this.userModel.find({
-        'engagement.scheduledSurveyAt': { $lte: now },
+      // ═══════════════════════════════════════════════════════════════════════
+      // QUERY 1: New users with scheduled surveys (pre-save hook scheduled them)
+      // ═══════════════════════════════════════════════════════════════════════
+      const scheduledUsers = await this.userModel.find({
+        'engagement.scheduledSurveyAt': { $lte: now, $ne: null },
         'engagement.surveyCompletedAt': null,
         'engagement.isBotBlocked': { $ne: true },
         'engagement.notificationsPaused': { $ne: true },
         deletedAt: null,
       })
         .select('_id telegramId language')
-        .limit(100) // Process max 100 per run
+        .limit(BATCH_SIZE)
         .lean()
         .exec();
 
-      if (pendingUsers.length === 0) {
+      // ═══════════════════════════════════════════════════════════════════════
+      // QUERY 2: Existing users WITHOUT any survey fields (backfill)
+      // These are users registered BEFORE the survey feature was deployed
+      // ═══════════════════════════════════════════════════════════════════════
+      const remainingSlots = BATCH_SIZE - scheduledUsers.length;
+      let existingUsers: any[] = [];
+      
+      if (remainingSlots > 0) {
+        existingUsers = await this.userModel.find({
+          // No scheduledSurveyAt (pre-feature users)
+          'engagement.scheduledSurveyAt': { $exists: false },
+          // Not completed
+          'engagement.surveyCompletedAt': null,
+          // Not NOT_SET (exclude users who explicitly declined or were reset)
+          'engagement.jobSeekingStatus': { $exists: false },
+          // Active filters
+          'engagement.isBotBlocked': { $ne: true },
+          'engagement.notificationsPaused': { $ne: true },
+          // Has telegram ID (required for sending)
+          telegramId: { $exists: true, $ne: null },
+          deletedAt: null,
+        })
+          .select('_id telegramId language')
+          .limit(remainingSlots)
+          .lean()
+          .exec();
+      }
+
+      const allUsers = [...scheduledUsers, ...existingUsers];
+
+      if (allUsers.length === 0) {
         return;
       }
 
-      this.logger.log(`Processing ${pendingUsers.length} pending surveys`);
+      this.logger.log(
+        `Processing ${allUsers.length} surveys: scheduled=${scheduledUsers.length}, existing=${existingUsers.length}`
+      );
 
       let sent = 0;
       let failed = 0;
 
-      for (const user of pendingUsers) {
+      for (const user of allUsers) {
         if (this.shouldStop) break;
 
         try {
@@ -209,7 +248,7 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
             failed++;
           }
 
-          // Rate limiting: 200ms delay between surveys
+          // Rate limiting: 200ms delay between surveys (5 per sec = 300 per min)
           await this.delay(200);
         } catch (error) {
           failed++;

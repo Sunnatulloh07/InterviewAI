@@ -58,6 +58,25 @@ export class TelegramVoiceService {
       }
     }
 
+    // CRITICAL: Check if user is in an active flow before processing voice
+    // Voice messages should only be processed during:
+    // 1. Live session (liveSessionStep is 'active' or has liveSessionMetadata)
+    // 2. Mock interview (currentInterviewSessionId is set)
+    const isInLiveSession = ctx.session.liveSessionStep === 'active' || 
+      (ctx.session.liveSessionStep && ctx.session.liveSessionStep !== 'complete');
+    const isInMockInterview = ctx.session.currentInterviewSessionId !== undefined;
+    
+    if (!isInLiveSession && !isInMockInterview) {
+      // User is not in any active flow - reject voice message
+      const notInFlowText: Record<string, string> = {
+        uz: `🎤 Ovozli xabar faqat intervyu yoki live sessiyada qabul qilinadi.\n\nIntervyu boshlash uchun "🎯 Intervyu" tugmasini bosing.`,
+        ru: `🎤 Голосовые сообщения принимаются только во время интервью или live-сессии.\n\nНажмите "🎯 Интервью", чтобы начать.`,
+        en: `🎤 Voice messages are only accepted during interview or live sessions.\n\nPress "🎯 Interview" to start.`,
+      };
+      await ctx.reply(notInFlowText[lang] || notInFlowText['en']);
+      return;
+    }
+
     try {
       // Show initial processing message
       const processingText: Record<string, string> = {
@@ -445,9 +464,9 @@ export class TelegramVoiceService {
 
       // Simple confirmation
       const confirmText: Record<string, string> = {
-        uz: `✅`,
-        ru: `✅`,
-        en: `✅`,
+        uz: `✅ Javobingiz qabul qilindi`,
+        ru: `✅ Ваш ответ принят`,
+        en: `✅ Your answer has been accepted`,
       };
       await ctx.reply(confirmText[lang] || confirmText['en']);
 

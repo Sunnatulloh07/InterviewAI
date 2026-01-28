@@ -227,6 +227,8 @@ export class TelegramCommandsService {
           .row()
           .text('💳 Plans', 'upgrade')
           .row()
+          .text('⚙️ Settings', 'settings_quick')
+          .row()
           .text('ℹ️ Help', 'help');
         return keyboard;
       })(),
@@ -1056,8 +1058,11 @@ export class TelegramCommandsService {
         en: `🌐 <b>Select language:</b>`,
       };
 
-      await ctx.reply(selectText[lang] || selectText['en'], {
-        reply_markup: languageKeyboard,
+      await this.replyOrEdit(ctx, selectText[lang] || selectText['en'], {
+        reply_markup: languageKeyboard.row().text(
+          lang === 'uz' ? '⬅️ Orqaga' : lang === 'ru' ? '⬅️ Назад' : '⬅️ Back',
+          'settings'
+        ),
         parse_mode: 'HTML',
       });
       return;
@@ -1174,7 +1179,7 @@ export class TelegramCommandsService {
       return;
     }
 
-    if (data === 'settings_quick') {
+    if (data === 'settings_quick' || data === 'settings') {
       await this.handleSettings(ctx);
       return;
     }
@@ -1192,7 +1197,11 @@ export class TelegramCommandsService {
         ru: `🔔 <b>Уведомления</b>\n\nНастройки уведомлений будут добавлены в ближайшее время.`,
         en: `🔔 <b>Notifications</b>\n\nNotification settings will be added soon.`,
       };
-      await ctx.reply(notifText[lang] || notifText['en'], {
+      await this.replyOrEdit(ctx, notifText[lang] || notifText['en'], {
+        reply_markup: new InlineKeyboard().text(
+          lang === 'uz' ? '⬅️ Orqaga' : lang === 'ru' ? '⬅️ Назад' : '⬅️ Back',
+          'settings'
+        ),
         parse_mode: 'HTML',
       });
       return;
@@ -1996,7 +2005,9 @@ export class TelegramCommandsService {
           ru: `✅ Вы уже зарегистрированы!`,
           en: `✅ You are already registered!`,
         };
-        await ctx.reply(alreadyRegisteredText[lang] || alreadyRegisteredText['en']);
+        await ctx.reply(alreadyRegisteredText[lang] || alreadyRegisteredText['en'], {
+          reply_markup: { remove_keyboard: true },
+        });
 
         // Show main menu
         const welcomeText = this.getWelcomeText(lang);
@@ -2064,7 +2075,10 @@ export class TelegramCommandsService {
           `You can now fully use InterviewAI Pro!`,
       };
 
-      await ctx.reply(successText[lang] || successText['en'], { parse_mode: 'HTML' });
+      await ctx.reply(successText[lang] || successText['en'], {
+        parse_mode: 'HTML',
+        reply_markup: { remove_keyboard: true }, // Remove phone number button after registration
+      });
 
       // Show main menu
       const welcomeText = this.getWelcomeText(lang);
