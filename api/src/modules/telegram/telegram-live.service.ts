@@ -89,6 +89,9 @@ export class TelegramLiveService {
       ctx.session.liveSessionMetadata?.company;
 
     if (!hasMetadata) {
+      // Clear conflicting session states (e.g. mock interview)
+      ctx.session.interviewStep = undefined;
+      
       // Start metadata collection flow
       ctx.session.liveSessionMetadata = ctx.session.liveSessionMetadata || {};
       ctx.session.liveSessionStep = 'domain';
@@ -118,6 +121,9 @@ export class TelegramLiveService {
     }
 
     // Metadata already collected - start live session
+    // Clear conflicting session states
+    ctx.session.interviewStep = undefined;
+    
     const sessionMetadata = ctx.session.liveSessionMetadata!;
     const startText: Record<string, string> = {
       uz:

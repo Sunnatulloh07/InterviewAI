@@ -157,7 +157,7 @@ export class TelegramCommandsService {
     });
   }
 
-  private getMainKeyboard(lang: string): InlineKeyboard {
+  private getMainKeyboard(lang: string): Keyboard {
     const webAppUrl =
       this.configService.get<string>('WEB_APP_URL');
 
@@ -170,75 +170,103 @@ export class TelegramCommandsService {
       (webAppUrl && isHttps) ||
       (webAppUrl && isDevelopment && this.configService.get<string>('WEB_APP_ENABLED_IN_DEV') === 'true');
 
-    const keyboards: Record<string, InlineKeyboard> = {
+    const keyboards: Record<string, Keyboard> = {
       uz: (() => {
-        const keyboard = new InlineKeyboard();
+        const keyboard = new Keyboard();
         if (showWebAppButton) {
           keyboard.webApp('🌐 Web App', webAppUrl).row();
         }
         keyboard
-          .text('🎯 Intervyu', 'interview_start')
+          .text('🎯 Intervyu').text('📊 Profil')
           .row()
-          .text('📊 Profil', 'profile')
+          .text('📄 CV Tahlil').text('📈 Statistika')
           .row()
-          .text('📄 CV Tahlil', 'analyze_cv')
+          .text('💳 Tariflar').text('⚙️ Sozlamalar')
           .row()
-          .text('📈 Statistika', 'stats')
-          .row()
-          .text('💳 Tariflar', 'upgrade')
-          .row()
-          .text('⚙️ Sozlamalar', 'settings_quick')
-          .row()
-          .text('ℹ️ Yordam', 'help');
-        return keyboard;
+          .text('ℹ️ Yordam');
+        return keyboard.resized();
       })(),
 
       ru: (() => {
-        const keyboard = new InlineKeyboard();
+        const keyboard = new Keyboard();
         if (showWebAppButton) {
           keyboard.webApp('🌐 Веб-приложение', webAppUrl).row();
         }
         keyboard
-          .text('🎯 Интервью', 'interview_start')
+          .text('🎯 Интервью').text('📊 Профиль')
           .row()
-          .text('📊 Профиль', 'profile')
+          .text('📄 Анализ CV').text('📈 Статистика')
           .row()
-          .text('📄 Анализ CV', 'analyze_cv')
+          .text('💳 Тарифы').text('⚙️ Настройки')
           .row()
-          .text('📈 Статистика', 'stats')
-          .row()
-          .text('💳 Тарифы', 'upgrade')
-          .row()
-          .text('⚙️ Настройки', 'settings_quick')
-          .row()
-          .text('ℹ️ Помощь', 'help');
-        return keyboard;
+          .text('ℹ️ Помощь');
+        return keyboard.resized();
       })(),
 
       en: (() => {
-        const keyboard = new InlineKeyboard();
+        const keyboard = new Keyboard();
         if (showWebAppButton) {
           keyboard.webApp('🌐 Web App', webAppUrl).row();
         }
         keyboard
-          .text('🎯 Interview', 'interview_start')
+          .text('🎯 Interview').text('📊 Profile')
           .row()
-          .text('📊 Profile', 'profile')
+          .text('📄 CV Analysis').text('📈 Statistics')
           .row()
-          .text('📄 CV Analysis', 'analyze_cv')
+          .text('💳 Plans').text('⚙️ Settings')
           .row()
-          .text('📈 Statistics', 'stats')
-          .row()
-          .text('💳 Plans', 'upgrade')
-          .row()
-          .text('⚙️ Settings', 'settings_quick')
-          .row()
-          .text('ℹ️ Help', 'help');
-        return keyboard;
+          .text('ℹ️ Help');
+        return keyboard.resized();
       })(),
     };
 
     return keyboards[lang] || keyboards['en'];
+  }
+
+  /**
+   * Handle Main Menu text commands (Reply Keyboard clicks)
+   */
+  public async handleMenuText(ctx: BotContext): Promise<boolean> {
+      const text = ctx.message?.text;
+      if (!text) return false;
+
+      // Interview
+      if (['🎯 Intervyu', '🎯 Интервью', '🎯 Interview'].includes(text)) {
+          await this.handleInterview(ctx);
+          return true;
+      }
+      // Profile
+      if (['📊 Profil', '📊 Профиль', '📊 Profile'].includes(text)) {
+          await this.handleProfile(ctx);
+          return true;
+      }
+      // Stats
+      if (['📈 Statistika', '📈 Статистика', '📈 Statistics'].includes(text)) {
+          await this.handleStats(ctx);
+          return true;
+      }
+      // CV
+      if (['📄 CV Tahlil', '📄 Анализ CV', '📄 CV Analysis'].includes(text)) {
+          await this.handleAnalyzeCv(ctx);
+          return true;
+      }
+      // Upgrade (Plans)
+      if (['💳 Tariflar', '💳 Тарифы', '💳 Plans'].includes(text)) {
+          await this.handleUpgrade(ctx);
+          return true;
+      }
+      // Settings
+      if (['⚙️ Sozlamalar', '⚙️ Настройки', '⚙️ Settings'].includes(text)) {
+          await this.handleSettings(ctx);
+          return true;
+      }
+      // Help
+      if (['ℹ️ Yordam', 'ℹ️ Помощь', 'ℹ️ Help'].includes(text)) {
+          await this.handleHelp(ctx);
+          return true;
+      }
+      
+      return false;
   }
 
   private getRegistrationText(lang: string): string {
@@ -2033,6 +2061,8 @@ export class TelegramCommandsService {
     }
   }
 
+
+
   /**
    * Handle contact message (phone number registration)
    */
@@ -3161,13 +3191,17 @@ export class TelegramCommandsService {
       return;
     }
 
-    // Check if this is interview CV upload
-    if (interviewStep === 'cv') {
-      await this.handleCvUploadForInterview(ctx);
+    // Check if user is in interview flow
+    if (ctx.session.interviewStep) {
+      if (ctx.session.interviewStep === 'cv') {
+        await this.handleCvUploadForInterview(ctx);
+        return;
+      }
+      await this.handleInterviewText(ctx);
       return;
     }
 
-    // Unknown document upload
+    // Generic error
     const wrongStepText: Record<string, string> = {
       uz: `Iltimos, CV yuklash bosqichida fayl yuboring.`,
       ru: `Пожалуйста, отправьте файл на этапе загрузки CV.`,

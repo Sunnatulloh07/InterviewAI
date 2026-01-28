@@ -282,6 +282,12 @@ export class TelegramService implements OnModuleInit {
    * Handle text messages
    */
   private async handleTextMessage(ctx: BotContext) {
+    // Check for Menu Buttons Logic (Reply Keyboard)
+    // Priority: Top level check to allow navigation away from flows
+    if (await this.commandsService.handleMenuText(ctx)) {
+       return;
+    }
+
     // Check if user is collecting live session metadata (PRIORITY: check this first)
     // This handles text input during metadata collection (e.g., company name)
     if (ctx.session.liveSessionStep && ctx.session.liveSessionStep !== 'complete') {
