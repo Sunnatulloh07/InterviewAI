@@ -231,26 +231,36 @@ Your subscription has expired. Please renew to continue.
     };
 
     const typeName = typeNames[lang]?.[usageType] || usageType;
-    const percentage = Math.round((current / limit) * 100);
+    
+    // Handle edge cases
+    let percentage = 0;
+    if (limit > 0) {
+      percentage = Math.round((current / limit) * 100);
+    } else if (limit === 0) {
+      percentage = 100;
+    }
+
+    const displayLimit = limit === -1 ? '∞' : limit;
+    const isLimitReached = percentage >= 100;
 
     const messages: Record<string, string> = {
       uz: `📊 <b>Limit holati:</b> ${typeName}
 
-${current}/${limit} ishlatildi (${percentage}%)
+${current}/${displayLimit} ishlatildi (${percentage}%)
 
-${percentage >= 90 ? '⚠️ Limitga yaqinlashyapsiz!' : ''}
+${isLimitReached ? '⛔️ Limit tugadi!' : (percentage >= 90 ? '⚠️ Limitga yaqinlashyapsiz!' : '')}
 💡 Yangilash uchun /upgrade yozing.`,
       ru: `📊 <b>Статус лимита:</b> ${typeName}
 
-${current}/${limit} использовано (${percentage}%)
+${current}/${displayLimit} использовано (${percentage}%)
 
-${percentage >= 90 ? '⚠️ Приближаетесь к лимиту!' : ''}
+${isLimitReached ? '⛔️ Лимит исчерпан!' : (percentage >= 90 ? '⚠️ Приближаетесь к лимиту!' : '')}
 💡 Введите /upgrade для обновления.`,
       en: `📊 <b>Limit Status:</b> ${typeName}
 
-${current}/${limit} used (${percentage}%)
+${current}/${displayLimit} used (${percentage}%)
 
-${percentage >= 90 ? '⚠️ Approaching your limit!' : ''}
+${isLimitReached ? '⛔️ Limit reached!' : (percentage >= 90 ? '⚠️ Approaching your limit!' : '')}
 💡 Type /upgrade to upgrade.`,
     };
 
