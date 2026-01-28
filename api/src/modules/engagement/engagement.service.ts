@@ -537,7 +537,13 @@ export class EngagementService implements OnModuleInit {
     try {
       await this.userModel.updateOne(
         { _id: new Types.ObjectId(userId) },
-        { $set: { 'engagement.lastActiveAt': new Date() } },
+        { 
+          $set: { 
+            'engagement.lastActiveAt': new Date(),
+            'engagement.isBotBlocked': false,
+            'engagement.botBlockedAt': null,
+          } 
+        },
       );
     } catch (error) {
       // Don't throw - this is a non-critical operation

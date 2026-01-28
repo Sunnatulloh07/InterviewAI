@@ -187,6 +187,8 @@ export class TelegramCommandsService {
           .row()
           .text('💳 Tariflar', 'upgrade')
           .row()
+          .text('⚙️ Sozlamalar', 'settings_quick')
+          .row()
           .text('ℹ️ Yordam', 'help');
         return keyboard;
       })(),
@@ -206,6 +208,8 @@ export class TelegramCommandsService {
           .text('📈 Статистика', 'stats')
           .row()
           .text('💳 Тарифы', 'upgrade')
+          .row()
+          .text('⚙️ Настройки', 'settings_quick')
           .row()
           .text('ℹ️ Помощь', 'help');
         return keyboard;
@@ -761,10 +765,7 @@ export class TelegramCommandsService {
         .text(buttons.interview, 'interview_start')
         .text(buttons.cv, 'cv_quick')
         .row()
-        .text(buttons.live, 'live_quick')
-        .text(buttons.settings, 'settings_quick')
-        .row()
-        .text(buttons.language, 'settings_language');
+        .text(buttons.live, 'live_quick');
     } else {
       // For non-registered users, only show registration
       const registerTexts: Record<string, string> = {
@@ -914,16 +915,32 @@ export class TelegramCommandsService {
       en: `⚙️ <b>Settings</b>\n\nWhat would you like to configure?`,
     };
 
-    const jobStatusLabel: Record<string, string> = {
-      uz: '💼 Ish holati',
-      ru: '💼 Статус работы',
-      en: '💼 Job status',
+    const buttons: Record<string, { notif: string; lang: string; status: string }> = {
+      uz: { 
+        notif: '🔔 Bildirishnomalar', 
+        lang: "🌐 Tilni o'zgartirish", 
+        status: '💼 Ish holati' 
+      },
+      ru: { 
+        notif: '🔔 Уведомления', 
+        lang: '🌐 Язык', 
+        status: '💼 Статус работы' 
+      },
+      en: { 
+        notif: '🔔 Notifications', 
+        lang: '🌐 Language', 
+        status: '💼 Job status' 
+      },
     };
 
+    const btn = buttons[lang] || buttons['en'];
+
     const keyboard = new InlineKeyboard()
-      .text('🔔', 'settings_notifications')
-      .text('🌐', 'settings_language')
-      .text(jobStatusLabel[lang] || jobStatusLabel['en'], 'settings_job_status');
+      .text(btn.notif, 'settings_notifications')
+      .row()
+      .text(btn.lang, 'settings_language')
+      .row()
+      .text(btn.status, 'settings_job_status');
 
     await this.replyOrEdit(ctx, settingsText[lang] || settingsText['en'], {
       reply_markup: keyboard.row().append(this.getBackKeyboard(lang)),
@@ -956,9 +973,12 @@ export class TelegramCommandsService {
       ? await this.usersService.findByTelegramId(callbackTelegramId) 
       : null;
     
+    // Robustly get user ID (handles both Mongoose Document and .lean() POJO)
+    const userId = cachedUser ? ((cachedUser as any)._id?.toString() || (cachedUser as any).id?.toString()) : null;
+    
     // Track user activity for engagement system
-    if (cachedUser?.id) {
-      this.trackUserActivity(cachedUser.id);
+    if (userId) {
+      this.trackUserActivity(userId);
     }
 
     // Subscription-related callbacks (show_plans, upgrade_*, contact_support)
@@ -971,9 +991,9 @@ export class TelegramCommandsService {
     // Survey response callbacks (survey_actively_looking, survey_preparing, etc.)
     if (this.surveyHandlerService.isSurveyCallback(data)) {
       const status = this.surveyHandlerService.parseCallbackData(data);
-      if (status && cachedUser?.id) {
+      if (status && userId) {
         const thankYouMessage = await this.surveyHandlerService.handleSurveyResponse(
-          cachedUser.id,
+          userId,
           status,
           lang,
         );
@@ -1078,11 +1098,14 @@ export class TelegramCommandsService {
         en: `💼 <b>Select your status:</b>\n\nWhat stage are you at?`,
       };
 
+      const currentStatus = (cachedUser as any)?.engagement?.jobSeekingStatus;
+
       const options = this.surveyHandlerService.getJobStatusOptions(lang);
       const statusKeyboard = new InlineKeyboard();
       
       for (const opt of options) {
-        statusKeyboard.text(opt.label, `jobstatus_${opt.status}`).row();
+        const prefix = opt.status === currentStatus ? '✅ ' : '';
+        statusKeyboard.text(prefix + opt.label, `jobstatus_${opt.status}`).row();
       }
       
       statusKeyboard.text(
@@ -1102,20 +1125,52 @@ export class TelegramCommandsService {
       const status = data.replace('jobstatus_', '');
       const lang = ctx.session?.language || 'en';
       
-      if (cachedUser?.id) {
-        await this.surveyHandlerService.updateJobStatus(cachedUser.id, status as any);
+      if (userId) {
+        // 1. Update DB
+        await this.surveyHandlerService.updateJobStatus(userId, status as any);
         
+        // 2. Show Toast Notification (Immediate feedback)
         const confirmText: Record<string, string> = {
           uz: `✅ Ish holatingiz yangilandi!`,
           ru: `✅ Статус обновлён!`,
           en: `✅ Status updated!`,
         };
+        await ctx.answerCallbackQuery({
+           text: confirmText[lang] || confirmText['en'],
+           show_alert: false
+        });
+
+        // 3. Re-render the menu with the new checkmark (UX Magic)
+        const statusText: Record<string, string> = {
+           uz: `💼 <b>Ish holatini tanlang:</b>\n\nHozirda siz qaysi bosqichdasiz?`,
+           ru: `💼 <b>Выберите статус:</b>\n\nНа каком этапе вы сейчас?`,
+           en: `💼 <b>Select your status:</b>\n\nWhat stage are you at?`,
+        };
         
-        try {
-          await ctx.editMessageText(confirmText[lang] || confirmText['en'], { parse_mode: 'HTML' });
-        } catch {
-          await ctx.reply(confirmText[lang] || confirmText['en'], { parse_mode: 'HTML' });
+        const options = this.surveyHandlerService.getJobStatusOptions(lang);
+        const statusKeyboard = new InlineKeyboard();
+        
+        // Show checkmark on the selected one
+        for (const opt of options) {
+           const prefix = opt.status === status ? '✅ ' : '';
+           statusKeyboard.text(prefix + opt.label, `jobstatus_${opt.status}`).row();
         }
+        
+        // Back button
+        statusKeyboard.text(
+           lang === 'uz' ? '⬅️ Orqaga' : lang === 'ru' ? '⬅️ Назад' : '⬅️ Back',
+           'settings'
+        );
+
+        try {
+           await ctx.editMessageText(statusText[lang] || statusText['en'], { 
+              reply_markup: statusKeyboard,
+              parse_mode: 'HTML' 
+           });
+        } catch {
+           // Fallback if edit fails
+        }
+        return;
       }
       
       await ctx.answerCallbackQuery();
