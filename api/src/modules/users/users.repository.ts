@@ -145,6 +145,19 @@ export class UsersRepository {
     }
   }
 
+  /**
+   * Raw MongoDB update operation (for $set with dot notation, $inc, etc.)
+   * Use this when you need fine-grained control over the update operation
+   */
+  async updateRaw(id: string, updateOp: any): Promise<void> {
+    try {
+      await this.userModel.findByIdAndUpdate(id, updateOp).exec();
+    } catch (error) {
+      this.logger.error(`Failed to update user ${id}: ${error.message}`, error.stack);
+      throw new Error(`Database operation failed: ${error.message}`);
+    }
+  }
+
   async updatePreferences(id: string, preferences: any): Promise<UserDocument | null> {
     try {
       const result = await this.userModel

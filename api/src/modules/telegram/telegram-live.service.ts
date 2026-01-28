@@ -44,47 +44,33 @@ export class TelegramLiveService {
     // Get user ID (handle both _id and id fields)
     const userId = (user as any)._id?.toString() || (user as any).id?.toString() || user.id;
 
+    // Get language early for error messages
+    const lang = ctx.session?.language || user.preferences?.language || user.language || 'uz';
+
     // CRITICAL FIX: Check usage limits before starting
-    // We pass 0 to check if usage > limit without incrementing yet
-    // Incrementing happens during the session usage
-    const { allowed, limit } = await this.subscriptionService.checkAndIncrementUsage(
+    // We use checkAndIncrementUsage with amount=0 to get current usage without incrementing
+    const { current, limit } = await this.subscriptionService.checkAndIncrementUsage(
       userId,
       'liveInterviewMinutes',
       0,
     );
 
-    // If limit is reached (and not unlimited i.e., -1)
-    if (!allowed && limit !== -1) {
-      // Use helper to send limit warning
-      const lang = user.preferences?.language || user.language || 'uz';
-      const usage = user.usage || {};
-      const current = usage.liveInterviewMinutesThisMonth || 0;
-      
-      // We manually verify if strictly >= limit, as checkAndIncrementUsage returns false if (current + amount) > limit
-      // With amount=0, it returns false if current > limit. 
-      // User might be at 15/15. 15 > 15 is False. So allowed=True.
-      // But we shouldn't allow starting if they are AT the limit.
-      if (current >= limit) {
-         await ((this.subscriptionService as any).sendUsageLimitWarning(
-           ctx,
-           lang,
-           'liveInterviewMinutes',
-           current,
-           limit,
-         ));
-         return;
-      }
+    // Check if limit is reached (limit !== -1 means limited plan)
+    // If user is AT or OVER the limit, block them
+    if (limit !== -1 && current >= limit) {
+      await (this.subscriptionService as any).sendUsageLimitWarning(
+        ctx,
+        lang,
+        'liveInterviewMinutes',
+        current,
+        limit,
+      );
+      return;
     }
 
-    // Get language from session, user preferences, or database
-    // Priority: session > user.preferences.language > user.language > 'en'
-    let lang = ctx.session?.language;
-    if (!lang) {
-      lang = user.preferences?.language || user.language || 'en';
-      // Save to session for future use
-      if (ctx.session) {
-        ctx.session.language = lang;
-      }
+    // Save language to session for future use (if not already set)
+    if (ctx.session && !ctx.session.language) {
+      ctx.session.language = lang;
     }
 
     // Check if metadata is already collected

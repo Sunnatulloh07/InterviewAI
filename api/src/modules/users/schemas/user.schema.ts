@@ -193,6 +193,10 @@ export class User {
       botBlockedAt: null,
       notificationsPaused: false,
       notificationsPausedUntil: null,
+      // User segmentation survey fields
+      jobSeekingStatus: 'not_set',
+      surveyCompletedAt: null,
+      scheduledSurveyAt: null,
     }),
   })
   engagement: {
@@ -214,6 +218,12 @@ export class User {
     notificationsPaused: boolean;
     /** If paused temporarily, when to resume */
     notificationsPausedUntil: Date | null;
+    /** User's current job-seeking status for personalized engagement */
+    jobSeekingStatus: 'actively_looking' | 'preparing' | 'learning' | 'employed' | 'not_set';
+    /** When user completed the onboarding survey */
+    surveyCompletedAt: Date | null;
+    /** Scheduled time for onboarding survey (3-4h after registration) */
+    scheduledSurveyAt: Date | null;
   };
 
   // Virtual property
@@ -235,6 +245,10 @@ UserSchema.index({ createdAt: -1 });
 // Engagement indexes for notification scheduling
 UserSchema.index({ 'engagement.nextNotificationAt': 1, 'engagement.isBotBlocked': 1, 'engagement.notificationsPaused': 1 });
 UserSchema.index({ 'engagement.lastActiveAt': 1 });
+// Survey scheduling index (for cron job queries)
+UserSchema.index({ 'engagement.scheduledSurveyAt': 1, 'engagement.surveyCompletedAt': 1 });
+// Job seeker engagement index
+UserSchema.index({ 'engagement.jobSeekingStatus': 1, 'engagement.lastActiveAt': 1 });
 
 // Virtual properties
 UserSchema.virtual('fullName').get(function (this: UserDocument) {
@@ -317,6 +331,34 @@ UserSchema.pre('save', function (next) {
           shareAnalytics: false,
         },
       };
+    }
+
+    // Schedule onboarding survey for new users (3-4 hours after registration)
+    // Only schedule if: 1) not yet scheduled, 2) not already completed, 3) user is new (no lastActiveAt set beyond initial creation)
+    const isNewUser = !user.engagement?.surveyCompletedAt && !user.engagement?.scheduledSurveyAt;
+    const hasNeverBeenScheduled = !user.engagement?.surveyCompletedAt; // Don't re-schedule if completed
+    
+    if (isNewUser && hasNeverBeenScheduled && this.isNew) {
+      const surveyDelayHours = 3 + Math.random(); // 3-4 hours random
+      const scheduledTime = new Date(Date.now() + surveyDelayHours * 60 * 60 * 1000);
+      
+      // Ensure survey is scheduled within allowed hours (09:00-21:00 UTC+5)
+      const utcPlus5Hours = scheduledTime.getUTCHours() + 5;
+      const localHour = utcPlus5Hours % 24;
+      
+      if (localHour < 9) {
+        // Too early, schedule for 09:00 same day
+        scheduledTime.setUTCHours(4, 0, 0, 0); // 09:00 UTC+5 = 04:00 UTC
+      } else if (localHour >= 21) {
+        // Too late, schedule for 09:00 next day
+        scheduledTime.setDate(scheduledTime.getDate() + 1);
+        scheduledTime.setUTCHours(4, 0, 0, 0);
+      }
+
+      if (!user.engagement) {
+        user.engagement = {} as any;
+      }
+      user.engagement.scheduledSurveyAt = scheduledTime;
     }
   }
 

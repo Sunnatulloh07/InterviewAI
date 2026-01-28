@@ -435,6 +435,35 @@ export class UsersService {
   }
 
   /**
+   * Update user engagement fields
+   * Used for survey responses, job-seeking status, bot blocked detection, etc.
+   * 
+   * @param id - User MongoDB ID
+   * @param engagementUpdate - Partial engagement object to merge
+   */
+  async updateEngagement(
+    id: string,
+    engagementUpdate: Partial<UserDocument['engagement']>,
+  ): Promise<void> {
+    try {
+      // Build the $set object with dot notation for nested updates
+      const setObj: Record<string, any> = {};
+      for (const [key, value] of Object.entries(engagementUpdate)) {
+        setObj[`engagement.${key}`] = value;
+      }
+
+      await this.usersRepository.updateRaw(id, { $set: setObj });
+      this.logger.debug(`Engagement updated for user ${id}: ${Object.keys(engagementUpdate).join(', ')}`);
+    } catch (error) {
+      this.logger.error(
+        `Failed to update engagement for user ${id}: ${error.message}`,
+        error.stack,
+      );
+      // Don't throw - engagement tracking is not critical for core functionality
+    }
+  }
+
+  /**
    * Link Telegram account
    */
   async linkTelegramAccount(id: string, telegramId: number): Promise<UserDocument> {

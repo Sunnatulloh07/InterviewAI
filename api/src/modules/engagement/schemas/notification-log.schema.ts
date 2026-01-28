@@ -21,6 +21,10 @@ export enum NotificationTrigger {
   FIRST_INTERVIEW = 'first_interview',
   /** Trial ending soon reminder */
   TRIAL_ENDING = 'trial_ending',
+  /** Onboarding survey for new users (3-4h after registration) */
+  ONBOARDING_SURVEY = 'onboarding_survey',
+  /** Active job-seeker inactive for 24h - motivational nudge */
+  JOBSEEKER_INACTIVE = 'jobseeker_inactive',
 }
 
 /**

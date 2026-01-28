@@ -1,7 +1,12 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
 import { EngagementService } from './engagement.service';
+import { SurveyHandlerService } from './survey-handler.service';
+import { User, UserDocument } from '../users/schemas/user.schema';
+import { JobSeekingStatus } from './dto/job-seeking-status.enum';
 
 /**
  * Scheduler configuration
@@ -59,7 +64,9 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
 
   constructor(
     private readonly engagementService: EngagementService,
+    private readonly surveyHandlerService: SurveyHandlerService,
     private readonly configService: ConfigService,
+    @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
   ) {}
 
   onModuleInit(): void {
@@ -146,6 +153,132 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
       }
     } catch (error) {
       this.logger.error(`Expired notifications job failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Pending surveys job - runs every 30 minutes between 09:00-21:00 (Tashkent time)
+   * Sends onboarding surveys to new users whose scheduled time has arrived
+   */
+  @Cron('*/30 9-21 * * *', { name: 'process-pending-surveys', timeZone: 'Asia/Tashkent' })
+  async handlePendingSurveys(): Promise<void> {
+    if (!this.isEnabled) {
+      return;
+    }
+
+    this.logger.debug('Processing pending surveys');
+
+    try {
+      const now = new Date();
+
+      // Find users with scheduled surveys that are due and not yet completed
+      const pendingUsers = await this.userModel.find({
+        'engagement.scheduledSurveyAt': { $lte: now },
+        'engagement.surveyCompletedAt': null,
+        'engagement.isBotBlocked': { $ne: true },
+        'engagement.notificationsPaused': { $ne: true },
+        deletedAt: null,
+      })
+        .select('_id telegramId language')
+        .limit(100) // Process max 100 per run
+        .lean()
+        .exec();
+
+      if (pendingUsers.length === 0) {
+        return;
+      }
+
+      this.logger.log(`Processing ${pendingUsers.length} pending surveys`);
+
+      let sent = 0;
+      let failed = 0;
+
+      for (const user of pendingUsers) {
+        if (this.shouldStop) break;
+
+        try {
+          const success = await this.surveyHandlerService.sendSurvey(
+            user._id.toString(),
+            user.telegramId,
+            user.language || 'uz',
+          );
+
+          if (success) {
+            sent++;
+          } else {
+            failed++;
+          }
+
+          // Rate limiting: 200ms delay between surveys
+          await this.delay(200);
+        } catch (error) {
+          failed++;
+          this.logger.error(`Failed to send survey to user ${user._id}: ${error.message}`);
+        }
+      }
+
+      this.logger.log(`Pending surveys processed: sent=${sent}, failed=${failed}`);
+    } catch (error) {
+      this.logger.error(`Pending surveys job failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Job-seeker inactivity check - runs twice daily at 10:00 and 18:00 (Tashkent time)
+   * Sends motivational nudges to active job seekers who haven't used the bot in 24h
+   */
+  @Cron('0 10,18 * * *', { name: 'jobseeker-inactivity-check', timeZone: 'Asia/Tashkent' })
+  async handleJobseekerInactivity(): Promise<void> {
+    if (!this.isEnabled) {
+      return;
+    }
+
+    this.logger.debug('Checking job-seeker inactivity');
+
+    try {
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
+
+      // Find active job seekers inactive for 24-48h
+      const inactiveJobseekers = await this.userModel.find({
+        'engagement.jobSeekingStatus': JobSeekingStatus.ACTIVELY_LOOKING,
+        'engagement.lastActiveAt': {
+          $lte: twentyFourHoursAgo,
+          $gte: fortyEightHoursAgo, // Don't spam users who've been inactive longer
+        },
+        'engagement.isBotBlocked': { $ne: true },
+        'engagement.notificationsPaused': { $ne: true },
+        // Avoid sending if we already sent a notification recently
+        $or: [
+          { 'engagement.lastNotificationSentAt': null },
+          { 'engagement.lastNotificationSentAt': { $lte: twentyFourHoursAgo } },
+        ],
+        deletedAt: null,
+      })
+        .select('_id')
+        .limit(100)
+        .lean()
+        .exec();
+
+      if (inactiveJobseekers.length === 0) {
+        return;
+      }
+
+      this.logger.log(`Found ${inactiveJobseekers.length} inactive job seekers`);
+
+      // Process through engagement service which handles AI message generation
+      for (const user of inactiveJobseekers) {
+        if (this.shouldStop) break;
+
+        try {
+          await this.engagementService.processUserForEngagement(user._id.toString());
+          await this.delay(200);
+        } catch (error) {
+          this.logger.error(`Failed to notify inactive jobseeker ${user._id}: ${error.message}`);
+        }
+      }
+    } catch (error) {
+      this.logger.error(`Job-seeker inactivity check failed: ${error.message}`);
     }
   }
 

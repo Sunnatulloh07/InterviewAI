@@ -8,6 +8,7 @@ import { NotificationLogRepository } from './notification-log.repository';
 import { EngagementAiService } from './engagement-ai.service';
 import { NotificationTrigger, NotificationDeliveryStatus } from './schemas/notification-log.schema';
 import { EngagementUserContext, NotificationResult, CreateNotificationLogDto } from './dto/engagement.dto';
+import { JobSeekingStatus } from './dto/job-seeking-status.enum';
 import { UsersService } from '../users/users.service';
 import { InterviewsService } from '../interviews/interviews.service';
 import { TelegramService } from '../telegram/telegram.service';
@@ -28,6 +29,7 @@ const TRIGGER_THRESHOLDS = {
   INCOMPLETE_INTERVIEW_HOURS: 24,
   SCORE_DECLINE_THRESHOLD: 10,
   TRIAL_ENDING_DAYS: [3, 1],
+  JOBSEEKER_INACTIVE_HOURS: 24, // Active job seekers inactive for 24h
 } as const;
 
 /**
@@ -209,6 +211,14 @@ export class EngagementService implements OnModuleInit {
       }
     } catch (error) {
       this.logger.debug(`Error checking score decline: ${error.message}`);
+    }
+
+    // Priority 5: Job-seeker inactivity (active job seekers inactive 24h+)
+    if (user.engagement?.jobSeekingStatus === JobSeekingStatus.ACTIVELY_LOOKING) {
+      const hoursSinceActive = (now.getTime() - new Date(lastActiveAt).getTime()) / (1000 * 60 * 60);
+      if (hoursSinceActive >= TRIGGER_THRESHOLDS.JOBSEEKER_INACTIVE_HOURS && hoursSinceActive < 48) {
+        return NotificationTrigger.JOBSEEKER_INACTIVE;
+      }
     }
 
     return null;
@@ -513,6 +523,7 @@ export class EngagementService implements OnModuleInit {
           'engagement.notificationsPaused': false,
           'engagement.notificationsPausedUntil': null,
           'engagement.isBotBlocked': false,
+          'engagement.botBlockedAt': null, // Clear blocked timestamp for consistency
         },
       },
     );

@@ -7,6 +7,7 @@ import { NotificationLogRepository } from './notification-log.repository';
 import { EngagementAiService } from './engagement-ai.service';
 import { EngagementService } from './engagement.service';
 import { EngagementSchedulerService } from './engagement-scheduler.service';
+import { SurveyHandlerService } from './survey-handler.service';
 import { UsersModule } from '../users/users.module';
 import { InterviewsModule } from '../interviews/interviews.module';
 import { TelegramModule } from '../telegram/telegram.module';
@@ -31,12 +32,14 @@ import { User, UserSchema } from '../users/schemas/user.schema';
     EngagementAiService,
     EngagementService,
     EngagementSchedulerService,
+    SurveyHandlerService,
   ],
   exports: [
     NotificationLogRepository,
     EngagementAiService,
     EngagementService,
     EngagementSchedulerService,
+    SurveyHandlerService,
   ],
 })
 export class EngagementModule {}

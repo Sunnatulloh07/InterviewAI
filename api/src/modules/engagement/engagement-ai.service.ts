@@ -68,6 +68,16 @@ Foydalanuvchining trial muddati {trialDaysRemaining} kunda tugaydi.
 - Hozirgi plan: {subscriptionPlan}
 - Tugallangan intervyular: {completedInterviews}
 Spamga o'xshamaydigan, samimiy tarzda eslatish yoz.`,
+
+  [NotificationTrigger.ONBOARDING_SURVEY]: `
+Yangi foydalanuvchiga sodda savol ber: hozirda qaysi bosqichda?
+Variantlar: faol ish izlash, tayyorgarlik, bilim oshirish.
+Juda qisqa (1 jumla), do'stona, samimiy ohangda.`,
+
+  [NotificationTrigger.JOBSEEKER_INACTIVE]: `
+Faol ish izlayotgan foydalanuvchi 1 kun botga kirmagan.
+Qisqa motivatsiya ber: mock interview yoki skill oshirishga undov.
+MAKSIMUM 2 jumla! G'ayratli, lekin bosim o'tkazmasdan.`,
 };
 
 /**
@@ -298,6 +308,8 @@ Shaxsiylashtirilgan, qisqa (2-3 jumla) xabar yoz:`;
         [NotificationTrigger.WEEKLY_PROGRESS]: `Haftalik xulosangiz tayyor, ${context.firstName}! 📊 O'rtacha ballingiz: ${context.averageScore}%`,
         [NotificationTrigger.FIRST_INTERVIEW]: `Ajoyib, ${context.firstName}! 🚀 Birinchi intervyungizni muvaffaqiyatli tugatdingiz!`,
         [NotificationTrigger.TRIAL_ENDING]: `${context.firstName}, trial muddatingiz ${context.trialDaysRemaining} kunda tugaydi. ⏰`,
+        [NotificationTrigger.ONBOARDING_SURVEY]: `Salom, ${context.firstName}! 🎯 Sizga bir savol: hozirda faol ish izlayapsizmi, tayyorgarlik ko'rayapsizmi yoki bilimlaringizni oshirayapsizmi?`,
+        [NotificationTrigger.JOBSEEKER_INACTIVE]: `${context.firstName}, ish izlash jarayonida doimiy mashq muhim! 💪 Bugun bir mock intervyu o'tkazib ko'ring.`,
       },
       ru: {
         [NotificationTrigger.INCOMPLETE_INTERVIEW]: `Привет, ${context.firstName}! 👋 Ваше интервью ещё не завершено. Хотите продолжить?`,
@@ -307,6 +319,8 @@ Shaxsiylashtirilgan, qisqa (2-3 jumla) xabar yoz:`;
         [NotificationTrigger.WEEKLY_PROGRESS]: `Ваш еженедельный отчёт готов, ${context.firstName}! 📊`,
         [NotificationTrigger.FIRST_INTERVIEW]: `Отлично, ${context.firstName}! 🚀 Первое интервью пройдено!`,
         [NotificationTrigger.TRIAL_ENDING]: `${context.firstName}, ваш пробный период заканчивается через ${context.trialDaysRemaining} дней. ⏰`,
+        [NotificationTrigger.ONBOARDING_SURVEY]: `Привет, ${context.firstName}! 🎯 Один вопрос: вы сейчас активно ищете работу, готовитесь к собеседованиям или учитесь?`,
+        [NotificationTrigger.JOBSEEKER_INACTIVE]: `${context.firstName}, в поиске работы важна регулярная практика! 💪 Попробуйте mock-интервью сегодня.`,
       },
       en: {
         [NotificationTrigger.INCOMPLETE_INTERVIEW]: `Hey ${context.firstName}! 👋 Your interview is still in progress. Want to continue?`,
@@ -316,6 +330,8 @@ Shaxsiylashtirilgan, qisqa (2-3 jumla) xabar yoz:`;
         [NotificationTrigger.WEEKLY_PROGRESS]: `Your weekly report is ready, ${context.firstName}! 📊`,
         [NotificationTrigger.FIRST_INTERVIEW]: `Awesome, ${context.firstName}! 🚀 First interview completed!`,
         [NotificationTrigger.TRIAL_ENDING]: `${context.firstName}, your trial ends in ${context.trialDaysRemaining} days. ⏰`,
+        [NotificationTrigger.ONBOARDING_SURVEY]: `Hey ${context.firstName}! 🎯 Quick question: are you actively job hunting, preparing for interviews, or learning?`,
+        [NotificationTrigger.JOBSEEKER_INACTIVE]: `${context.firstName}, consistent practice is key in job search! 💪 Try a mock interview today.`,
       },
     };
 

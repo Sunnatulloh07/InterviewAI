@@ -14,6 +14,7 @@ import { SecurityService } from '../security/security.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { AiAnswerService } from '../ai/ai-answer.service';
 import { EngagementService } from '../engagement/engagement.service';
+import { SurveyHandlerService } from '../engagement/survey-handler.service';
 import { OpenAI } from 'openai';
 import { createOpenAIClient, getModelName } from '@common/utils/openai-client.factory';
 
@@ -37,6 +38,7 @@ export class TelegramCommandsService {
     private readonly answerService: AiAnswerService,
     @Inject(forwardRef(() => EngagementService))
     private readonly engagementService: EngagementService,
+    private readonly surveyHandlerService: SurveyHandlerService,
   ) {
     // Initialize OpenAI client with support for both OpenAI and OpenRouter
     this.openai = createOpenAIClient(this.configService);
@@ -910,9 +912,16 @@ export class TelegramCommandsService {
       en: `⚙️ <b>Settings</b>\n\nWhat would you like to configure?`,
     };
 
+    const jobStatusLabel: Record<string, string> = {
+      uz: '💼 Ish holati',
+      ru: '💼 Статус работы',
+      en: '💼 Job status',
+    };
+
     const keyboard = new InlineKeyboard()
       .text('🔔', 'settings_notifications')
-      .text('🌐', 'settings_language');
+      .text('🌐', 'settings_language')
+      .text(jobStatusLabel[lang] || jobStatusLabel['en'], 'settings_job_status');
 
     await this.replyOrEdit(ctx, settingsText[lang] || settingsText['en'], {
       reply_markup: keyboard.row().append(this.getBackKeyboard(lang)),
@@ -954,6 +963,29 @@ export class TelegramCommandsService {
     const lang = this.getLanguageFromSession(ctx);
     const subscriptionHandled = await this.subscriptionService.handleSubscriptionCallback(ctx, data, lang);
     if (subscriptionHandled) {
+      return;
+    }
+
+    // Survey response callbacks (survey_actively_looking, survey_preparing, etc.)
+    if (this.surveyHandlerService.isSurveyCallback(data)) {
+      const status = this.surveyHandlerService.parseCallbackData(data);
+      if (status && cachedUser?.id) {
+        const thankYouMessage = await this.surveyHandlerService.handleSurveyResponse(
+          cachedUser.id,
+          status,
+          lang,
+        );
+
+        // Edit the message to show thank you and hide buttons
+        try {
+          await ctx.editMessageText(thankYouMessage, { parse_mode: 'HTML' });
+        } catch {
+          await ctx.reply(thankYouMessage, { parse_mode: 'HTML' });
+        }
+        await ctx.answerCallbackQuery();
+        return;
+      }
+      await ctx.answerCallbackQuery();
       return;
     }
 
@@ -1028,6 +1060,60 @@ export class TelegramCommandsService {
         reply_markup: languageKeyboard,
         parse_mode: 'HTML',
       });
+      return;
+    }
+
+    // Settings job status
+    if (data === 'settings_job_status') {
+      const lang = ctx.session?.language || 'en';
+      
+      const statusText: Record<string, string> = {
+        uz: `💼 <b>Ish holatini tanlang:</b>\n\nHozirda siz qaysi bosqichdasiz?`,
+        ru: `💼 <b>Выберите статус:</b>\n\nНа каком этапе вы сейчас?`,
+        en: `💼 <b>Select your status:</b>\n\nWhat stage are you at?`,
+      };
+
+      const options = this.surveyHandlerService.getJobStatusOptions(lang);
+      const statusKeyboard = new InlineKeyboard();
+      
+      for (const opt of options) {
+        statusKeyboard.text(opt.label, `jobstatus_${opt.status}`).row();
+      }
+      
+      statusKeyboard.text(
+        lang === 'uz' ? '⬅️ Orqaga' : lang === 'ru' ? '⬅️ Назад' : '⬅️ Back',
+        'settings'
+      );
+
+      await this.replyOrEdit(ctx, statusText[lang] || statusText['en'], {
+        reply_markup: statusKeyboard,
+        parse_mode: 'HTML',
+      });
+      return;
+    }
+
+    // Job status update callback
+    if (data.startsWith('jobstatus_')) {
+      const status = data.replace('jobstatus_', '');
+      const lang = ctx.session?.language || 'en';
+      
+      if (cachedUser?.id) {
+        await this.surveyHandlerService.updateJobStatus(cachedUser.id, status as any);
+        
+        const confirmText: Record<string, string> = {
+          uz: `✅ Ish holatingiz yangilandi!`,
+          ru: `✅ Статус обновлён!`,
+          en: `✅ Status updated!`,
+        };
+        
+        try {
+          await ctx.editMessageText(confirmText[lang] || confirmText['en'], { parse_mode: 'HTML' });
+        } catch {
+          await ctx.reply(confirmText[lang] || confirmText['en'], { parse_mode: 'HTML' });
+        }
+      }
+      
+      await ctx.answerCallbackQuery();
       return;
     }
 
