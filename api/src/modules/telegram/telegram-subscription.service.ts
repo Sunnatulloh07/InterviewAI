@@ -429,98 +429,86 @@ Remaining: ${remaining}
     const messages: Record<string, string> = {
       uz: `📋 <b>Tariflar</b>
 
-┌───────────────────────────────────┐
-│ 💼 <b>STARTER</b> - $4.99/oy         │
-├───────────────────────────────────┤
-│ ✅ 15 ta mock intervyu            │
-│ ✅ 30 daqiqa live intervyu        │
-│ ✅ 3 ta CV tahlili                │
-│ ✅ Voice xabarlar (mock)          │
-│ ❌ Chrome extension               │
-└───────────────────────────────────┘
+💼 <b>STARTER</b> - $4.99/oy
+───────────────────────
+✅ 15 ta mock intervyu
+✅ 30 daqiqa live intervyu
+✅ 3 ta CV tahlili
+✅ Voice xabarlar
+❌ Chrome extension
 
-┌───────────────────────────────────┐
-│ 🚀 <b>PRO</b> - $14.99/oy            │
-├───────────────────────────────────┤
-│ ✅ Cheksiz mock intervyu          │
-│ ✅ 120 daqiqa live intervyu       │
-│ ✅ 10 ta CV tahlili               │
-│ ✅ Voice xabarlar                 │
-│ ✅ Chrome extension               │
-│ ✅ Stealth mode                   │
-└───────────────────────────────────┘
+🚀 <b>PRO</b> - $14.99/oy
+───────────────────────
+✅ 60 ta mock intervyu
+✅ 120 daqiqa live intervyu
+✅ 15 ta CV tahlili
+✅ Voice xabarlar
+🔜 Chrome extension
+🔜 Stealth mode
 
-┌───────────────────────────────────┐
-│ 👑 <b>ELITE</b> - $29.99/oy          │
-├───────────────────────────────────┤
-│ ✅ HAMMASI CHEKSIZ                │
-│ ✅ Priority support               │
-│ ✅ Ilg'or AI modellari            │
-└───────────────────────────────────┘
+👑 <b>ELITE</b> - $29.99/oy
+───────────────────────
+✅ 150 ta mock intervyu
+✅ 300 daqiqa live intervyu
+✅ 40 ta CV tahlili
+✅ Priority support
+✅ Ilg'or AI modellari
 
 📞 Tarifni tanlash uchun @interviewai_support_bot ga yozing.`,
       ru: `📋 <b>Тарифы</b>
 
-┌───────────────────────────────────┐
-│ 💼 <b>STARTER</b> - $4.99/мес        │
-├───────────────────────────────────┤
-│ ✅ 15 mock-интервью               │
-│ ✅ 30 минут live-интервью         │
-│ ✅ 3 анализа CV                   │
-│ ✅ Голосовые (mock)               │
-│ ❌ Chrome extension               │
-└───────────────────────────────────┘
+💼 <b>STARTER</b> - $4.99/мес
+───────────────────────
+✅ 15 mock-интервью
+✅ 30 минут live-интервью
+✅ 3 анализа CV
+✅ Голосовые
+❌ Chrome extension
 
-┌───────────────────────────────────┐
-│ 🚀 <b>PRO</b> - $14.99/мес           │
-├───────────────────────────────────┤
-│ ✅ Безлимит mock-интервью         │
-│ ✅ 120 минут live-интервью        │
-│ ✅ 10 анализов CV                 │
-│ ✅ Голосовые сообщения            │
-│ ✅ Chrome extension               │
-│ ✅ Stealth mode                   │
-└───────────────────────────────────┘
+🚀 <b>PRO</b> - $14.99/мес
+───────────────────────
+✅ 60 mock-интервью
+✅ 120 минут live-интервью
+✅ 15 анализов CV
+✅ Голосовые сообщения
+🔜 Chrome extension
+🔜 Stealth mode
 
-┌───────────────────────────────────┐
-│ 👑 <b>ELITE</b> - $29.99/мес         │
-├───────────────────────────────────┤
-│ ✅ ВСЁ БЕЗЛИМИТНО                 │
-│ ✅ Priority support               │
-│ ✅ Продвинутый AI                 │
-└───────────────────────────────────┘
+👑 <b>ELITE</b> - $29.99/мес
+───────────────────────
+✅ 150 mock-интервью
+✅ 300 минут live-интервью
+✅ 40 анализов CV
+✅ Priority support
+✅ Продвинутый AI
 
 📞 Напишите @interviewai_support_bot для выбора тарифа.`,
       en: `📋 <b>Plans</b>
 
-┌───────────────────────────────────┐
-│ 💼 <b>STARTER</b> - $4.99/mo         │
-├───────────────────────────────────┤
-│ ✅ 15 mock interviews             │
-│ ✅ 30 min live interview          │
-│ ✅ 3 CV analyses                  │
-│ ✅ Voice messages (mock)          │
-│ ❌ Chrome extension               │
-└───────────────────────────────────┘
+💼 <b>STARTER</b> - $4.99/mo
+───────────────────────
+✅ 15 mock interviews
+✅ 30 min live interview
+✅ 3 CV analyses
+✅ Voice messages
+❌ Chrome extension
 
-┌───────────────────────────────────┐
-│ 🚀 <b>PRO</b> - $14.99/mo            │
-├───────────────────────────────────┤
-│ ✅ Unlimited mock interviews      │
-│ ✅ 120 min live interview         │
-│ ✅ 10 CV analyses                 │
-│ ✅ Voice messages                 │
-│ ✅ Chrome extension               │
-│ ✅ Stealth mode                   │
-└───────────────────────────────────┘
+🚀 <b>PRO</b> - $14.99/mo
+───────────────────────
+✅ 60 mock interviews
+✅ 120 min live interview
+✅ 15 CV analyses
+✅ Voice messages
+🔜 Chrome extension
+🔜 Stealth mode
 
-┌───────────────────────────────────┐
-│ 👑 <b>ELITE</b> - $29.99/mo          │
-├───────────────────────────────────┤
-│ ✅ EVERYTHING UNLIMITED           │
-│ ✅ Priority support               │
-│ ✅ Advanced AI models             │
-└───────────────────────────────────┘
+👑 <b>ELITE</b> - $29.99/mo
+───────────────────────
+✅ 150 mock interviews
+✅ 300 min live interview
+✅ 40 CV analyses
+✅ Priority support
+✅ Advanced AI models
 
 📞 Contact @interviewai_support_bot to choose a plan.`,
     };

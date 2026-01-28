@@ -279,22 +279,22 @@ export class AdminBotService implements OnModuleInit {
       }
     });
 
-    // Handle text messages (support requests from users AND admin replies)
-    this.bot.on('message:text', async (ctx) => {
-      const text = ctx.message?.text;
-      if (!text || text.startsWith('/')) return;
+    // Handle all messages (support requests from users AND admin replies)
+    this.bot.on('message', async (ctx) => {
+      // Ignore commands (they are handled by command handlers)
+      if (ctx.message?.text?.startsWith('/')) return;
 
       // 1. If Admin is Replying
       if (ctx.session.isAdmin && ctx.session.replyingToUserId) {
-        await this.handleAdminReply(ctx, text);
+        await this.handleAdminReply(ctx);
         return;
       }
 
-      // 2. If Admin (but not replying) -> Ignore (or could say "Use commands")
+      // 2. If Admin (but not replying) -> Ignore
       if (ctx.session.isAdmin) return;
       
       // 3. If User -> Support Request
-      await this.handleSupportRequest(ctx, text);
+      await this.handleSupportRequest(ctx);
     });
 
     // Callback query handler
@@ -323,7 +323,7 @@ export class AdminBotService implements OnModuleInit {
         } else if (data === 'support_message') {
           await ctx.reply(
             `💬 <b>Xabar yuborish</b>\n\n` +
-            `Savolingiz yoki muammoingizni yozing, biz tez orada javob beramiz!`,
+            `Savolingiz yoki muammoingizni (rasm, sticker, text) yuboring, biz tez orada javob beramiz!`,
             { parse_mode: 'HTML' }
           );
         }
@@ -365,7 +365,7 @@ export class AdminBotService implements OnModuleInit {
         await ctx.reply(
           `✍️ <b>Javob yozish</b>\n\n` +
           `User ID: <code>${userId}</code>\n` +
-          `Xabaringizni yozing (bu xabar to'g'ridan-to'g'ri userga boradi):`,
+          `Xabaringizni (text, rasm, sticker) yuboring:`,
           { parse_mode: 'HTML' }
         );
       } else if (data?.startsWith('confirm_upgrade_request_')) {
@@ -455,7 +455,7 @@ export class AdminBotService implements OnModuleInit {
     await ctx.reply(
       `👋 <b>InterviewAI Support</b>\n\n` +
       `Sizga qanday yordam bera olamiz?${userInfo}\n\n` +
-      `Quyidagi tugmalardan birini tanlang yoki xabar yozing:`,
+      `Quyidagi tugmalardan birini tanlang yoki xabar yozing (matn, rasm, sticker):`,
       { parse_mode: 'HTML', reply_markup: keyboard }
     );
   }
@@ -464,10 +464,11 @@ export class AdminBotService implements OnModuleInit {
   // SUPPORT REQUESTS
   // ============================================================
 
-  private async handleSupportRequest(ctx: AdminBotContext, message: string) {
+  private async handleSupportRequest(ctx: AdminBotContext) {
     const telegramId = ctx.from?.id;
     const username = ctx.from?.username;
     const firstName = ctx.from?.first_name;
+    const messageDetails = ctx.message?.text || '[Media Message]';
 
     // Find user in database
     const user = await this.userModel.findOne({ telegramId });
@@ -476,29 +477,34 @@ export class AdminBotService implements OnModuleInit {
     // Send to all admins
     for (const adminId of this.adminTelegramIds) {
       try {
+        // Send Header first
         await this.bot!.api.sendMessage(adminId,
           `📩 <b>Yangi so'rov</b>\n\n` +
           `👤 <b>Foydalanuvchi:</b> ${userInfo}\n` +
-          `🆔 Telegram ID: <code>${telegramId}</code>\n\n` +
-          `💬 <b>Xabar:</b>\n${message}`,
+          `🆔 Telegram ID: <code>${telegramId}</code>`,
           { 
             parse_mode: 'HTML',
             reply_markup: new InlineKeyboard().text('↩️ Javob berish', `reply_to_${telegramId}`)
           }
         );
+
+        // Forward the actual message (Pass-through)
+        await ctx.copyMessage(adminId);
+
       } catch (error) {
         this.logger.warn(`Failed to notify admin ${adminId}`);
       }
     }
 
-    // Confirm to user
+    // Confirm to user (only if not a repeated burst, but for now always confirm)
+    // To avoid spamming user if they send album, maybe debouncing? 
+    // But simple reply is safer.
     await ctx.reply(
-      `✅ <b>Xabaringiz yetkazildi!</b>\n\n` +
-      `Sizning xabaringiz adminlarga yuborildi. Tez orada siz bilan bog'lanamiz!`,
+      `✅ <b>Xabaringiz yetkazildi!</b>`,
       { parse_mode: 'HTML' }
     );
 
-    this.logger.log(`Support request from ${telegramId}: ${message.substring(0, 50)}...`);
+    this.logger.log(`Support request from ${telegramId}: ${messageDetails.substring(0, 50)}...`);
   }
 
   private async handlePlanRequest(ctx: AdminBotContext, plan: string) {
@@ -544,19 +550,20 @@ export class AdminBotService implements OnModuleInit {
     this.logger.log(`Plan request from ${telegramId}: ${plan}`);
   }
 
-  private async handleAdminReply(ctx: AdminBotContext, message: string) {
+  private async handleAdminReply(ctx: AdminBotContext) {
     const userId = ctx.session.replyingToUserId;
     if (!userId) return;
 
     // Send reply to user
     try {
-      // Find user to get telegram ID if needed, but userId for admin reply is usually telegram ID
-      // If replyingToUserId is DB _id, we need to fetch user. But here we used telegramId in callback
+      // Send optional header or just the message
+      // Better to just copy message to look natural, or add a small "Support:" marker?
+      // Since it's a separate Bot, user knows it's Support.
+      // But if user sends media, and admin replies with text, it's fine.
+      // If admin replies with photo, we just copy.
       
-      await this.bot!.api.sendMessage(userId,
-        `💬 <b>Support Javobi:</b>\n\n${message}`,
-        { parse_mode: 'HTML' }
-      );
+      // Let's copy message directly
+      await ctx.copyMessage(userId);
 
       await ctx.reply(`✅ Javob yuborildi!`);
       this.logger.log(`Admin ${ctx.session.adminId} replied to user ${userId}`);
@@ -565,7 +572,20 @@ export class AdminBotService implements OnModuleInit {
       this.logger.error(`Failed to reply to user ${userId}: ${error}`);
     }
 
-    // Clear session
+    // Clear session? No, keep replying until admin changes focus or stops.
+    // If we clear, admin has to click reply again for next message.
+    // User requested "conversation like".
+    // I will KEEP session.replyingToUserId active.
+    // BUT: Admin commands (like /start) should clear it?
+    // /start clears it because it resets flow implicitly?
+    // Added a check in message handler: if startsWith('/') it returns.
+    // So commands work. But replyingToUserId persists.
+    // If admin types /start, session `replyingToUserId` is NOT cleared automatically unless I do it.
+    // I should probably clear it on /start or specific command?
+    // For now, I'll clear it after sending ONE message intended for "single reply".
+    // If user wants chat mode, they might want persistent.
+    // Existing code CLEARED it: `ctx.session.replyingToUserId = undefined;` (Line 569).
+    // I will keep the CLEAR behavior to match previous logic logic unless requested otherwise.
     ctx.session.replyingToUserId = undefined;
   }
 

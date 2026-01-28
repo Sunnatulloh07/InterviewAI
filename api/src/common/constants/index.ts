@@ -63,25 +63,25 @@ export const USAGE_LIMITS = {
     cvAnalyses: 5,
     chromeQuestions: 0,
     aiTokensPerMonth: 150000, // Increased slighty
-    voiceMessagesEnabled: true,
+    voiceMessagesEnabled: false,
     voiceInLiveEnabled: false,
   },
   pro: {
-    mockInterviews: 100, // Capped
-    liveInterviewMinutes: 60, // Cost: ~$4.68 (1000 UZS/min)
-    cvAnalyses: 20,
+    mockInterviews: 60, // 4x Starter (~$15/mo)
+    liveInterviewMinutes: 120, // Matches UI
+    cvAnalyses: 15, // 3x Starter
     chromeQuestions: 1000,
-    aiTokensPerMonth: 1000000,
-    voiceMessagesEnabled: true,
+    aiTokensPerMonth: 500000,
+    voiceMessagesEnabled: false,
     voiceInLiveEnabled: true,
   },
   elite: {
-    mockInterviews: 200, // Capped
-    liveInterviewMinutes: 160, // Cost: ~$12.48 (1000 UZS/min) - ~42% of sub price
-    cvAnalyses: 50,
+    mockInterviews: 150, // 10x Starter (~$30/mo)
+    liveInterviewMinutes: 300, // 2.5x Pro
+    cvAnalyses: 40,
     chromeQuestions: 5000,
-    aiTokensPerMonth: 5000000, // Capped
-    voiceMessagesEnabled: true,
+    aiTokensPerMonth: 2000000,
+    voiceMessagesEnabled: false,
     voiceInLiveEnabled: true,
   },
 } as const;
