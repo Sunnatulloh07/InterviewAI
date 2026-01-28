@@ -79,6 +79,13 @@ export class NotificationLog {
   @Prop()
   responseReceivedAt?: Date;
 
+  /** 
+   * Whether this log has been processed by the scheduler (either responded or expired)
+   * This prevents re-processing expired notifications multiple times
+   */
+  @Prop({ default: false, index: true })
+  processed: boolean;
+
   /** Metadata for analytics and debugging */
   @Prop({
     type: Object,

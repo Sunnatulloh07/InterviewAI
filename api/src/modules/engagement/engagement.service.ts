@@ -352,10 +352,25 @@ export class EngagementService implements OnModuleInit {
   /**
    * Update user's engagement state after sending notification
    */
+  /**
+   * Update user's engagement state after sending notification
+   * randomized to spread load across the day (09:00 - 21:00 Tashkent Time)
+   */
   private async updateUserAfterSend(userId: string): Promise<void> {
     const now = new Date();
     const backoffDays = BACKOFF_DAYS[0]; // 1 day
+    
+    // Randomize next notification time to prevent spikes
+    // Target window: Tomorrow 09:00 - 21:00 Tashkent Time
+    // Tashkent is UTC+5, so UTC window is 04:00 - 16:00
     const nextNotificationAt = new Date(now.getTime() + backoffDays * 24 * 60 * 60 * 1000);
+    
+    // Use UTC to be server-timezone agnostic
+    // 4 (04:00 UTC) + 0..11 hours = 04:00 .. 15:59 UTC
+    const randomHourUtc = 4 + Math.floor(Math.random() * 12); 
+    const randomMinute = Math.floor(Math.random() * 60);
+    
+    nextNotificationAt.setUTCHours(randomHourUtc, randomMinute, 0, 0);
 
     await this.userModel.updateOne(
       { _id: new Types.ObjectId(userId) },
@@ -416,8 +431,9 @@ export class EngagementService implements OnModuleInit {
       try {
         const userId = notification.userId.toString();
 
-        // Mark this notification as processed (won't be picked up again)
-        await this.notificationLogRepository.markResponded(notification._id.toString());
+        // Mark this notification as PROCESSED (expired), but NOT responded
+        // This ensures analytics are correct (user did not respond)
+        await this.notificationLogRepository.markProcessed(notification._id.toString());
 
         const user = await this.usersService.findById(userId);
         if (!user) {
@@ -557,6 +573,8 @@ export class EngagementService implements OnModuleInit {
    */
   async getEligibleUsers(limit = 100): Promise<string[]> {
     const now = new Date();
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
 
     try {
       const users = await this.userModel
@@ -574,6 +592,13 @@ export class EngagementService implements OnModuleInit {
                 { 'engagement.notificationsPaused': false },
                 { 'engagement.notificationsPausedUntil': { $lte: now } },
               ],
+            },
+            // STRICT CHECK: Ensure not sent today (Double safety)
+            {
+               $or: [
+                 { 'engagement.lastNotificationSentAt': { $exists: false } },
+                 { 'engagement.lastNotificationSentAt': { $lt: startOfToday } },
+               ]
             },
             // Exclude users who hit max ignores
             {

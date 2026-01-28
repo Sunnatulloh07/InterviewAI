@@ -430,22 +430,11 @@ export class TelegramVoiceService {
         questionId = currentQuestion.toString();
       }
 
-      // Show processing message
-      const processingText: Record<string, string> = {
-        uz: `⏳ Javobingiz tahlil qilinmoqda...`,
-        ru: `⏳ Ваш ответ анализируется...`,
-        en: `⏳ Analyzing your answer...`,
-      };
-      await ctx.reply(processingText[lang] || processingText['en']);
-
-      // Save audio file to storage (optional - for future playback/analysis)
-      // Note: Audio storage is optional - transcription is more important
-      // If you need to store audio files, implement storage service upload here
+      // OPTIMIZATION: Removed redundant messages for speed
       const audioUrl: string | undefined = undefined;
 
       // Submit answer with audio support
-      // Note: interviewsService.submitAnswer expects audioUrl and transcript for audio answers
-      const answer = await this.interviewsService.submitAnswer(userId, sessionId, {
+      await this.interviewsService.submitAnswer(userId, sessionId, {
         questionId,
         answerType: 'audio', // Mark as audio answer
         answerText: transcribedText, // Transcribed text from Aisha STT
@@ -454,13 +443,11 @@ export class TelegramVoiceService {
         duration: transcription.duration || 0, // Audio duration from transcription
       });
 
-      // Feedback generation is now deferred to the end of the session (Batch Processing)
-      // Just confirm receipt of answer
-
+      // Simple confirmation
       const confirmText: Record<string, string> = {
-        uz: `✅ Javobingiz qabul qilindi.`,
-        ru: `✅ Ваш ответ принят.`,
-        en: `✅ Your answer has been received.`,
+        uz: `✅`,
+        ru: `✅`,
+        en: `✅`,
       };
       await ctx.reply(confirmText[lang] || confirmText['en']);
 

@@ -3951,39 +3951,23 @@ ${question.question}`;
         questionId = currentQuestion.toString();
       }
 
-      // Show processing message
-      const processingText: Record<string, string> = {
-        uz: `⏳ Javobingiz tahlil qilinmoqda...`,
-        ru: `⏳ Ваш ответ анализируется...`,
-        en: `⏳ Analyzing your answer...`,
-      };
-      await ctx.reply(processingText[lang] || processingText['en']);
-
-      // Submit answer (this saves to DB and queues feedback generation)
-      const answer = await this.interviewsService.submitAnswer(userId, sessionId, {
+      // OPTIMIZATION: Removed intermediate messages for speed
+      
+      // Submit answer
+      await this.interviewsService.submitAnswer(userId, sessionId, {
         questionId,
         answerType: 'text',
         answerText,
-        duration: 0, // Can be calculated if needed
+        duration: 0,
       });
 
-      // OPTIMIZATION: Immediate feedback is disabled to save tokens.
-      // Feedback will be provided at the end of the session in a batch.
-      
+      // Simple confirmation - minimal latency
       const savedText: Record<string, string> = {
-        uz: `✅ Javob qabul qilindi.`,
-        ru: `✅ Ответ принят.`,
-        en: `✅ Answer saved.`,
+        uz: `✅`,
+        ru: `✅`,
+        en: `✅`,
       };
       await ctx.reply(savedText[lang] || savedText['en']);
-
-      // Show success and move to next question
-      const nextQuestionText: Record<string, string> = {
-        uz: `➡️ Keyingi savolga o'tamiz...`,
-        ru: `➡️ Переходим к следующему вопросу...`,
-        en: `➡️ Moving to next question...`,
-      };
-      await ctx.reply(nextQuestionText[lang] || nextQuestionText['en']);
 
       // Show next question
       ctx.session.currentQuestionIndex = questionIndex + 1;

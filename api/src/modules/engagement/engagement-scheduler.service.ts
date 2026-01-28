@@ -84,10 +84,10 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
   }
 
   /**
-   * Daily notification job - runs at 09:00 Tashkent time (UTC+5)
-   * 09:00 UTC+5 = 04:00 UTC
+   * Hourly notification job - runs between 09:00 and 21:00 (Tashkent time)
+   * Spreads the load across the day instead of a single burst at 09:00
    */
-  @Cron('0 4 * * *', { name: 'daily-engagement-notifications' })
+  @Cron('0 9-21 * * *', { name: 'hourly-engagement-notifications', timeZone: 'Asia/Tashkent' })
   async handleDailyNotifications(): Promise<void> {
     if (!this.isEnabled) {
       this.logger.debug('Scheduler disabled, skipping daily notifications');
@@ -161,51 +161,65 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
     let totalSent = 0;
     let totalFailed = 0;
     let totalSkipped = 0;
+    
+    // Safety: prevent infinite loops
+    let totalProcessedCount = 0;
+    const MAX_TOTAL_USERS = 10000; 
+
+    // Keep track of users processed effectively in this run to avoid duplicates
+    // This is crucial if a user fails but remains "eligible" in DB
     const processedUserIds = new Set<string>();
 
-    // Single batch approach - get all eligible users once and process
-    // This prevents infinite loop if users remain eligible after processing
-    const allEligibleUsers = await this.engagementService.getEligibleUsers(
-      SCHEDULER_CONFIG.MAX_USERS_PER_RUN
-    );
+    let hasMoreUsers = true;
+    let batchIndex = 0;
 
-    if (allEligibleUsers.length === 0) {
-      this.logger.debug('No eligible users found');
-      return { sent: 0, failed: 0, skipped: 0 };
-    }
+    this.logger.log('Starting batched user processing...');
 
-    this.logger.log(`Found ${allEligibleUsers.length} eligible users to process`);
-
-    // Process in batches
-    for (let i = 0; i < allEligibleUsers.length; i += SCHEDULER_CONFIG.BATCH_SIZE) {
-      // Check for graceful shutdown
-      if (this.shouldStop) {
-        this.logger.warn('Received shutdown signal, stopping batch processing');
+    while (hasMoreUsers && !this.shouldStop) {
+      if (totalProcessedCount >= MAX_TOTAL_USERS) {
+        this.logger.warn(`Hit MAX_TOTAL_USERS limit (${MAX_TOTAL_USERS}). Stopping job.`);
         break;
       }
 
-      const batch = allEligibleUsers.slice(i, i + SCHEDULER_CONFIG.BATCH_SIZE);
-      
-      // Filter out already processed users (safety check)
-      const unprocessed = batch.filter(id => !processedUserIds.has(id));
-      
-      if (unprocessed.length === 0) continue;
+      // Fetch next batch of users
+      // We rely on previous batch having their 'nextNotificationAt' updated
+      // so they are no longer eligible. 
+      // Failed users (not updated) are filtered by processedUserIds check.
+      const users = await this.engagementService.getEligibleUsers(
+        SCHEDULER_CONFIG.MAX_USERS_PER_RUN
+      );
 
-      this.logger.debug(`Processing batch ${Math.floor(i / SCHEDULER_CONFIG.BATCH_SIZE) + 1}: ${unprocessed.length} users`);
-
-      const batchResults = await this.processBatch(unprocessed);
-      
-      // Mark as processed
-      unprocessed.forEach(id => processedUserIds.add(id));
-      
-      totalSent += batchResults.sent;
-      totalFailed += batchResults.failed;
-      totalSkipped += batchResults.skipped;
-
-      // Add delay between batches
-      if (i + SCHEDULER_CONFIG.BATCH_SIZE < allEligibleUsers.length) {
-        await this.delay(SCHEDULER_CONFIG.USER_DELAY_MS * 2);
+      if (users.length === 0) {
+        hasMoreUsers = false;
+        break;
       }
+
+      // Filter out already processed users (to prevent infinite loop on failed-but-eligible users)
+      const newUsers = users.filter(id => !processedUserIds.has(id));
+      
+      if (newUsers.length === 0) {
+        this.logger.debug('Fetched users were already processed. Stopping loop.');
+        hasMoreUsers = false;
+        break;
+      }
+
+      this.logger.debug(`Batch ${batchIndex + 1}: Found ${newUsers.length} new eligible users`);
+
+      // Process this batch
+      const results = await this.processBatch(newUsers);
+
+      // Track processed IDs
+      newUsers.forEach(id => processedUserIds.add(id));
+      totalProcessedCount += newUsers.length;
+
+      totalSent += results.sent;
+      totalFailed += results.failed;
+      totalSkipped += results.skipped;
+
+      batchIndex++;
+
+      // Small delay between generic batches to be nice to DB/CPU
+      await this.delay(SCHEDULER_CONFIG.USER_DELAY_MS);
     }
 
     return { sent: totalSent, failed: totalFailed, skipped: totalSkipped };

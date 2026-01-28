@@ -62,14 +62,26 @@ export class NotificationLogRepository {
   }
 
   /**
+  /**
    * Mark notification as responded within 24h window
    */
   async markResponded(logId: string): Promise<void> {
     await this.notificationLogModel.updateOne(
       { _id: new Types.ObjectId(logId) },
-      { $set: { responseReceived: true, responseReceivedAt: new Date() } },
+      { $set: { responseReceived: true, responseReceivedAt: new Date(), processed: true } },
     );
     this.logger.debug(`Marked notification ${logId} as responded`);
+  }
+
+  /**
+   * Mark notification as processed (expired) without marking as responded
+   */
+  async markProcessed(logId: string): Promise<void> {
+    await this.notificationLogModel.updateOne(
+      { _id: new Types.ObjectId(logId) },
+      { $set: { processed: true } },
+    );
+    this.logger.debug(`Marked notification ${logId} as processed (expired)`);
   }
 
   /**
@@ -133,6 +145,7 @@ export class NotificationLogRepository {
     return this.notificationLogModel
       .find({
         responseReceived: false,
+        processed: false, // Only unprocessed logs
         deliveryStatus: NotificationDeliveryStatus.SENT,
         responseWindowEndsAt: { $lt: new Date() }, // Window expired
       })
