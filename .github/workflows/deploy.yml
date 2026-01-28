@@ -71,8 +71,6 @@ jobs:
             NODE_ENV=production
             PORT=3000
             ALLOWED_ORIGINS=https://interviewai.pro,https://www.interviewai.pro
-            FRONTEND_URL=https://interviewai.pro
-            WEB_APP_URL=https://interviewai.pro
             
             MONGODB_URI=mongodb://${{ secrets.MONGODB_ROOT_USERNAME }}:${{ secrets.MONGODB_ROOT_PASSWORD }}@mongodb:27017/${{ secrets.MONGODB_DB_NAME }}?authSource=admin
             MONGODB_DB_NAME=${{ secrets.MONGODB_DB_NAME }}
