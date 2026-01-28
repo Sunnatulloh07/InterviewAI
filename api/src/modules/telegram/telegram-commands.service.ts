@@ -184,7 +184,7 @@ export class TelegramCommandsService {
           .text('💳 Tariflar').text('⚙️ Sozlamalar')
           .row()
           .text('ℹ️ Yordam');
-        return keyboard.resized();
+        return keyboard.resized().oneTime();
       })(),
 
       ru: (() => {
@@ -200,7 +200,7 @@ export class TelegramCommandsService {
           .text('💳 Тарифы').text('⚙️ Настройки')
           .row()
           .text('ℹ️ Помощь');
-        return keyboard.resized();
+        return keyboard.resized().oneTime();
       })(),
 
       en: (() => {
@@ -216,7 +216,7 @@ export class TelegramCommandsService {
           .text('💳 Plans').text('⚙️ Settings')
           .row()
           .text('ℹ️ Help');
-        return keyboard.resized();
+        return keyboard.resized().oneTime();
       })(),
     };
 

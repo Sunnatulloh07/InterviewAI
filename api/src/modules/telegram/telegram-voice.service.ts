@@ -77,6 +77,24 @@ export class TelegramVoiceService {
       return;
     }
 
+    // Get user ID early (needed for checks)
+    const userId = (user as any)._id?.toString() || (user as any).id?.toString() || user.id;
+
+    // Check if voice messages are allowed for this plan and mode
+    const canUseVoice = await this.subscriptionService.canUseVoice(userId, !!isInLiveSession);
+    if (!canUseVoice) {
+      const featureName = isInLiveSession ? 'Voice in Live' : 'Voice Messages';
+      this.logger.warn(`User ${userId} tried to use ${featureName} but not allowed by plan`);
+      
+      const upgradeText: Record<string, string> = {
+        uz: `🔒 <b>Ovozli xabarlar cheklangan</b>\n\nSizning tarifingizda bu funksiya mavjud emas.\nIltimos, /upgrade buyrug'i orqali tarifni yangilang.`,
+        ru: `🔒 <b>Голосовые сообщения ограничены</b>\n\nВ вашем тарифе эта функция недоступна.\nПожалуйста, обновите тариф через /upgrade.`,
+        en: `🔒 <b>Voice messages restricted</b>\n\nThis feature is not available in your plan.\nPlease upgrade using /upgrade.`,
+      };
+      await ctx.reply(upgradeText[lang] || upgradeText['en'], { parse_mode: 'HTML' });
+      return;
+    }
+
     try {
       // Show initial processing message
       const processingText: Record<string, string> = {
