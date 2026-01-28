@@ -89,6 +89,7 @@ export const USAGE_LIMITS = {
 // Plan types for type safety
 export type SubscriptionPlan = keyof typeof USAGE_LIMITS;
 
+
 // Subscription Plan Features
 // Aligned with USAGE_LIMITS plan types
 export const PLAN_FEATURES = {
