@@ -525,6 +525,55 @@ export class TelegramCommandsService {
     });
   }
 
+  /**
+   * Ask user to select interview duration type (Quick, Standard, Deep Dive)
+   */
+  private async askInterviewDuration(ctx: BotContext) {
+    const lang = ctx.session?.language || 'en';
+
+    const durationText: Record<string, string> = {
+      uz: `⏱️ <b>Intervyu davomiyligini tanlang</b>\n\n` +
+          `Qaysi formatda o'tkazmoqchisiz?`,
+      ru: `⏱️ <b>Выберите продолжительность интервью</b>\n\n` +
+          `Какой формат вы предпочитаете?`,
+      en: `⏱️ <b>Select Interview Duration</b>\n\n` +
+          `Which format would you prefer?`,
+    };
+
+    const durationButtons: Record<string, { quick: string; standard: string; deep: string }> = {
+      uz: {
+        quick: '⚡ QUICK (~10 min)\n5-10 savol',
+        standard: '📊 STANDARD (~25 min)\n15-20 savol',
+        deep: '🎯 DEEP DIVE (~45 min)\n30-40 savol',
+      },
+      ru: {
+        quick: '⚡ QUICK (~10 мин)\n5-10 вопросов',
+        standard: '📊 STANDARD (~25 мин)\n15-20 вопросов',
+        deep: '🎯 DEEP DIVE (~45 мин)\n30-40 вопросов',
+      },
+      en: {
+        quick: '⚡ QUICK (~10 min)\n5-10 questions',
+        standard: '📊 STANDARD (~25 min)\n15-20 questions',
+        deep: '🎯 DEEP DIVE (~45 min)\n30-40 questions',
+      },
+    };
+
+    const buttons = durationButtons[lang] || durationButtons['en'];
+    const keyboard = new InlineKeyboard()
+      .text(buttons.quick, 'interview_duration_quick')
+      .row()
+      .text(buttons.standard, 'interview_duration_standard')
+      .row()
+      .text(buttons.deep, 'interview_duration_deep_dive')
+      .row()
+      .text(lang === 'uz' ? '🔙 Orqaga' : lang === 'ru' ? '🔙 Назад' : '🔙 Back', 'interview_start');
+
+    await this.replyOrEdit(ctx, durationText[lang] || durationText['en'], {
+      reply_markup: keyboard,
+      parse_mode: 'HTML',
+    });
+  }
+
   async handleAnalyzeCv(ctx: BotContext) {
     const telegramId = ctx.from?.id as number;
     const user = await this.usersService.findByTelegramId(telegramId);
@@ -1299,6 +1348,15 @@ export class TelegramCommandsService {
     // Interview mode selection (Mock or Real)
     if (data === 'interview_mode_mock') {
       ctx.session.interviewMode = 'mock';
+      ctx.session.interviewStep = 'duration';
+      await this.askInterviewDuration(ctx);
+      return;
+    }
+
+    // Interview duration selection (Quick, Standard, Deep Dive)
+    if (data.startsWith('interview_duration_')) {
+      const duration = data.replace('interview_duration_', '') as 'quick' | 'standard' | 'deep_dive';
+      ctx.session.interviewDuration = duration;
       ctx.session.interviewStep = 'domain';
       await this.askInterviewDomain(ctx);
       return;
@@ -2928,17 +2986,21 @@ export class TelegramCommandsService {
           }
         }
 
-        // Calculate time limits based on difficulty
-        const numQuestions = 30; // Default 30 questions
-        const timeLimits = this.calculateInterviewTimeLimit(position, numQuestions);
+        // Get interview duration from session (defaults to 'standard')
+        const interviewDuration = ctx.session.interviewDuration || 'standard';
+        
+        // Calculate time limits based on difficulty (numQuestions will be auto-calculated by service)
+        const estimatedQuestions = 20; // Estimate for time calculation
+        const timeLimits = this.calculateInterviewTimeLimit(position, estimatedQuestions);
 
-        // Create interview DTO with CV context and calculated time limits
+        // Create interview DTO with CV context and duration type
+        // The service will calculate numQuestions from interviewDuration + difficulty
         const interviewDto = {
           type: interviewType,
           difficulty,
           domain: domain?.toLowerCase(),
           technology: technology ? [technology.toLowerCase()] : [],
-          numQuestions,
+          interviewDuration, // Let service calculate numQuestions from this
           mode: 'text' as const, // Default to text mode for Telegram
           timeLimit: timeLimits.questionTimeLimit, // Per-question time based on difficulty
           language: lang, // Pass user's language preference

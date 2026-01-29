@@ -19,7 +19,7 @@ import { SubmitAnswerDto } from './dto/submit-answer.dto';
 import { InterviewSessionDocument } from './schemas/interview-session.schema';
 import { InterviewQuestionDocument } from './schemas/interview-question.schema';
 import { InterviewAnswerDocument } from './schemas/interview-answer.schema';
-import { USAGE_LIMITS, QUEUE_INTERVIEW_FEEDBACK, AI_MODELS } from '@common/constants';
+import { USAGE_LIMITS, QUEUE_INTERVIEW_FEEDBACK, AI_MODELS, INTERVIEW_QUESTION_COUNTS } from '@common/constants';
 import {
   createOpenAIClient,
   getModelName,
@@ -64,8 +64,14 @@ export class InterviewsService {
       // Check usage limits
       await this.checkUsageLimits(userId);
 
+      // Calculate question count from duration + difficulty (or use provided value)
+      const numQuestions = dto.numQuestions ?? this.getQuestionCount(
+        dto.interviewDuration || 'standard',
+        dto.difficulty,
+      );
+
       // Generate questions
-      const questions = await this.generateQuestions(userId, dto);
+      const questions = await this.generateQuestions(userId, dto, numQuestions);
 
       if (questions.length === 0) {
         throw new BadRequestException('No questions available for the selected criteria');
@@ -81,7 +87,8 @@ export class InterviewsService {
         difficulty: dto.difficulty,
         domain: dto.domain,
         technology: dto.technology || [],
-        numQuestions: dto.numQuestions,
+        numQuestions,
+        interviewDuration: dto.interviewDuration || 'standard',
         mode: dto.mode,
         timeLimit: dto.timeLimit,
         status: 'active',
@@ -386,10 +393,24 @@ export class InterviewsService {
    * Generate interview questions
    * ALWAYS generates questions using AI - no hardcode or DB lookup
    */
-  private async generateQuestions(userId: string, dto: StartInterviewDto): Promise<InterviewQuestionDocument[]> {
+  private async generateQuestions(
+    userId: string,
+    dto: StartInterviewDto,
+    numQuestions: number,
+  ): Promise<InterviewQuestionDocument[]> {
     // Always generate questions using AI
-    const questions = await this.generateSeedQuestions(userId, dto, dto.numQuestions);
+    const questions = await this.generateSeedQuestions(userId, dto, numQuestions);
     return questions;
+  }
+
+  /**
+   * Calculate question count based on interview duration and difficulty
+   */
+  private getQuestionCount(duration: string, difficulty: string): number {
+    const durationKey = duration as keyof typeof INTERVIEW_QUESTION_COUNTS;
+    const counts = INTERVIEW_QUESTION_COUNTS[durationKey] || INTERVIEW_QUESTION_COUNTS.standard;
+    const difficultyKey = difficulty as keyof typeof counts;
+    return counts[difficultyKey] || counts.middle;
   }
 
   /**

@@ -36,14 +36,25 @@ export class StartInterviewDto {
   @IsString({ each: true })
   technology?: string[];
 
-  @ApiProperty({
-    description: 'Number of questions (30-50)',
-    example: 30,
+  @ApiPropertyOptional({
+    description: 'Interview duration type',
+    enum: ['quick', 'standard', 'deep_dive'],
+    default: 'standard',
+    example: 'standard',
   })
+  @IsOptional()
+  @IsEnum(['quick', 'standard', 'deep_dive'])
+  interviewDuration?: string;
+
+  @ApiPropertyOptional({
+    description: 'Number of questions (5-50, calculated from duration if not specified)',
+    example: 15,
+  })
+  @IsOptional()
   @IsNumber()
-  @Min(30)
+  @Min(5)
   @Max(50)
-  numQuestions: number;
+  numQuestions?: number;
 
   @ApiProperty({
     description: 'Answer mode',

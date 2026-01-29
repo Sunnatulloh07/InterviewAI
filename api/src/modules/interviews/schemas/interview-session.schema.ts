@@ -38,6 +38,13 @@ export class InterviewSession {
 
   @Prop({
     type: String,
+    enum: ['quick', 'standard', 'deep_dive'],
+    default: 'standard',
+  })
+  interviewDuration?: string;
+
+  @Prop({
+    type: String,
     enum: ['audio', 'text'],
     default: 'text',
   })

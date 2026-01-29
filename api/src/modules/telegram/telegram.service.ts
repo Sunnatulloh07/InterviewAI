@@ -20,8 +20,10 @@ export interface BotContext extends Context {
     interviewPosition?: string; // Junior Developer, Senior Engineer, etc.
     interviewCompany?: string;
     interviewCvId?: string;
+    interviewDuration?: 'quick' | 'standard' | 'deep_dive';
     interviewStep?:
       | 'mode'
+      | 'duration'
       | 'domain'
       | 'technology'
       | 'technology_custom'
