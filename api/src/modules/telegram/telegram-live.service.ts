@@ -162,6 +162,9 @@ export class TelegramLiveService {
       parse_mode: 'HTML',
     });
 
+    // CRITICAL: Set session step to 'active' for voice message detection
+    ctx.session.liveSessionStep = 'active';
+
     // userId is already obtained and validated above
 
     // Create or update session with full metadata
@@ -744,13 +747,14 @@ export class TelegramLiveService {
     const telegramId = ctx.from?.id as number;
     const text = ctx.message?.text;
 
-    // Check if we're collecting metadata
-    if (ctx.session.liveSessionStep && ctx.session.liveSessionStep !== 'complete') {
+    // Check if we're collecting metadata (not 'active' or 'complete')
+    const step = ctx.session.liveSessionStep;
+    if (step && step !== 'complete' && step !== 'active') {
       if (text) {
-        if (ctx.session.liveSessionStep === 'company') {
+        if (step === 'company') {
           await this.handleLiveCompanyInput(ctx, text);
           return;
-        } else if (ctx.session.liveSessionStep === 'technologies_custom') {
+        } else if (step === 'technologies_custom') {
           await this.handleLiveTechnologiesInput(ctx, text);
           return;
         } else {

@@ -290,7 +290,9 @@ export class TelegramService implements OnModuleInit {
 
     // Check if user is collecting live session metadata (PRIORITY: check this first)
     // This handles text input during metadata collection (e.g., company name)
-    if (ctx.session.liveSessionStep && ctx.session.liveSessionStep !== 'complete') {
+    // Note: 'active' means session is running, not collecting metadata
+    const liveStep = ctx.session.liveSessionStep;
+    if (liveStep && liveStep !== 'complete' && liveStep !== 'active') {
       await this.liveService.handleLiveMessage(ctx);
       return;
     }

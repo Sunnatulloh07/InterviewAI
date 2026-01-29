@@ -60,10 +60,9 @@ export class TelegramVoiceService {
 
     // CRITICAL: Check if user is in an active flow before processing voice
     // Voice messages should only be processed during:
-    // 1. Live session (liveSessionStep is 'active' or has liveSessionMetadata)
+    // 1. Active Live session (liveSessionStep === 'active') - NOT during metadata collection
     // 2. Mock interview (currentInterviewSessionId is set)
-    const isInLiveSession = ctx.session.liveSessionStep === 'active' || 
-      (ctx.session.liveSessionStep && ctx.session.liveSessionStep !== 'complete');
+    const isInLiveSession = ctx.session.liveSessionStep === 'active';
     const isInMockInterview = ctx.session.currentInterviewSessionId !== undefined;
     
     if (!isInLiveSession && !isInMockInterview) {
