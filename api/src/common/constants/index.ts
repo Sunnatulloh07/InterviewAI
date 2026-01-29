@@ -64,7 +64,7 @@ export const USAGE_LIMITS = {
     chromeQuestions: 0,
     aiTokensPerMonth: 150000, // Increased slighty
     voiceMessagesEnabled: false,
-    voiceInLiveEnabled: false,
+    voiceInLiveEnabled: true, // Enabled for Live Interview
   },
   pro: {
     mockInterviews: 60, // 4x Starter (~$15/mo)
@@ -114,8 +114,8 @@ export const PLAN_FEATURES = {
     mockInterviews: true,
     cvAnalysis: true,
     cvOptimization: false,
-    voiceMessages: true, // In mock only
-    voiceInLive: false,
+    voiceMessages: false, // Mock interview voice disabled
+    voiceInLive: true, // Enabled for all paid plans in Live
     stealthMode: false,
     contextAwareness: true,
     advancedAI: false, // GPT-4o-mini
@@ -128,7 +128,7 @@ export const PLAN_FEATURES = {
     mockInterviews: true,
     cvAnalysis: true,
     cvOptimization: true,
-    voiceMessages: true,
+    voiceMessages: false, // Mock interview voice disabled
     voiceInLive: true,
     stealthMode: true,
     contextAwareness: true,
@@ -142,7 +142,7 @@ export const PLAN_FEATURES = {
     mockInterviews: true,
     cvAnalysis: true,
     cvOptimization: true,
-    voiceMessages: true,
+    voiceMessages: false, // Mock interview voice disabled
     voiceInLive: true,
     stealthMode: true,
     contextAwareness: true,

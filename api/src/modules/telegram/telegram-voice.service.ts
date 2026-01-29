@@ -127,19 +127,20 @@ export class TelegramVoiceService {
       // Convert to base64
       const base64Audio = buffer.toString('base64');
 
-      // Get user ID early (needed for all paths)
-      const userId = (user as any)._id?.toString() || (user as any).id?.toString() || user.id;
-      if (!userId) {
-        this.logger.error(`User ID is undefined for Telegram ID: ${telegramId}`);
-        const errorText: Record<string, string> = {
-          uz: `❌ Xatolik: Foydalanuvchi ID topilmadi.`,
-          ru: `❌ Ошибка: ID пользователя не найден.`,
-          en: `❌ Error: User ID not found.`,
-        };
-        await ctx.reply(errorText[lang] || errorText['en'], {
-          parse_mode: 'HTML',
-        });
-        return;
+      // PRODUCTION FIX: Re-check minutes limit before processing voice in Live session
+      // This prevents users from exceeding limits if they run out mid-session
+      if (isInLiveSession) {
+        const liveStatus = await this.subscriptionService.getLiveInterviewStatus(userId);
+        if (!liveStatus.allowed) {
+          this.logger.warn(`User ${userId} exceeded Live minutes limit during session`);
+          const limitText: Record<string, string> = {
+            uz: `⚠️ <b>Limit tugadi</b>\n\nLive intervyu daqiqalaringiz tugadi. Iltimos, /upgrade orqali tarifni yangilang.`,
+            ru: `⚠️ <b>Лимит исчерпан</b>\n\nМинуты Live интервью закончились. Пожалуйста, обновите тариф через /upgrade.`,
+            en: `⚠️ <b>Limit reached</b>\n\nYour Live interview minutes have run out. Please upgrade via /upgrade.`,
+          };
+          await ctx.reply(limitText[lang] || limitText['en'], { parse_mode: 'HTML' });
+          return;
+        }
       }
 
       // ═══════════════════════════════════════════════════════════════════
