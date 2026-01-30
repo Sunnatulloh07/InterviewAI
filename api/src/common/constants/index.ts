@@ -111,7 +111,7 @@ export const PLAN_FEATURES = {
     mockInterviews: true,
     cvAnalysis: true,
     cvOptimization: false,
-    voiceMessages: false, // Text only
+    voiceMessages: true, // ✅ ENABLED: Mock voice for practice (5 min quota)
     voiceInLive: false,
     stealthMode: false,
     contextAwareness: false,
@@ -125,7 +125,7 @@ export const PLAN_FEATURES = {
     mockInterviews: true,
     cvAnalysis: true,
     cvOptimization: false,
-    voiceMessages: false, // Mock interview voice disabled
+    voiceMessages: true, // ✅ ENABLED: Mock voice for practice (10 min quota)
     voiceInLive: true, // Enabled for all paid plans in Live
     stealthMode: false,
     contextAwareness: true,
@@ -139,7 +139,7 @@ export const PLAN_FEATURES = {
     mockInterviews: true,
     cvAnalysis: true,
     cvOptimization: true,
-    voiceMessages: false, // Mock interview voice disabled
+    voiceMessages: true, // ✅ ENABLED: Mock voice for practice (30 min quota)
     voiceInLive: true,
     stealthMode: true,
     contextAwareness: true,
@@ -153,7 +153,7 @@ export const PLAN_FEATURES = {
     mockInterviews: true,
     cvAnalysis: true,
     cvOptimization: true,
-    voiceMessages: false, // Mock interview voice disabled
+    voiceMessages: true, // ✅ ENABLED: Mock voice for practice (60 min quota)
     voiceInLive: true,
     stealthMode: true,
     contextAwareness: true,

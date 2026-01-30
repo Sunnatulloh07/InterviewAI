@@ -113,6 +113,56 @@ export class TelegramService implements OnModuleInit {
         }),
       );
 
+      // CRITICAL SECURITY: Rate limiting middleware to prevent abuse
+      // Limits: 30 actions per minute per user (commands, voice, text)
+      this.bot.use(async (ctx, next) => {
+        const userId = ctx.from?.id;
+        if (!userId) {
+          // No user ID - likely a channel or group message, skip
+          return next();
+        }
+
+        const rateLimitKey = `ratelimit:telegram:${userId}`;
+        
+        try {
+          // Increment counter and get current count
+          const count = await this.redis.incr(rateLimitKey);
+          
+          // Set expiry on first request (count === 1)
+          if (count === 1) {
+            await this.redis.expire(rateLimitKey, 60); // 60 second window
+          }
+          
+          // Check if user exceeded limit
+          if (count > 30) {
+            // Log potential abuse
+            this.logger.warn(
+              `Rate limit exceeded for user ${userId}: ${count} requests in 60s`
+            );
+            
+            // Send warning to user
+            const lang = ctx.session?.language || 'en';
+            const warningText: Record<string, string> = {
+              uz: `⚠️ Juda ko'p so'rov. Iltimos, bir daqiqa kuting.`,
+              ru: `⚠️ Слишком много запросов. Пожалуйста, подождите минуту.`,
+              en: `⚠️ Too many requests. Please wait a minute.`,
+            };
+            
+            await ctx.reply(warningText[lang] || warningText['en']);
+            return; // Don't call next() - block request
+          }
+          
+          // Rate limit OK, continue processing
+          return next();
+        } catch (error: any) {
+          // Redis error - log but don't block user (fail open)
+          this.logger.error(
+            `Rate limit check failed for user ${userId}: ${error.message}`
+          );
+          return next(); // Allow request if Redis fails
+        }
+      });
+
       // Register command handlers
       this.bot.command('start', (ctx) => this.commandsService.handleStart(ctx));
       this.bot.command('stop', (ctx) => this.commandsService.handleStop(ctx));
@@ -125,6 +175,10 @@ export class TelegramService implements OnModuleInit {
       this.bot.command('stats', (ctx) => this.commandsService.handleStats(ctx));
       this.bot.command('settings', (ctx) => this.commandsService.handleSettings(ctx));
       this.bot.command('upgrade', (ctx) => this.commandsService.handleUpgrade(ctx));
+      this.bot.command('set_position', (ctx) => this.commandsService.handleSetPosition(ctx));
+      this.bot.command('tasks', (ctx) => this.commandsService.handleTasks(ctx));
+      this.bot.command('voice', (ctx) => this.commandsService.handleVoice(ctx));
+      this.bot.command('progress', (ctx) => this.commandsService.handleProgress(ctx));
 
       // Voice message handler
       this.bot.on('message:voice', (ctx) => this.voiceService.handleVoiceMessage(ctx));

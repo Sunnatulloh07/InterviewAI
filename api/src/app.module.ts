@@ -47,6 +47,8 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { AdminBotModule } from './modules/admin-bot/admin-bot.module';
 import { EngagementModule } from './modules/engagement/engagement.module';
+import { TasksModule } from './modules/tasks/tasks.module';
+import { VoiceModule } from './modules/voice/voice.module';
 
 @Module({
   imports: [
@@ -338,6 +340,8 @@ import { EngagementModule } from './modules/engagement/engagement.module';
     AnalyticsModule,
     AdminBotModule,
     EngagementModule,
+    TasksModule,
+    VoiceModule,
   ],
   controllers: [AppController],
   providers: [AppService, RedisService],

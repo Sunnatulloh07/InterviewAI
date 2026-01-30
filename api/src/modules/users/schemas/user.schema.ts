@@ -153,6 +153,59 @@ export class User {
     lastResetDate: Date;
   };
 
+  // Voice quota tracking (separate for mock practice vs real interview help)
+  @Prop({
+    type: Object,
+    default: () => ({
+      mockVoice: {
+        total: 5,
+        used: 0,
+        remaining: 5,
+        resetDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      },
+      realVoice: {
+        total: 0,
+        used: 0,
+        remaining: 0,
+        resetDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      },
+    }),
+  })
+  voiceQuota: {
+    mockVoice: { total: number; used: number; remaining: number; resetDate: Date };
+    realVoice: { total: number; used: number; remaining: number; resetDate: Date };
+  };
+
+  // User profile for personalized interview experience
+  @Prop({
+    type: Object,
+    default: () => ({
+      position: 'junior',
+      goal: 'job_search',
+      techStack: [],
+    }),
+  })
+  profile: {
+    position: 'junior' | 'middle' | 'senior' | 'lead';
+    goal: 'job_search' | 'career_growth' | 'learning';
+    techStack: string[];
+  };
+
+  // Daily tasks tracking
+  @Prop({
+    type: Object,
+    default: () => ({
+      currentStreak: 0,
+      longestStreak: 0,
+      totalCompleted: 0,
+    }),
+  })
+  dailyTasks: {
+    currentStreak: number;
+    longestStreak: number;
+    totalCompleted: number;
+  };
+
   // Account management
   @Prop()
   lastLoginAt?: Date;
@@ -330,6 +383,52 @@ UserSchema.pre('save', function (next) {
           saveHistory: true,
           shareAnalytics: false,
         },
+      };
+    }
+
+    // CRITICAL: Initialize voice quota based on subscription plan
+    if (!user.voiceQuota) {
+      const plan = user.subscription?.plan || 'free_trial';
+      const quotas: Record<string, { mock: number; real: number }> = {
+        free_trial: { mock: 5, real: 0 },
+        starter: { mock: 10, real: 15 },
+        pro: { mock: 30, real: 45 },
+        elite: { mock: 60, real: 120 },
+      };
+      const quota = quotas[plan] || quotas.free_trial;
+      const nextMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1);
+
+      user.voiceQuota = {
+        mockVoice: {
+          total: quota.mock,
+          used: 0,
+          remaining: quota.mock,
+          resetDate: nextMonth,
+        },
+        realVoice: {
+          total: quota.real,
+          used: 0,
+          remaining: quota.real,
+          resetDate: nextMonth,
+        },
+      };
+    }
+
+    // CRITICAL: Initialize user profile (defaults to junior)
+    if (!user.profile) {
+      user.profile = {
+        position: 'junior',
+        goal: 'job_search',
+        techStack: [],
+      };
+    }
+
+    // CRITICAL: Initialize daily tasks tracking
+    if (!user.dailyTasks) {
+      user.dailyTasks = {
+        currentStreak: 0,
+        longestStreak: 0,
+        totalCompleted: 0,
       };
     }
 

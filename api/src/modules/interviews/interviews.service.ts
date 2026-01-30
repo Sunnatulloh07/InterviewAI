@@ -61,6 +61,9 @@ export class InterviewsService {
    */
   async startInterview(userId: string, dto: StartInterviewDto): Promise<InterviewSessionDocument> {
     try {
+      // OPTIMIZATION: Get user once at the beginning
+      const user = await this.usersService.findById(userId);
+      
       // Check usage limits
       await this.checkUsageLimits(userId);
 
@@ -70,12 +73,28 @@ export class InterviewsService {
         dto.difficulty,
       );
 
+      // Set language from user preferences if not in DTO
+      if (!dto.language) {
+        dto.language = user?.preferences?.language || user?.language || 'en';
+      }
+
       // Generate questions
       const questions = await this.generateQuestions(userId, dto, numQuestions);
 
       if (questions.length === 0) {
         throw new BadRequestException('No questions available for the selected criteria');
       }
+
+      // Get user profile to set time limits based on position
+      const position = user?.profile?.position || 'junior';
+
+      // Set time limit based on position (in minutes per question)
+      const questionTimeLimit = {
+        junior: 3,
+        middle: 4,
+        senior: 5,
+        lead: 6,
+      }[position];
 
       // Create AI session for context
       const aiSession = await this.contextService.createSession(userId, 'interview');
@@ -90,7 +109,7 @@ export class InterviewsService {
         numQuestions,
         interviewDuration: dto.interviewDuration || 'standard',
         mode: dto.mode,
-        timeLimit: dto.timeLimit,
+        timeLimit: dto.timeLimit || questionTimeLimit, // Use position-based time limit if not provided
         status: 'active',
         currentQuestionIndex: 0,
         questions: questions.map((q) => q._id) as any,
@@ -99,8 +118,9 @@ export class InterviewsService {
         aiSessionId: aiSession.id,
       });
 
-      // Increment usage counter
-      await this.usersService.incrementUsage(userId, 'mockInterview');
+      // Usage counter already incremented by caller (telegram-commands.service.ts:3298)
+      // No need to increment again here to avoid double counting
+      // await this.usersService.incrementUsage(userId, 'mockInterview'); // ❌ REMOVED: Duplicate
 
       this.logger.log(`Interview started: ${session.id} for user ${userId}`);
       return session;
@@ -474,6 +494,7 @@ export class InterviewsService {
       throw new Error('OpenAI client not initialized');
     }
 
+    // OPTIMIZATION: Language now set in startInterview, no need to fetch user again
     const language = dto.language || 'en';
     const languageName = this.getLanguageName(language);
     const difficultyName = this.getDifficultyName(dto.difficulty);

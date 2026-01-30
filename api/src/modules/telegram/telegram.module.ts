@@ -18,6 +18,8 @@ import { CvModule } from '../cv/cv.module';
 import { AnalyticsModule } from '../analytics/analytics.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { EngagementModule } from '../engagement/engagement.module';
+import { VoiceModule } from '../voice/voice.module';
+import { TasksModule } from '../tasks/tasks.module';
 
 @Module({
   imports: [
@@ -34,6 +36,8 @@ import { EngagementModule } from '../engagement/engagement.module';
     AnalyticsModule,
     PaymentsModule, // For SubscriptionService
     forwardRef(() => EngagementModule),
+    VoiceModule,
+    forwardRef(() => TasksModule),
   ],
   controllers: [TelegramController],
   providers: [

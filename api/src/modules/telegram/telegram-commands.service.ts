@@ -15,6 +15,7 @@ import { AnalyticsService } from '../analytics/analytics.service';
 import { AiAnswerService } from '../ai/ai-answer.service';
 import { EngagementService } from '../engagement/engagement.service';
 import { SurveyHandlerService } from '../engagement/survey-handler.service';
+import { DailyTasksService } from '../tasks/daily-tasks.service';
 import { OpenAI } from 'openai';
 import { createOpenAIClient, getModelName } from '@common/utils/openai-client.factory';
 
@@ -39,6 +40,8 @@ export class TelegramCommandsService {
     @Inject(forwardRef(() => EngagementService))
     private readonly engagementService: EngagementService,
     private readonly surveyHandlerService: SurveyHandlerService,
+    @Inject(forwardRef(() => DailyTasksService))
+    private readonly dailyTasksService: DailyTasksService,
   ) {
     // Initialize OpenAI client with support for both OpenAI and OpenRouter
     this.openai = createOpenAIClient(this.configService);
@@ -386,20 +389,49 @@ export class TelegramCommandsService {
     // Get usage stats text from service
     const usageText = this.subscriptionService.getUsageStatsText(user, lang);
 
+    // Get profile information
+    const position = user.profile?.position || 'junior';
+    const goal = user.profile?.goal || 'job_search';
+    const techStack = user.profile?.techStack || [];
+
+    const positionLabels: Record<string, Record<string, string>> = {
+      uz: { junior: 'Junior', middle: 'Middle', senior: 'Senior', lead: 'Lead' },
+      ru: { junior: 'Junior', middle: 'Middle', senior: 'Senior', lead: 'Lead' },
+      en: { junior: 'Junior', middle: 'Middle', senior: 'Senior', lead: 'Lead' },
+    };
+
+    const goalLabels: Record<string, Record<string, string>> = {
+      uz: {
+        job_search: 'Ish izlash',
+        career_growth: 'Karyera o\'sishi',
+        learning: 'O\'rganish'
+      },
+      ru: {
+        job_search: 'Поиск работы',
+        career_growth: 'Карьерный рост',
+        learning: 'Обучение'
+      },
+      en: {
+        job_search: 'Job Search',
+        career_growth: 'Career Growth',
+        learning: 'Learning'
+      },
+    };
+
     const headerTexts: Record<string, string> = {
-      uz: `📊 <b>Sizning Profilingiz</b>\n\n<b>Ism:</b> ${user.firstName} ${user.lastName}\n`,
-      ru: `📊 <b>Ваш Профиль</b>\n\n<b>Имя:</b> ${user.firstName} ${user.lastName}\n`,
-      en: `📊 <b>Your Profile</b>\n\n<b>Name:</b> ${user.firstName} ${user.lastName}\n`,
+      uz: `📊 <b>Sizning Profilingiz</b>\n\n<b>Ism:</b> ${user.firstName} ${user.lastName}\n<b>Lavozim:</b> ${positionLabels[lang]?.[position] || position}\n<b>Maqsad:</b> ${goalLabels[lang]?.[goal] || goal}\n<b>Texnologiyalar:</b> ${techStack.length > 0 ? techStack.join(', ') : 'Belgilanmagan'}\n`,
+      ru: `📊 <b>Ваш Профиль</b>\n\n<b>Имя:</b> ${user.firstName} ${user.lastName}\n<b>Должность:</b> ${positionLabels[lang]?.[position] || position}\n<b>Цель:</b> ${goalLabels[lang]?.[goal] || goal}\n<b>Технологии:</b> ${techStack.length > 0 ? techStack.join(', ') : 'Не указаны'}\n`,
+      en: `📊 <b>Your Profile</b>\n\n<b>Name:</b> ${user.firstName} ${user.lastName}\n<b>Position:</b> ${positionLabels[lang]?.[position] || position}\n<b>Goal:</b> ${goalLabels[lang]?.[goal] || goal}\n<b>Technologies:</b> ${techStack.length > 0 ? techStack.join(', ') : 'Not set'}\n`,
     };
 
     const upgradeHint: Record<string, string> = {
-      uz: '\n\n💡 Tarifni yangilash uchun /upgrade yozing',
-      ru: '\n\n💡 Введите /upgrade для обновления тарифа',
-      en: '\n\n💡 Type /upgrade to upgrade your plan',
+      uz: '\n\n💡 Tarifni yangilash uchun /upgrade yozing\n📝 Profilni o\'zgartirish: /set_position',
+      ru: '\n\n💡 Введите /upgrade для обновления тарифа\n📝 Изменить профиль: /set_position',
+      en: '\n\n💡 Type /upgrade to upgrade your plan\n📝 Change profile: /set_position',
     };
 
     const header = headerTexts[lang] || headerTexts['en'];
-    const hint = user.subscription?.plan === 'elite' ? '' : (upgradeHint[lang] || upgradeHint['en']);
+    const hint = user.subscription?.plan === 'elite' ? '\n\n📝 Profilni o\'zgartirish: /set_position' : (upgradeHint[lang] || upgradeHint['en']);
 
     return `${header}${subscriptionText}\n\n${usageText}${hint}`;
   }
@@ -1043,6 +1075,312 @@ export class TelegramCommandsService {
     await this.subscriptionService.sendPlanComparison(ctx, lang);
   }
 
+  /**
+   * Handle /set_position command - update user position
+   */
+  async handleSetPosition(ctx: BotContext) {
+    try {
+      const telegramId = ctx.from?.id as number;
+      const user = await this.usersService.findByTelegramId(telegramId);
+
+      if (!user) {
+        const lang = ctx.session?.language || 'en';
+        const notRegisteredText: Record<string, string> = {
+          uz: `Iltimos avval /start buyrug'i bilan ro'yxatdan o'ting`,
+          ru: `Пожалуйста, сначала зарегистрируйтесь используя /start`,
+          en: `Please register first using /start`,
+        };
+        await ctx.reply(notRegisteredText[lang] || notRegisteredText['en']);
+        return;
+      }
+
+      const lang = this.getUserLanguage(ctx, user);
+
+      const selectPositionText: Record<string, string> = {
+        uz: `📝 <b>Lavozimni tanlang</b>\n\nQaysi darajada dasturchisiz?`,
+        ru: `📝 <b>Выберите должность</b>\n\nКакой у вас уровень?`,
+        en: `📝 <b>Select Position</b>\n\nWhat is your level?`,
+      };
+
+      const positionButtons: Record<string, Record<string, string>> = {
+        uz: {
+          junior: '🌱 Junior',
+          middle: '📈 Middle',
+          senior: '🎯 Senior',
+          lead: '👑 Lead',
+        },
+        ru: {
+          junior: '🌱 Junior',
+          middle: '📈 Middle',
+          senior: '🎯 Senior',
+          lead: '👑 Lead',
+        },
+        en: {
+          junior: '🌱 Junior',
+          middle: '📈 Middle',
+          senior: '🎯 Senior',
+          lead: '👑 Lead',
+        },
+      };
+
+      const buttons = positionButtons[lang] || positionButtons['en'];
+
+      const keyboard = new InlineKeyboard()
+        .text(buttons.junior, 'set_position_junior')
+        .text(buttons.middle, 'set_position_middle')
+        .row()
+        .text(buttons.senior, 'set_position_senior')
+        .text(buttons.lead, 'set_position_lead');
+
+      await this.replyOrEdit(ctx, selectPositionText[lang] || selectPositionText['en'], {
+        reply_markup: keyboard,
+        parse_mode: 'HTML',
+      });
+    } catch (error: any) {
+      this.logger.error(`Failed to handle set_position: ${error.message}`, error.stack);
+      const lang = ctx.session?.language || 'en';
+      const errorText: Record<string, string> = {
+        uz: `❌ Xatolik yuz berdi. Iltimos qayta urinib ko'ring.`,
+        ru: `❌ Произошла ошибка. Пожалуйста, попробуйте снова.`,
+        en: `❌ Error occurred. Please try again.`,
+      };
+      await ctx.reply(errorText[lang] || errorText['en']);
+    }
+  }
+
+  /**
+   * Handle /tasks command - show daily tasks
+   */
+  async handleTasks(ctx: BotContext) {
+    try {
+      const telegramId = ctx.from?.id as number;
+      const user = await this.usersService.findByTelegramId(telegramId);
+
+      if (!user) {
+        const lang = ctx.session?.language || 'en';
+        const notRegisteredText: Record<string, string> = {
+          uz: `Iltimos avval /start buyrug'i bilan ro'yxatdan o'ting`,
+          ru: `Пожалуйста, сначала зарегистрируйтесь используя /start`,
+          en: `Please register first using /start`,
+        };
+        await ctx.reply(notRegisteredText[lang] || notRegisteredText['en']);
+        return;
+      }
+
+      const lang = this.getUserLanguage(ctx, user);
+      const userId = (user as any)._id?.toString() || (user as any).id?.toString();
+
+      // Get today's tasks
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const task = await this.dailyTasksService.getTodayTasks(userId, today);
+
+      if (!task) {
+        const noTasksText: Record<string, string> = {
+          uz: `📋 <b>Bugungi Vazifalar</b>\n\nHozircha vazifa yo'q. 9:00 da tekshiring!`,
+          ru: `📋 <b>Сегодняшние Задачи</b>\n\nЗадач пока нет. Проверьте в 9:00!`,
+          en: `📋 <b>Today's Tasks</b>\n\nNo tasks yet. Check back at 9:00 AM!`,
+        };
+        await ctx.reply(noTasksText[lang] || noTasksText['en'], {
+          parse_mode: 'HTML',
+        });
+        return;
+      }
+
+      // Format tasks text
+      const tasksText = task.tasks
+        .map((t, i) => `${i + 1}. ${t.completed ? '✅' : '⭕'} ${t.question}`)
+        .join('\n\n');
+
+      const streakText: Record<string, string> = {
+        uz:
+          `📋 <b>Bugungi Vazifalar</b>\n\n${tasksText}\n\n` +
+          `🔥 Joriy ketma-ketlik: ${user.dailyTasks?.currentStreak || 0} kun\n` +
+          `🏆 Eng uzun: ${user.dailyTasks?.longestStreak || 0} kun`,
+        ru:
+          `📋 <b>Сегодняшние Задачи</b>\n\n${tasksText}\n\n` +
+          `🔥 Текущая серия: ${user.dailyTasks?.currentStreak || 0} дней\n` +
+          `🏆 Лучшая серия: ${user.dailyTasks?.longestStreak || 0} дней`,
+        en:
+          `📋 <b>Today's Tasks</b>\n\n${tasksText}\n\n` +
+          `🔥 Current Streak: ${user.dailyTasks?.currentStreak || 0} days\n` +
+          `🏆 Longest Streak: ${user.dailyTasks?.longestStreak || 0} days`,
+      };
+
+      await ctx.reply(streakText[lang] || streakText['en'], {
+        parse_mode: 'HTML',
+      });
+    } catch (error: any) {
+      this.logger.error(`Failed to handle tasks: ${error.message}`, error.stack);
+      const lang = ctx.session?.language || 'en';
+      const errorText: Record<string, string> = {
+        uz: `❌ Xatolik yuz berdi. Iltimos qayta urinib ko'ring.`,
+        ru: `❌ Произошла ошибка. Пожалуйста, попробуйте снова.`,
+        en: `❌ Error occurred. Please try again.`,
+      };
+      await ctx.reply(errorText[lang] || errorText['en']);
+    }
+  }
+
+  /**
+   * Handle /voice command - show voice quota balance
+   */
+  async handleVoice(ctx: BotContext) {
+    try {
+      const telegramId = ctx.from?.id as number;
+      const user = await this.usersService.findByTelegramId(telegramId);
+
+      if (!user) {
+        const lang = ctx.session?.language || 'en';
+        const notRegisteredText: Record<string, string> = {
+          uz: `Iltimos avval /start buyrug'i bilan ro'yxatdan o'ting`,
+          ru: `Пожалуйста, сначала зарегистрируйтесь используя /start`,
+          en: `Please register first using /start`,
+        };
+        await ctx.reply(notRegisteredText[lang] || notRegisteredText['en']);
+        return;
+      }
+
+      const lang = this.getUserLanguage(ctx, user);
+
+      // Get voice quota (initialize if needed)
+      const quota = user.voiceQuota || {
+        mockVoice: { total: 5, used: 0, remaining: 5, resetDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
+        realVoice: { total: 0, used: 0, remaining: 0, resetDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
+      };
+
+      const voiceText: Record<string, string> = {
+        uz:
+          `🎤 <b>Ovozli Xabarlar Balansi</b>\n\n` +
+          `<b>Mock Intervyu:</b>\n` +
+          `  Ishlatilgan: ${quota.mockVoice.used} / ${quota.mockVoice.total} min\n` +
+          `  Qolgan: ${quota.mockVoice.remaining} min\n\n` +
+          `<b>Haqiqiy Intervyu Yordami:</b>\n` +
+          `  Ishlatilgan: ${quota.realVoice.used} / ${quota.realVoice.total} min\n` +
+          `  Qolgan: ${quota.realVoice.remaining} min\n\n` +
+          `Yangilanadi: ${quota.mockVoice.resetDate.toLocaleDateString('uz-UZ')}\n\n` +
+          `💡 Ko'proq daqiqalar uchun: /upgrade`,
+        ru:
+          `🎤 <b>Баланс Голосовых Сообщений</b>\n\n` +
+          `<b>Mock Интервью:</b>\n` +
+          `  Использовано: ${quota.mockVoice.used} / ${quota.mockVoice.total} мин\n` +
+          `  Осталось: ${quota.mockVoice.remaining} мин\n\n` +
+          `<b>Помощь в Реальном Интервью:</b>\n` +
+          `  Использовано: ${quota.realVoice.used} / ${quota.realVoice.total} мин\n` +
+          `  Осталось: ${quota.realVoice.remaining} мин\n\n` +
+          `Обновится: ${quota.mockVoice.resetDate.toLocaleDateString('ru-RU')}\n\n` +
+          `💡 Для большего количества минут: /upgrade`,
+        en:
+          `🎤 <b>Voice Messages Balance</b>\n\n` +
+          `<b>Mock Interview Practice:</b>\n` +
+          `  Used: ${quota.mockVoice.used} / ${quota.mockVoice.total} min\n` +
+          `  Remaining: ${quota.mockVoice.remaining} min\n\n` +
+          `<b>Real Interview Help:</b>\n` +
+          `  Used: ${quota.realVoice.used} / ${quota.realVoice.total} min\n` +
+          `  Remaining: ${quota.realVoice.remaining} min\n\n` +
+          `Resets: ${quota.mockVoice.resetDate.toLocaleDateString('en-US')}\n\n` +
+          `💡 For more minutes: /upgrade`,
+      };
+
+      await ctx.reply(voiceText[lang] || voiceText['en'], {
+        parse_mode: 'HTML',
+      });
+    } catch (error: any) {
+      this.logger.error(`Failed to handle voice: ${error.message}`, error.stack);
+      const lang = ctx.session?.language || 'en';
+      const errorText: Record<string, string> = {
+        uz: `❌ Xatolik yuz berdi. Iltimos qayta urinib ko'ring.`,
+        ru: `❌ Произошла ошибка. Пожалуйста, попробуйте снова.`,
+        en: `❌ Error occurred. Please try again.`,
+      };
+      await ctx.reply(errorText[lang] || errorText['en']);
+    }
+  }
+
+  /**
+   * Handle /progress command - show user progress
+   */
+  async handleProgress(ctx: BotContext) {
+    try {
+      const telegramId = ctx.from?.id as number;
+      const user = await this.usersService.findByTelegramId(telegramId);
+
+      if (!user) {
+        const lang = ctx.session?.language || 'en';
+        const notRegisteredText: Record<string, string> = {
+          uz: `Iltimos avval /start buyrug'i bilan ro'yxatdan o'ting`,
+          ru: `Пожалуйста, сначала зарегистрируйтесь используя /start`,
+          en: `Please register first using /start`,
+        };
+        await ctx.reply(notRegisteredText[lang] || notRegisteredText['en']);
+        return;
+      }
+
+      const lang = this.getUserLanguage(ctx, user);
+      const userId = (user as any)._id?.toString() || (user as any).id?.toString();
+
+      // Get user statistics
+      const sessions = await this.interviewsService.getHistory(userId, 100, 0);
+      const completedSessions = sessions.filter((s) => s.status === 'completed');
+
+      const avgScore =
+        completedSessions.length > 0
+          ? (
+              completedSessions.reduce((sum, s) => sum + (s.overallScore || 0), 0) /
+              completedSessions.length
+            ).toFixed(1)
+          : '0.0';
+
+      const positionLabels: Record<string, Record<string, string>> = {
+        uz: { junior: 'Junior', middle: 'Middle', senior: 'Senior', lead: 'Lead' },
+        ru: { junior: 'Junior', middle: 'Middle', senior: 'Senior', lead: 'Lead' },
+        en: { junior: 'Junior', middle: 'Middle', senior: 'Senior', lead: 'Lead' },
+      };
+
+      const position = user.profile?.position || 'junior';
+
+      const progressText: Record<string, string> = {
+        uz:
+          `📊 <b>Sizning Taraqqiyotingiz</b>\n\n` +
+          `📝 Jami intervyular: ${sessions.length}\n` +
+          `✅ Tugallangan: ${completedSessions.length}\n` +
+          `⭐ O'rtacha ball: ${avgScore}/10\n` +
+          `💼 Lavozim: ${positionLabels[lang][position]}\n` +
+          `🔥 Joriy ketma-ketlik: ${user.dailyTasks?.currentStreak || 0} kun\n` +
+          `🏆 Eng uzun: ${user.dailyTasks?.longestStreak || 0} kun`,
+        ru:
+          `📊 <b>Ваш Прогресс</b>\n\n` +
+          `📝 Всего интервью: ${sessions.length}\n` +
+          `✅ Завершено: ${completedSessions.length}\n` +
+          `⭐ Средний балл: ${avgScore}/10\n` +
+          `💼 Должность: ${positionLabels[lang][position]}\n` +
+          `🔥 Текущая серия: ${user.dailyTasks?.currentStreak || 0} дней\n` +
+          `🏆 Лучшая серия: ${user.dailyTasks?.longestStreak || 0} дней`,
+        en:
+          `📊 <b>Your Progress</b>\n\n` +
+          `📝 Total Interviews: ${sessions.length}\n` +
+          `✅ Completed: ${completedSessions.length}\n` +
+          `⭐ Average Score: ${avgScore}/10\n` +
+          `💼 Position: ${positionLabels[lang][position]}\n` +
+          `🔥 Current Streak: ${user.dailyTasks?.currentStreak || 0} days\n` +
+          `🏆 Longest Streak: ${user.dailyTasks?.longestStreak || 0} days`,
+      };
+
+      await ctx.reply(progressText[lang] || progressText['en'], {
+        parse_mode: 'HTML',
+      });
+    } catch (error: any) {
+      this.logger.error(`Failed to handle progress: ${error.message}`, error.stack);
+      const lang = ctx.session?.language || 'en';
+      const errorText: Record<string, string> = {
+        uz: `❌ Xatolik yuz berdi. Iltimos qayta urinib ko'ring.`,
+        ru: `❌ Произошла ошибка. Пожалуйста, попробуйте снова.`,
+        en: `❌ Error occurred. Please try again.`,
+      };
+      await ctx.reply(errorText[lang] || errorText['en']);
+    }
+  }
+
   async handleCallback(ctx: BotContext, data: string) {
     // Get user once and reuse for tracking and other operations
     const callbackTelegramId = ctx.from?.id;
@@ -1460,7 +1798,7 @@ export class TelegramCommandsService {
     if (data.startsWith('position_')) {
       const position = data.replace('position_', ''); // junior, middle, senior
       ctx.session.interviewPosition = position;
-      
+
       if (ctx.session.interviewMode === 'real') {
         // Real interview: ask for company
         ctx.session.interviewStep = 'company';
@@ -1469,6 +1807,49 @@ export class TelegramCommandsService {
         // Mock interview: ready to start
         ctx.session.interviewStep = 'ready';
         await this.startInterviewSession(ctx);
+      }
+      return;
+    }
+
+    // Set position in user profile
+    if (data.startsWith('set_position_')) {
+      try {
+        const position = data.replace('set_position_', ''); // junior, middle, senior, lead
+        const telegramId = ctx.from?.id as number;
+        const user = await this.usersService.findByTelegramId(telegramId);
+
+        if (!user) {
+          return;
+        }
+
+        // Update user profile
+        const userId = (user as any)._id?.toString() || (user as any).id?.toString();
+        await this.usersService.updateProfile(userId, {
+          profile: {
+            ...user.profile,
+            position: position as 'junior' | 'middle' | 'senior' | 'lead',
+          },
+        } as any);
+
+        const lang = this.getUserLanguage(ctx, user);
+
+        const positionLabels: Record<string, Record<string, string>> = {
+          uz: { junior: 'Junior', middle: 'Middle', senior: 'Senior', lead: 'Lead' },
+          ru: { junior: 'Junior', middle: 'Middle', senior: 'Senior', lead: 'Lead' },
+          en: { junior: 'Junior', middle: 'Middle', senior: 'Senior', lead: 'Lead' },
+        };
+
+        const successText: Record<string, string> = {
+          uz: `✅ Lavozim yangilandi: ${positionLabels[lang]?.[position] || position}\n\nEndi intervyular bu darajaga moslashtiriladi.`,
+          ru: `✅ Должность обновлена: ${positionLabels[lang]?.[position] || position}\n\nТеперь интервью адаптированы под этот уровень.`,
+          en: `✅ Position updated: ${positionLabels[lang]?.[position] || position}\n\nInterviews are now tailored to this level.`,
+        };
+
+        await ctx.editMessageText(successText[lang] || successText['en'], {
+          parse_mode: 'HTML',
+        });
+      } catch (error: any) {
+        this.logger.error(`Failed to update position: ${error.message}`, error.stack);
       }
       return;
     }

@@ -12,6 +12,7 @@ import { TelegramCommandsService } from './telegram-commands.service';
 import { InterviewsService } from '../interviews/interviews.service';
 import { InterviewsFeedbackService } from '../interviews/interviews-feedback.service';
 import { SubscriptionService } from '../payments/subscription.service';
+import { VoiceQuotaService } from '../voice/voice-quota.service';
 
 @Injectable()
 export class TelegramVoiceService {
@@ -29,6 +30,7 @@ export class TelegramVoiceService {
     private readonly interviewsService: InterviewsService,
     private readonly interviewsFeedbackService: InterviewsFeedbackService,
     private readonly subscriptionService: SubscriptionService,
+    private readonly voiceQuotaService: VoiceQuotaService,
   ) {}
 
   async handleVoiceMessage(ctx: BotContext) {
@@ -94,8 +96,36 @@ export class TelegramVoiceService {
       return;
     }
 
+    // Track if quota was already deducted (to prevent duplicate charging)
+    let voiceQuotaDeducted = false;
+    
     try {
-      // Show initial processing message
+      // Get voice object early for quota pre-check
+      const voice = ctx.message?.voice as Voice;
+      if (!voice) {
+        throw new Error('Voice message not found');
+      }
+
+      // CRITICAL PERFORMANCE FIX: Pre-check quota BEFORE downloading file
+      // This saves bandwidth if user has no quota
+      if (isInMockInterview && ctx.session.interviewMode === 'mock') {
+        const quota = await this.voiceQuotaService.getQuota(userId);
+        const estimatedMinutes = Math.ceil(voice.duration / 60);
+
+        if (quota.mockVoice.remaining < estimatedMinutes) {
+          const quotaExceededText: Record<string, string> = {
+            uz: `❌ Ovozli xabar uchun yetarli daqiqalar yo'q.\n\nKerak: ${estimatedMinutes} min\nMavjud: ${quota.mockVoice.remaining} min\n\nMatn shaklida davom eting yoki /voice buyrug'i orqali tarifni yangilang.`,
+            ru: `❌ Недостаточно минут для голосового сообщения.\n\nНужно: ${estimatedMinutes} мин\nДоступно: ${quota.mockVoice.remaining} min\n\nПродолжите текстом или обновите тариф через /voice.`,
+            en: `❌ Not enough voice minutes.\n\nNeed: ${estimatedMinutes} min\nAvailable: ${quota.mockVoice.remaining} min\n\nContinue with text or upgrade via /voice.`,
+          };
+          await ctx.reply(quotaExceededText[lang] || quotaExceededText['en'], {
+            parse_mode: 'HTML',
+          });
+          return; // ✅ Don't download file if quota exhausted
+        }
+      }
+
+      // Show processing message
       const processingText: Record<string, string> = {
         uz: `🎤 Ovozli xabar qayta ishlanmoqda...`,
         ru: `🎤 Обрабатывается голосовое сообщение...`,
@@ -103,13 +133,7 @@ export class TelegramVoiceService {
       };
       const processingMsg = await ctx.reply(processingText[lang] || processingText['en']);
 
-      // Download voice file (parallel with message sending)
-      const voice = ctx.message?.voice as Voice;
-      if (!voice) {
-        throw new Error('Voice message not found');
-      }
-
-      // Optimized: Download and transcribe in parallel where possible
+      // Now download file (quota check passed)
       const file = await ctx.api.getFile(voice.file_id);
       const filePath = file.file_path;
       const downloadUrl = `https://api.telegram.org/file/bot${this.configService.get<string>('TELEGRAM_BOT_TOKEN')}/${filePath}`;
@@ -167,26 +191,36 @@ export class TelegramVoiceService {
             language: lang,
           });
 
-          // Delete processing message
+          // CRITICAL FIX: Deduct quota BEFORE sending response to user
+          // If quota fails, don't send response (user not charged for failed service)
+          const estimatedDurationSeconds = Math.max(30, voice.duration || 30);
+          
+          // 1. Track usage for limit checking
+          await this.subscriptionService.addLiveMinutes(userId, 1);
+          
+          // 2. Deduct from realVoice quota (throws if insufficient)
+          await this.voiceQuotaService.checkAndUseVoice(
+            userId,
+            'real', // ✅ Use 'real' type for live interviews
+            estimatedDurationSeconds,
+            undefined, // No session ID for live interviews
+            response.text?.substring(0, 500), // Log AI response for tracking
+          );
+          
+          // Delete processing message AFTER quota deduction succeeds
           try {
             await ctx.api.deleteMessage(processingMsg.chat.id, processingMsg.message_id);
           } catch {
             // Ignore delete errors
           }
-
-          // Format response
+          
+          // Now send response (quota already deducted, user gets service)
           const responseText = `${response.text}\n\n⏱️ ${response.processingTime}ms | 🤖 Gemini`;
-          
-          // Send with smart chunking and fallback
           await this.sendSafeMessage(ctx, responseText);
-          
-          // Deduct usage
-          try {
-            await this.subscriptionService.addLiveMinutes(userId, 1);
-          } catch (error: any) {
-            this.logger.warn(`Failed to deduct minutes: ${error.message}`);
-          }
 
+          // CRITICAL: Mark quota as deducted to prevent duplicate charging in STT fallback
+          voiceQuotaDeducted = true;
+          
           this.logger.log(
             `Gemini audio processed: ${response.processingTime}ms, user=${userId}`,
           );
@@ -274,30 +308,18 @@ export class TelegramVoiceService {
       const isLive = await this.liveService.isInLiveSession(telegramId);
       
       if (isLive) {
-        await this.handleLiveVoiceMessage(ctx, transcribedText, userId);
+        await this.handleLiveVoiceMessage(ctx, transcribedText, userId, voice);
         return;
       }
 
       // Check if in interview session (answering interview questions)
       // This handles both MOCK and REAL interview modes
       if (ctx.session.currentInterviewSessionId && ctx.session.currentQuestionIndex !== undefined) {
-        // MOCK INTERVIEW: Block voice messages - text only
-        // Check if this is a mock interview (not live)
-        if (ctx.session.interviewMode === 'mock') {
-          const voiceBlockedText: Record<string, string> = {
-            uz: `❌ Mock interviewda ovozli xabar qabul qilinmaydi.\n\nIltimos, javobingizni <b>matn</b> shaklida yuboring.`,
-            ru: `❌ В mock-интервью голосовые сообщения не принимаются.\n\nПожалуйста, отправьте ваш ответ <b>текстом</b>.`,
-            en: `❌ Voice messages are not accepted in mock interviews.\n\nPlease send your answer as <b>text</b>.`,
-          };
-          await ctx.reply(voiceBlockedText[lang] || voiceBlockedText['en'], {
-            parse_mode: 'HTML',
-          });
-          return;
-        }
+        // Note: Quota check already done before file download (line 111-125)
+        // No need to check again here - file already downloaded
         
-        // Handle as interview answer (voice message) - Only for LIVE interviews
-        // Get user ID (handle both _id and id fields)
-        const userId = (user as any)._id?.toString() || (user as any).id?.toString() || user.id;
+        // Handle as interview answer (voice message) - For MOCK and LIVE interviews
+        // userId already declared at line 82
         if (!userId) {
           this.logger.error(`User ID is undefined for Telegram ID: ${telegramId}`);
           const errorText: Record<string, string> = {
@@ -480,6 +502,35 @@ export class TelegramVoiceService {
         duration: transcription.duration || 0, // Audio duration from transcription
       });
 
+      // Deduct voice quota for mock interviews
+      // CRITICAL: Pass ACTUAL duration in SECONDS (not minutes)
+      // Service will round up to nearest minute and log to history
+      if (ctx.session.interviewMode === 'mock') {
+        try {
+          const durationSeconds = transcription.duration || 0;
+          await this.voiceQuotaService.checkAndUseVoice(
+            userId,
+            'mock',
+            durationSeconds,
+            sessionId, // Log which interview session
+            transcribedText, // Log transcription for reference
+          );
+          this.logger.log(
+            `Deducted voice quota for user ${userId}: ${durationSeconds}s in mock interview`,
+          );
+        } catch (error: any) {
+          // CRITICAL: Log as ERROR (not warn) because quota deduction failure is serious
+          // Answer was already submitted, so we can't rollback, but we MUST alert admins
+          this.logger.error(
+            `CRITICAL: Failed to deduct mock voice quota for user ${userId}: ${error.message}. ` +
+            `User may have bypassed quota check! Duration: ${transcription.duration}s`,
+            error.stack,
+          );
+          // Continue - already processed the answer, can't rollback
+          // But admin should investigate this user for potential abuse
+        }
+      }
+
       // Simple confirmation
       const confirmText: Record<string, string> = {
         uz: `✅ Javobingiz qabul qilindi`,
@@ -535,7 +586,7 @@ export class TelegramVoiceService {
     }
   }
 
-  private async handleLiveVoiceMessage(ctx: BotContext, transcribedText: string, userId: string) {
+  private async handleLiveVoiceMessage(ctx: BotContext, transcribedText: string, userId: string, voice: Voice) {
     const telegramId = ctx.from?.id as number;
 
     // Get user for language preference
@@ -690,6 +741,32 @@ export class TelegramVoiceService {
     await ctx.reply(responseText[lang] || responseText['en'], {
       parse_mode: 'HTML',
     });
+
+    // CRITICAL FIX: Deduct from realVoice quota for STT fallback path
+    // Get duration from voice object (Telegram voice duration in seconds)
+    const durationSeconds = voice.duration || 30; // Default 30s if unknown
+    
+    try {
+      // Deduct from realVoice quota (was missing in STT fallback!)
+      await this.voiceQuotaService.checkAndUseVoice(
+        userId,
+        'real', // ✅ Use 'real' type for live interviews
+        durationSeconds,
+        undefined, // No session ID for live interviews
+        transcribedText, // Log transcription for tracking
+      );
+      this.logger.log(
+        `Real voice quota deducted for live session: user=${userId}, duration=${durationSeconds}s`,
+      );
+    } catch (error: any) {
+      // CRITICAL: Log as ERROR for quota deduction failures
+      this.logger.error(
+        `CRITICAL: Failed to deduct real voice quota (STT path) for user ${userId}: ${error.message}. ` +
+        `User may have bypassed quota check! Duration: ${durationSeconds}s`,
+        error.stack,
+      );
+      // Continue - already processed the answer, can't rollback
+    }
 
     // Update live session
     await liveSessionModel.findOneAndUpdate(
