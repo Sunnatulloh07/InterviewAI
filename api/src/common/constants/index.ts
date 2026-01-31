@@ -5,6 +5,9 @@
 // Re-export metadata keys
 export * from './metadata-keys';
 
+// Re-export complete plan limits (SINGLE SOURCE OF TRUTH)
+export * from './plan-limits.constant';
+
 // API Versioning
 export const API_VERSION = 'v1';
 export const API_PREFIX = `api/${API_VERSION}`;
@@ -117,6 +120,7 @@ export const PLAN_FEATURES = {
     contextAwareness: false,
     advancedAI: false, // GPT-4o-mini only
     prioritySupport: false,
+    dailyTasks: false, // ❌ DISABLED: Daily tasks only for paid users
   },
   starter: {
     telegramBot: true,
@@ -131,6 +135,7 @@ export const PLAN_FEATURES = {
     contextAwareness: true,
     advancedAI: false, // GPT-4o-mini
     prioritySupport: false,
+    dailyTasks: true, // ✅ ENABLED: Daily tasks with AI-powered reminders
   },
   pro: {
     telegramBot: true,
@@ -145,6 +150,7 @@ export const PLAN_FEATURES = {
     contextAwareness: true,
     advancedAI: true, // GPT-4o
     prioritySupport: false,
+    dailyTasks: true, // ✅ ENABLED: Daily tasks with AI-powered reminders
   },
   elite: {
     telegramBot: true,
@@ -159,6 +165,7 @@ export const PLAN_FEATURES = {
     contextAwareness: true,
     advancedAI: true, // GPT-4o / Claude
     prioritySupport: true,
+    dailyTasks: true, // ✅ ENABLED: Daily tasks with AI-powered reminders
   },
 } as const;
 

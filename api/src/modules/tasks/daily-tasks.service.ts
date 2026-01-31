@@ -55,24 +55,40 @@ export class DailyTasksService {
       
       this.logger.log('Starting daily tasks delivery...');
 
-      // Get all active users (trialing or active subscription)
+      // CRITICAL FIX: Get ONLY PAID users with active subscription
+      // Daily tasks are ONLY for paid plans (starter, pro, elite)
+      const now = new Date();
+      
       const users = await this.userModel
         .find({
-          'subscription.status': { $in: ['trialing', 'active'] },
+          // Must have active subscription
+          'subscription.status': 'active',
+          // Must be on paid plan (NOT free_trial)
+          'subscription.plan': { $in: ['starter', 'pro', 'elite'] },
+          // Subscription must not be expired
+          $or: [
+            { 'subscription.endDate': { $exists: false } }, // No end date
+            { 'subscription.endDate': null }, // No end date
+            { 'subscription.endDate': { $gt: now } }, // Not expired yet
+          ],
+          // User not blocked
           isBlocked: false,
+          // Bot not blocked
+          'engagement.isBotBlocked': { $ne: true },
         })
-        .select('_id telegramId profile dailyTasks')
+        .select('_id telegramId profile subscription')
         .lean();
 
-      this.logger.log(`Found ${users.length} eligible users for daily tasks`);
+      this.logger.log(`Found ${users.length} eligible PAID users for daily tasks`);
 
       let successCount = 0;
       let errorCount = 0;
 
       for (const user of users) {
         try {
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
+          // CRITICAL FIX: Use UTC midnight for Tashkent timezone
+          // Tashkent is UTC+5, so today 00:00 Tashkent = yesterday 19:00 UTC
+          const today = this.getTashkentMidnight();
 
           // Check if tasks already delivered today
           const existingTask = await this.dailyTaskModel.findOne({
@@ -158,9 +174,15 @@ export class DailyTasksService {
   /**
    * Get today's tasks for a user
    */
-  async getTodayTasks(userId: string, date: Date): Promise<DailyTaskDocument | null> {
-    const today = new Date(date);
-    today.setHours(0, 0, 0, 0);
+  async getTodayTasks(userId: string, date?: Date): Promise<DailyTaskDocument | null> {
+    // CRITICAL FIX: Use Tashkent midnight
+    const today = date ? new Date(date) : this.getTashkentMidnight();
+    
+    // If date provided, normalize to midnight
+    if (date) {
+      today.setUTCHours(0, 0, 0, 0);
+      today.setUTCHours(today.getUTCHours() - 5); // Convert to Tashkent
+    }
 
     return this.dailyTaskModel.findOne({
       userId,
@@ -349,6 +371,21 @@ Provide your response in JSON format:
         error.stack,
       );
     }
+  }
+
+  /**
+   * Get midnight in Tashkent timezone as UTC date
+   * Tashkent is UTC+5, so today 00:00 Tashkent = yesterday 19:00 UTC
+   * 
+   * CRITICAL: This ensures date field matches across all services
+   */
+  private getTashkentMidnight(): Date {
+    const now = new Date();
+    const midnight = new Date(now);
+    midnight.setUTCHours(0, 0, 0, 0);
+    // Subtract 5 hours to convert Tashkent midnight to UTC
+    midnight.setUTCHours(midnight.getUTCHours() - 5);
+    return midnight;
   }
 
   /**

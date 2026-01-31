@@ -295,13 +295,32 @@ export const UserSchema = SchemaFactory.createForClass(User);
 UserSchema.index({ phoneNumber: 1, deletedAt: 1 });
 UserSchema.index({ telegramId: 1, deletedAt: 1 });
 UserSchema.index({ createdAt: -1 });
+
 // Engagement indexes for notification scheduling
 UserSchema.index({ 'engagement.nextNotificationAt': 1, 'engagement.isBotBlocked': 1, 'engagement.notificationsPaused': 1 });
 UserSchema.index({ 'engagement.lastActiveAt': 1 });
+
 // Survey scheduling index (for cron job queries)
 UserSchema.index({ 'engagement.scheduledSurveyAt': 1, 'engagement.surveyCompletedAt': 1 });
+
 // Job seeker engagement index
 UserSchema.index({ 'engagement.jobSeekingStatus': 1, 'engagement.lastActiveAt': 1 });
+
+// CRITICAL: Trial user reminder indexes (for user-activation.service.ts queries)
+// Index for finding trial users: status + plan + trialEndsAt + bot blocked flags
+UserSchema.index({
+  'subscription.status': 1,
+  'subscription.plan': 1,
+  'subscription.trialEndsAt': 1,
+  isBlocked: 1,
+  'engagement.isBotBlocked': 1,
+});
+
+// Index for lastTrialNotificationDate queries (prevent duplicate sends)
+UserSchema.index({ lastTrialNotificationDate: 1 });
+
+// Index for trial stats queries
+UserSchema.index({ 'subscription.status': 1, 'subscription.plan': 1, 'usage.mockInterviewsThisMonth': 1 });
 
 // Virtual properties
 UserSchema.virtual('fullName').get(function (this: UserDocument) {

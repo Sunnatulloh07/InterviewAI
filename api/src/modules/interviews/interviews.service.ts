@@ -19,7 +19,14 @@ import { SubmitAnswerDto } from './dto/submit-answer.dto';
 import { InterviewSessionDocument } from './schemas/interview-session.schema';
 import { InterviewQuestionDocument } from './schemas/interview-question.schema';
 import { InterviewAnswerDocument } from './schemas/interview-answer.schema';
-import { USAGE_LIMITS, QUEUE_INTERVIEW_FEEDBACK, AI_MODELS, INTERVIEW_QUESTION_COUNTS } from '@common/constants';
+import { 
+  USAGE_LIMITS, 
+  QUEUE_INTERVIEW_FEEDBACK, 
+  AI_MODELS, 
+  INTERVIEW_QUESTION_COUNTS,
+  COMPLETE_PLAN_LIMITS,
+  getMockInterviewMonthlyLimit,
+} from '@common/constants';
 import {
   createOpenAIClient,
   getModelName,
@@ -977,16 +984,35 @@ Your response must be valid JSON that can be parsed directly. All questions must
   /**
    * Check usage limits
    */
+  /**
+   * CRITICAL: Check mock interview usage limits based on plan
+   * ✅ STEP 2 FIX: Now uses COMPLETE_PLAN_LIMITS for accurate enforcement
+   */
   private async checkUsageLimits(userId: string): Promise<void> {
     const user = await this.usersService.findById(userId);
     const plan = user.subscription?.plan || 'free_trial';
-    const limit = USAGE_LIMITS[plan as keyof typeof USAGE_LIMITS]?.mockInterviews || USAGE_LIMITS.free_trial.mockInterviews;
-
-    if (user.usage.mockInterviewsThisMonth >= limit) {
-      throw new ForbiddenException(
-        `Mock interview limit reached for ${plan} plan. Upgrade to practice more.`,
-      );
+    
+    // ✅ Use COMPLETE_PLAN_LIMITS (single source of truth)
+    const monthlyLimit = getMockInterviewMonthlyLimit(plan);
+    
+    // Check if limit reached (-1 means unlimited)
+    if (monthlyLimit !== -1 && user.usage.mockInterviewsThisMonth >= monthlyLimit) {
+      // Provide helpful upgrade message based on current plan
+      const upgradeMessages = {
+        free_trial: 'Mock interview limit reached (3/month). Upgrade to Starter for 10/month.',
+        starter: 'Mock interview limit reached (10/month). Upgrade to Pro for 30/month.',
+        pro: 'Mock interview limit reached (30/month). Upgrade to Elite for unlimited interviews.',
+      };
+      
+      const message = upgradeMessages[plan as keyof typeof upgradeMessages] 
+        || `Mock interview limit reached for ${plan} plan. Upgrade to practice more.`;
+      
+      throw new ForbiddenException(message);
     }
+    
+    this.logger.debug(
+      `Mock interview usage check passed: ${user.usage.mockInterviewsThisMonth}/${monthlyLimit === -1 ? 'unlimited' : monthlyLimit} for ${plan} plan`
+    );
   }
 
   /**

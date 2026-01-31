@@ -8,10 +8,13 @@ import { EngagementAiService } from './engagement-ai.service';
 import { EngagementService } from './engagement.service';
 import { EngagementSchedulerService } from './engagement-scheduler.service';
 import { SurveyHandlerService } from './survey-handler.service';
+import { TaskReminderService } from './task-reminder.service';
+import { UserActivationService } from './user-activation.service';
 import { UsersModule } from '../users/users.module';
 import { InterviewsModule } from '../interviews/interviews.module';
 import { TelegramModule } from '../telegram/telegram.module';
 import { User, UserSchema } from '../users/schemas/user.schema';
+import { DailyTask, DailyTaskSchema } from '../tasks/schemas/daily-task.schema';
 
 /**
  * ...
@@ -22,6 +25,7 @@ import { User, UserSchema } from '../users/schemas/user.schema';
     MongooseModule.forFeature([
       { name: NotificationLog.name, schema: NotificationLogSchema },
       { name: User.name, schema: UserSchema },
+      { name: DailyTask.name, schema: DailyTaskSchema },
     ]),
     forwardRef(() => UsersModule),
     forwardRef(() => InterviewsModule),
@@ -33,6 +37,8 @@ import { User, UserSchema } from '../users/schemas/user.schema';
     EngagementService,
     EngagementSchedulerService,
     SurveyHandlerService,
+    TaskReminderService,
+    UserActivationService,
   ],
   exports: [
     NotificationLogRepository,
@@ -40,6 +46,8 @@ import { User, UserSchema } from '../users/schemas/user.schema';
     EngagementService,
     EngagementSchedulerService,
     SurveyHandlerService,
+    TaskReminderService,
+    UserActivationService,
   ],
 })
 export class EngagementModule {}
