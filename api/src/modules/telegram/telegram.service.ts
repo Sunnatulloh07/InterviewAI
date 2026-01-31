@@ -6,6 +6,7 @@ import { Bot, Context, session } from 'grammy';
 import { TelegramCommandsService } from './telegram-commands.service';
 import { TelegramVoiceService } from './telegram-voice.service';
 import { TelegramLiveService } from './telegram-live.service';
+import { TelegramDailyTaskService } from './telegram-daily-task.service';
 
 export interface BotContext extends Context {
   session: {
@@ -70,6 +71,7 @@ export class TelegramService implements OnModuleInit {
     private readonly commandsService: TelegramCommandsService,
     private readonly voiceService: TelegramVoiceService,
     private readonly liveService: TelegramLiveService,
+    private readonly dailyTaskService: TelegramDailyTaskService,
     @InjectRedis() private readonly redis: Redis,
   ) {
     this.botToken = this.configService.get<string>('TELEGRAM_BOT_TOKEN') as string;
@@ -180,8 +182,14 @@ export class TelegramService implements OnModuleInit {
       this.bot.command('voice', (ctx) => this.commandsService.handleVoice(ctx));
       this.bot.command('progress', (ctx) => this.commandsService.handleProgress(ctx));
 
-      // Voice message handler
-      this.bot.on('message:voice', (ctx) => this.voiceService.handleVoiceMessage(ctx));
+      // Voice message handler - check daily task mode first
+      this.bot.on('message:voice', async (ctx) => {
+        const isDailyTask = await this.dailyTaskService.isInDailyTaskMode(ctx);
+        if (isDailyTask) {
+          return this.dailyTaskService.handleVoiceAnswer(ctx, ctx.message.voice);
+        }
+        return this.voiceService.handleVoiceMessage(ctx);
+      });
 
       // Contact message handler (phone number registration)
       this.bot.on('message:contact', (ctx) => this.commandsService.handleContactMessage(ctx));
@@ -189,8 +197,30 @@ export class TelegramService implements OnModuleInit {
       // Document handler (for CV upload in interview flow)
       this.bot.on('message:document', (ctx) => this.commandsService.handleDocumentMessage(ctx));
 
-      // Text message handler
-      this.bot.on('message:text', (ctx) => this.handleTextMessage(ctx));
+      // Photo handler - for daily task image answers
+      this.bot.on('message:photo', async (ctx) => {
+        const isDailyTask = await this.dailyTaskService.isInDailyTaskMode(ctx);
+        if (isDailyTask) {
+          return this.dailyTaskService.handleImageAnswer(ctx, ctx.message.photo);
+        }
+        // For non-daily task photos, show error or handle differently
+        const lang = ctx.session?.language || 'uz';
+        const noPhotoText: Record<string, string> = {
+          uz: `📸 Rasm faqat kunlik vazifalar javobida qabul qilinadi.\n\n/tasks buyrug'i bilan vazifalarni ko'ring.`,
+          ru: `📸 Изображения принимаются только в ответах на ежедневные задания.\n\nИспользуйте /tasks для просмотра заданий.`,
+          en: `📸 Photos are only accepted for daily task answers.\n\nUse /tasks to view your tasks.`,
+        };
+        await ctx.reply(noPhotoText[lang] || noPhotoText.uz);
+      });
+
+      // Text message handler - check daily task mode first
+      this.bot.on('message:text', async (ctx) => {
+        const isDailyTask = await this.dailyTaskService.isInDailyTaskMode(ctx);
+        if (isDailyTask) {
+          return this.dailyTaskService.handleTextAnswer(ctx, ctx.message.text);
+        }
+        return this.handleTextMessage(ctx);
+      });
 
       // Callback query handler (for inline keyboards)
       this.bot.on('callback_query', (ctx) => this.handleCallbackQuery(ctx));

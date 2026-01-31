@@ -2,7 +2,15 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { User, UserDocument } from '../users/schemas/user.schema';
-import { USAGE_LIMITS, PLAN_FEATURES, SubscriptionPlan } from '@common/constants';
+import {
+  USAGE_LIMITS,
+  PLAN_FEATURES,
+  SubscriptionPlan,
+  COMPLETE_PLAN_LIMITS,
+  getPlanLimits as getCompletePlanLimits,
+  PlanLimits,
+} from '@common/constants';
+import { Cron } from '@nestjs/schedule';
 
 /**
  * Service for managing subscriptions, trials, and usage
@@ -47,8 +55,17 @@ export class SubscriptionService {
 
   /**
    * Get user's current plan limits
+   * ✅ STEP 4 FIX: Now uses COMPLETE_PLAN_LIMITS (single source of truth)
    */
-  getPlanLimits(plan: SubscriptionPlan) {
+  getPlanLimits(plan: SubscriptionPlan): PlanLimits {
+    return getCompletePlanLimits(plan);
+  }
+
+  /**
+   * Get legacy usage limits (for backward compatibility)
+   * @deprecated Use getPlanLimits() instead
+   */
+  getLegacyPlanLimits(plan: SubscriptionPlan) {
     return USAGE_LIMITS[plan] || USAGE_LIMITS.free_trial;
   }
 
@@ -169,7 +186,7 @@ export class SubscriptionService {
     limit: number;
     usage: number;
   }> {
-    const user = await this.userModel.findById(userId).select('subscription usage');
+    const user = await this.userModel.findById(userId).select('subscription usage voiceQuota');
     if (!user) return { allowed: false, remainingMinutes: 0, plan: 'free_trial', limit: 0, usage: 0 };
 
     if (await this.isTrialExpired(userId)) {
@@ -185,11 +202,13 @@ export class SubscriptionService {
 
     const plan = (user.subscription?.plan || 'free_trial') as SubscriptionPlan;
     const limits = this.getPlanLimits(plan);
-    const limit = limits.liveInterviewMinutes;
-    const usage = user.usage?.liveInterviewMinutesThisMonth || 0;
+    
+    // ✅ FIX: Use voice.realVoice from new PlanLimits structure
+    const limit = limits.voice.realVoice;
+    const usage = user.voiceQuota?.realVoice?.used || 0;
 
     // -1 means unlimited
-    if ((limit as number) === -1) {
+    if (limit === -1) {
       return { allowed: true, remainingMinutes: 9999, plan, limit, usage };
     }
 
@@ -227,6 +246,7 @@ export class SubscriptionService {
 
   /**
    * Upgrade user plan
+   * ✅ STEP 4 FIX: Now resets voice quotas and usage counters on upgrade
    */
   async upgradePlan(
     userId: string,
@@ -238,6 +258,10 @@ export class SubscriptionService {
       ? new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000)
       : new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
+    // ✅ Get new plan's voice quotas from COMPLETE_PLAN_LIMITS
+    const planLimits = getCompletePlanLimits(newPlan);
+    const nextMonthResetDate = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
     await this.userModel.findByIdAndUpdate(userId, {
       $set: {
         'subscription.plan': newPlan,
@@ -248,21 +272,44 @@ export class SubscriptionService {
         // Clear trial fields when upgrading
         'subscription.trialStartDate': null,
         'subscription.trialEndsAt': null,
+        
+        // ✅ CRITICAL FIX: Reset voice quotas to new plan limits
+        'voiceQuota.mockVoice': {
+          total: planLimits.voice.mockVoice,
+          used: 0,
+          remaining: planLimits.voice.mockVoice,
+          resetDate: nextMonthResetDate,
+        },
+        'voiceQuota.realVoice': {
+          total: planLimits.voice.realVoice,
+          used: 0,
+          remaining: planLimits.voice.realVoice,
+          resetDate: nextMonthResetDate,
+        },
+        
+        // ✅ Reset usage counters to give fresh start on new plan
+        'usage.mockInterviewsThisMonth': 0,
+        'usage.cvAnalysesThisMonth': 0,
+        'usage.lastResetDate': now,
       },
     });
 
-    this.logger.log(`User ${userId} upgraded to ${newPlan} (${billingCycle})`);
+    this.logger.log(
+      `User ${userId} upgraded to ${newPlan} (${billingCycle}). ` +
+      `Voice quotas reset: mock=${planLimits.voice.mockVoice}min, real=${planLimits.voice.realVoice}min`
+    );
   }
 
   /**
    * Get user subscription status summary
+   * ✅ FIX: Updated return type to use PlanLimits
    */
   async getSubscriptionStatus(userId: string): Promise<{
     plan: SubscriptionPlan;
     status: string;
     isTrialExpired: boolean;
     trialDaysRemaining: number;
-    limits: Record<string, number | boolean>;
+    limits: PlanLimits;
     features: Record<string, boolean>;
     usage: any;
   }> {
@@ -285,4 +332,51 @@ export class SubscriptionService {
       usage: user.usage,
     };
   }
+
+  /**
+   * CRITICAL CRON JOB: Reset monthly usage counters on 1st of each month
+   * Runs at 00:05 on the 1st of every month (5 minutes after voice quota reset)
+   * Resets: mockInterviews, cvAnalyses, chromeQuestions, aiTokens
+   */
+  @Cron('5 0 1 * *', {
+    name: 'monthly_usage_counters_reset',
+    timeZone: 'UTC',
+  })
+  async resetAllMonthlyUsage(): Promise<void> {
+    try {
+      this.logger.log('🔄 Starting monthly usage counters reset...');
+
+      const firstDayOfMonth = new Date();
+      firstDayOfMonth.setDate(1);
+      firstDayOfMonth.setHours(0, 0, 0, 0);
+
+      // Reset all users who haven't been reset this month
+      const result = await this.userModel.updateMany(
+        {
+          'usage.lastResetDate': { $lt: firstDayOfMonth },
+          deletedAt: null,
+        },
+        {
+          $set: {
+            'usage.mockInterviewsThisMonth': 0,
+            'usage.cvAnalysesThisMonth': 0,
+            'usage.liveInterviewMinutesThisMonth': 0,
+            'usage.chromeQuestionsThisMonth': 0,
+            'usage.aiTokensThisMonth': 0,
+            'usage.lastResetDate': new Date(),
+          },
+        },
+      );
+
+      this.logger.log(
+        `✅ Monthly usage counters reset completed. ${result.modifiedCount} users updated.`
+      );
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Monthly usage counters reset failed: ${error.message}`,
+        error.stack,
+      );
+    }
+  }
 }
+

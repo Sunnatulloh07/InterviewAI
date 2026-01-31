@@ -189,7 +189,7 @@ export const COMPLETE_PLAN_LIMITS: Record<string, PlanLimits> = {
       questionsPerDay: 5,  // 3 → 5 questions!
       voiceAnswer: true,
       imageAnswer: true,
-      videoAnswer: true,   // ✅ NEW: Video answers!
+      videoAnswer: false,   // ❌ NO VIDEO - Too expensive for AI processing
       textAnswer: true,
     },
 
@@ -197,11 +197,11 @@ export const COMPLETE_PLAN_LIMITS: Record<string, PlanLimits> = {
       maxSize: 20,  // 10 → 20 MB
       allowedTypes: [
         'text', 'pdf', 'docx', 'png', 'jpg', 'jpeg',
-        'gif', 'webp', 'mp3', 'wav', 'mp4',
+        'gif', 'webp', 'mp3', 'wav', 'ogg',  // ❌ NO mp4 - video disabled
       ],
       imagesAllowed: true,
       audioAllowed: true,  // ✅ Audio files enabled
-      videoAllowed: true,  // ✅ Video files enabled
+      videoAllowed: false,  // ❌ NO VIDEO - Token cost too high
     },
 
     aiFeatures: {
@@ -240,17 +240,17 @@ export const COMPLETE_PLAN_LIMITS: Record<string, PlanLimits> = {
       questionsPerDay: 10,  // 5 → 10 questions!
       voiceAnswer: true,
       imageAnswer: true,
-      videoAnswer: true,
+      videoAnswer: false,  // ❌ NO VIDEO - Too expensive for AI processing
       textAnswer: true,
       customQuestions: true,  // ✅ Can request custom questions
     },
 
     fileUploads: {
       maxSize: 50,  // 20 → 50 MB
-      allowedTypes: '*',  // ALL file types
+      allowedTypes: '*',  // ALL file types (except video)
       imagesAllowed: true,
       audioAllowed: true,
-      videoAllowed: true,
+      videoAllowed: false,  // ❌ NO VIDEO - Token cost too high
       documentsAllowed: true,
     },
 

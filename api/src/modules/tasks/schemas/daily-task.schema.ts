@@ -17,9 +17,14 @@ export class DailyTask {
   })
   tasks: {
     question: string;
-    answer?: string;
+    answer?: string;                          // Text answer or transcript
+    answerType?: 'text' | 'voice' | 'image';  // ✅ NO VIDEO - Too expensive
+    audioUrl?: string;                        // Voice audio URL
+    imageUrl?: string;                        // Image URL
+    transcript?: string;                      // STT transcript for voice
     completed: boolean;
     score?: number;
+    feedback?: string;                        // AI feedback stored
     completedAt?: Date;
   }[];
 

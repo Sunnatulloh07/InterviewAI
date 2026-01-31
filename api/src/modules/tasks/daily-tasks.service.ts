@@ -1,4 +1,4 @@
-import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef, ForbiddenException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Cron, CronExpression } from '@nestjs/schedule';
@@ -10,6 +10,12 @@ import { DailyTask, DailyTaskDocument } from './schemas/daily-task.schema';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { TelegramService } from '../telegram/telegram.service';
 import { createOpenAIClient } from '@common/utils/openai-client.factory';
+import {
+  getPlanLimits,
+  canUseDailyTaskVoiceAnswer,
+  canUseDailyTaskImageAnswer,
+  canUseDailyTaskVideoAnswer,
+} from '@common/constants';
 
 @Injectable()
 export class DailyTasksService {
@@ -192,13 +198,20 @@ export class DailyTasksService {
 
   /**
    * Complete a task with AI scoring
-   * Returns score and feedback
+   * ✅ Supports multimodal answers (voice/image) with plan enforcement
+   * ❌ VIDEO NOT SUPPORTED - Too expensive for AI processing
    */
   async completeTask(
     userId: string,
     taskDate: Date,
     taskIndex: number,
-    answer: string,
+    answer: string | {
+      type: 'text' | 'voice' | 'image';  // ❌ NO VIDEO
+      content: string;           // Text content or transcript
+      audioUrl?: string;         // For voice
+      imageUrl?: string;         // For image
+      transcript?: string;       // STT result for voice
+    },
   ): Promise<{ score: number; feedback: string; allCompleted: boolean }> {
     const today = new Date(taskDate);
     today.setHours(0, 0, 0, 0);
@@ -217,28 +230,87 @@ export class DailyTasksService {
     }
 
     const task = dailyTask.tasks[taskIndex];
-
-    // Score answer with AI
+    
+    // ✅ Handle both string (legacy) and object (multimodal) answer formats
+    let answerText: string;
+    let answerType: 'text' | 'voice' | 'image' = 'text';  // ❌ NO VIDEO
+    let audioUrl: string | undefined;
+    let imageUrl: string | undefined;
+    let transcript: string | undefined;
+    let userPlan: string = 'free_trial';  // For plan-aware scoring
+    
+    if (typeof answer === 'string') {
+      // Legacy format: plain text
+      answerText = answer;
+      answerType = 'text';
+      // Fetch user plan for scoring
+      const user = await this.userModel.findById(userId).select('subscription');
+      userPlan = user?.subscription?.plan || 'free_trial';
+    } else {
+      // New multimodal format
+      answerType = answer.type;
+      answerText = answer.content || answer.transcript || '';
+      audioUrl = answer.audioUrl;
+      imageUrl = answer.imageUrl;
+      transcript = answer.transcript;
+      
+      // ✅ CRITICAL: Check plan permissions for non-text answers
+      const user = await this.userModel.findById(userId).select('subscription');
+      userPlan = user?.subscription?.plan || 'free_trial';
+      
+      // ❌ VIDEO IS NEVER ALLOWED - Reject if user tries to send video via any means
+      if ((answer as any).videoUrl || (answer as any).type === 'video') {
+        throw new ForbiddenException(
+          `Video answers are not supported. ` +
+          `AI video processing is too expensive. ` +
+          `Please use text, voice, or image answers instead.`
+        );
+      }
+      
+      if (answerType === 'voice' && !canUseDailyTaskVoiceAnswer(userPlan)) {
+        throw new ForbiddenException(
+          `Voice answers for daily tasks require Starter plan or higher. ` +
+          `Current plan: ${userPlan}. Upgrade to use voice answers.`
+        );
+      }
+      
+      if (answerType === 'image' && !canUseDailyTaskImageAnswer(userPlan)) {
+        throw new ForbiddenException(
+          `Image answers for daily tasks require Starter plan or higher. ` +
+          `Current plan: ${userPlan}. Upgrade to use image answers.`
+        );
+      }
+      
+      this.logger.log(
+        `Processing ${answerType} answer for task ${taskIndex}, user ${userId}, plan ${userPlan}`
+      );
+    }
+    
     let score = 0;
     let feedback = 'Answer recorded.';
 
-    if (this.openai) {
-      try {
-        const result = await this.scoreAnswer(task.question, answer);
-        score = result.score;
-        feedback = result.feedback;
-      } catch (error: any) {
-        this.logger.error(`Failed to score answer: ${error.message}`);
-        score = 5; // Default score if AI fails
-        feedback = 'Answer received but scoring unavailable. Keep practicing!';
-      }
+    try {
+      const result = await this.scoreAnswer(task.question, answerText, userPlan);
+      score = result.score;
+      feedback = result.feedback;
+    } catch (error: any) {
+      this.logger.error(`Failed to score answer: ${error.message}`);
+      score = 5; // Default score if scoring fails
+      feedback = 'Answer received but scoring unavailable. Keep practicing!';
     }
 
-    // Mark task as completed
+    // ✅ Mark task as completed with multimodal fields
     dailyTask.tasks[taskIndex].completed = true;
-    dailyTask.tasks[taskIndex].answer = answer;
+    dailyTask.tasks[taskIndex].answer = answerText;
+    dailyTask.tasks[taskIndex].answerType = answerType;
     dailyTask.tasks[taskIndex].score = score;
+    dailyTask.tasks[taskIndex].feedback = feedback;
     dailyTask.tasks[taskIndex].completedAt = new Date();
+    
+    // Store media URLs if provided (NO VIDEO)
+    if (audioUrl) dailyTask.tasks[taskIndex].audioUrl = audioUrl;
+    if (imageUrl) dailyTask.tasks[taskIndex].imageUrl = imageUrl;
+    if (transcript) dailyTask.tasks[taskIndex].transcript = transcript;
 
     // Check if all tasks completed
     const allCompleted = dailyTask.tasks.every((t) => t.completed);
@@ -272,50 +344,190 @@ export class DailyTasksService {
   }
 
   /**
-   * Score an answer using AI (0-10 scale)
+   * Score an answer using plan-appropriate method
+   * ✅ STEP 6: Plan-aware AI scoring
+   * - FREE: 'basic' - simple keyword matching, no AI call
+   * - STARTER: 'advanced' - GPT-3.5 with shorter prompt
+   * - PRO/ELITE: 'ai-powered' - Full GPT-4 analysis with detailed feedback
    */
   private async scoreAnswer(
     question: string,
     answer: string,
+    plan: string = 'free_trial',
+  ): Promise<{ score: number; feedback: string }> {
+    const planLimits = getPlanLimits(plan);
+    const scoringLevel = planLimits.aiFeatures.taskCompletionCheck;
+    
+    this.logger.debug(`Scoring answer with level: ${scoringLevel} for plan: ${plan}`);
+    
+    switch (scoringLevel) {
+      case 'basic':
+        return this.scoreAnswerBasic(question, answer);
+      case 'advanced':
+        return this.scoreAnswerAdvanced(question, answer);
+      case 'ai-powered':
+        return this.scoreAnswerAIPowered(question, answer);
+      default:
+        return this.scoreAnswerBasic(question, answer);
+    }
+  }
+
+  /**
+   * Basic scoring (FREE plan) - keyword matching, no AI
+   * Fast and cost-free, but less accurate
+   */
+  private scoreAnswerBasic(
+    question: string,
+    answer: string,
+  ): { score: number; feedback: string } {
+    const answerLower = answer.toLowerCase();
+    const questionLower = question.toLowerCase();
+    
+    // Extract key terms from question (simple approach)
+    const keywords = this.extractKeywords(questionLower);
+    const matchedKeywords = keywords.filter(kw => answerLower.includes(kw));
+    const keywordRatio = keywords.length > 0 ? matchedKeywords.length / keywords.length : 0;
+    
+    // Length check
+    const wordCount = answer.split(/\s+/).length;
+    const lengthScore = Math.min(1, wordCount / 50); // Good answer ~50+ words
+    
+    // Calculate score (0-10)
+    const rawScore = (keywordRatio * 0.6 + lengthScore * 0.4) * 10;
+    const score = Math.round(Math.min(10, Math.max(0, rawScore)));
+    
+    // Generate feedback
+    let feedback = '';
+    if (score >= 7) {
+      feedback = 'Good answer! You covered the key points.';
+    } else if (score >= 5) {
+      feedback = 'Decent attempt. Try to be more specific and cover key concepts.';
+    } else if (score >= 3) {
+      feedback = 'More detail needed. Consider elaborating on your answer.';
+    } else {
+      feedback = 'Answer needs improvement. Review the question and provide a more complete response.';
+    }
+    
+    return { score, feedback };
+  }
+
+  /**
+   * Extract simple keywords from a question
+   */
+  private extractKeywords(text: string): string[] {
+    const stopWords = ['what', 'is', 'the', 'a', 'an', 'how', 'do', 'you', 'are', 'can', 'could', 'would', 'should', 'when', 'why', 'where', 'which', 'tell', 'me', 'about', 'and', 'or', 'to', 'in', 'of', 'for', 'with', 'on', 'at', 'by', 'your', 'that', 'this'];
+    return text
+      .split(/\s+/)
+      .filter(word => word.length > 3 && !stopWords.includes(word))
+      .slice(0, 10); // Max 10 keywords
+  }
+
+  /**
+   * Advanced scoring (STARTER plan) - GPT-3.5 with concise prompt
+   */
+  private async scoreAnswerAdvanced(
+    question: string,
+    answer: string,
   ): Promise<{ score: number; feedback: string }> {
     if (!this.openai) {
-      throw new Error('OpenAI client not initialized');
+      return this.scoreAnswerBasic(question, answer);
     }
 
-    const prompt = `You are an expert interview coach. Score this answer on a scale of 0-10 and provide brief feedback (max 100 words).
+    const prompt = `Score this interview answer (0-10) and give brief feedback (50 words max).
+Question: ${question}
+Answer: ${answer}
+
+JSON response: {"score": <0-10>, "feedback": "<brief feedback>"}`;
+
+    try {
+      const completion = await this.openai.chat.completions.create({
+        model: 'gpt-3.5-turbo',
+        messages: [
+          { role: 'system', content: 'Score interview answers briefly. Return JSON only.' },
+          { role: 'user', content: prompt },
+        ],
+        temperature: 0.5,
+        max_tokens: 150,
+        response_format: { type: 'json_object' },
+      });
+
+      const result = JSON.parse(completion.choices[0]?.message?.content || '{"score": 5, "feedback": "Reviewed."}');
+      return {
+        score: Math.min(10, Math.max(0, result.score || 5)),
+        feedback: result.feedback || 'Keep practicing!',
+      };
+    } catch (error: any) {
+      this.logger.error(`Advanced scoring failed: ${error.message}`);
+      return this.scoreAnswerBasic(question, answer);
+    }
+  }
+
+  /**
+   * AI-Powered scoring (PRO/ELITE) - Full analysis with detailed feedback
+   */
+  private async scoreAnswerAIPowered(
+    question: string,
+    answer: string,
+  ): Promise<{ score: number; feedback: string }> {
+    if (!this.openai) {
+      return this.scoreAnswerAdvanced(question, answer);
+    }
+
+    const prompt = `You are an expert interview coach. Provide a comprehensive evaluation of this interview answer.
 
 Question: ${question}
 
 Candidate's Answer: ${answer}
 
+Evaluate based on:
+1. Completeness - Does it fully address the question?
+2. Structure - Is it well-organized (STAR method for behavioral, etc.)?
+3. Specificity - Are there concrete examples and metrics?
+4. Communication - Is it clear and professional?
+5. Technical accuracy - For tech questions, is it correct?
+
 Provide your response in JSON format:
 {
   "score": <number 0-10>,
-  "feedback": "<brief constructive feedback>"
+  "feedback": "<detailed constructive feedback with specific improvement suggestions, 100-150 words>",
+  "strengths": ["<strength 1>", "<strength 2>"],
+  "improvements": ["<improvement 1>", "<improvement 2>"]
 }`;
 
-    const completion = await this.openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
-      messages: [
-        {
-          role: 'system',
-          content:
-            'You are an expert interview coach who provides fair, constructive feedback. Return valid JSON only.',
-        },
-        { role: 'user', content: prompt },
-      ],
-      temperature: 0.7,
-      max_tokens: 300,
-      response_format: { type: 'json_object' },
-    });
+    try {
+      const completion = await this.openai.chat.completions.create({
+        model: 'gpt-4-turbo-preview',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are an expert interview coach who provides detailed, actionable feedback. Return valid JSON only.',
+          },
+          { role: 'user', content: prompt },
+        ],
+        temperature: 0.7,
+        max_tokens: 500,
+        response_format: { type: 'json_object' },
+      });
 
-    const responseText = completion.choices[0]?.message?.content || '{"score": 5, "feedback": "Answer received."}';
-    const result = JSON.parse(responseText);
+      const result = JSON.parse(completion.choices[0]?.message?.content || '{}');
+      
+      // Build enhanced feedback
+      let feedback = result.feedback || 'Good effort!';
+      if (result.strengths?.length) {
+        feedback += ` Strengths: ${result.strengths.join(', ')}.`;
+      }
+      if (result.improvements?.length) {
+        feedback += ` Areas to improve: ${result.improvements.join(', ')}.`;
+      }
 
-    return {
-      score: Math.min(10, Math.max(0, result.score || 5)),
-      feedback: result.feedback || 'Keep practicing!',
-    };
+      return {
+        score: Math.min(10, Math.max(0, result.score || 5)),
+        feedback,
+      };
+    } catch (error: any) {
+      this.logger.error(`AI-powered scoring failed: ${error.message}`);
+      return this.scoreAnswerAdvanced(question, answer);
+    }
   }
 
   /**

@@ -18,10 +18,19 @@ export class TelegramSession {
 
   @Prop({
     type: String,
-    enum: ['idle', 'active_interview', 'voice_chat', 'live_session'],
+    enum: ['idle', 'active_interview', 'voice_chat', 'live_session', 'daily_task'],
     default: 'idle',
   })
   status: string;
+
+  // Daily task session tracking
+  @Prop({ type: Object })
+  dailyTaskSession?: {
+    dailyTaskId: string;
+    currentTaskIndex: number;
+    totalTasks: number;
+    date: Date;
+  };
 
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'InterviewSession' })
   currentInterviewId?: MongooseSchema.Types.ObjectId;

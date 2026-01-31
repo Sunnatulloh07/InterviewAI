@@ -26,6 +26,8 @@ import {
   OPENAI_MAX_TOKENS_OPTIMIZATION,
   OPENAI_TEMPERATURE,
   AI_MODELS,
+  getCvAnalysisMonthlyLimit,
+  getPlanLimits,
 } from '@common/constants';
 import { OpenAI } from 'openai';
 import {
@@ -817,17 +819,33 @@ export class CvService {
 
   /**
    * Check usage limits
+   * ✅ STEP 3 FIX: Now uses COMPLETE_PLAN_LIMITS for accurate enforcement
    */
   private async checkUsageLimits(userId: string): Promise<void> {
     const user = await this.usersService.findById(userId);
     const plan = user.subscription?.plan || 'free_trial';
-    const limit = USAGE_LIMITS[plan as keyof typeof USAGE_LIMITS]?.cvAnalyses || USAGE_LIMITS.free_trial.cvAnalyses;
-
-    if (user.usage.cvAnalysesThisMonth >= limit) {
-      throw new ForbiddenException(
-        `CV analysis limit reached for ${plan} plan. Upgrade to analyze more CVs.`,
-      );
+    
+    // ✅ Use COMPLETE_PLAN_LIMITS (single source of truth)
+    const monthlyLimit = getCvAnalysisMonthlyLimit(plan);
+    
+    // Check if limit reached (-1 means unlimited)
+    if (monthlyLimit !== -1 && user.usage.cvAnalysesThisMonth >= monthlyLimit) {
+      // Provide helpful upgrade message based on current plan
+      const upgradeMessages: Record<string, string> = {
+        free_trial: 'CV analysis limit reached (2/month). Upgrade to Starter for 5/month.',
+        starter: 'CV analysis limit reached (5/month). Upgrade to Pro for 15/month.',
+        pro: 'CV analysis limit reached (15/month). Upgrade to Elite for unlimited analyses.',
+      };
+      
+      const message = upgradeMessages[plan] 
+        || `CV analysis limit reached for ${plan} plan. Upgrade to analyze more CVs.`;
+      
+      throw new ForbiddenException(message);
     }
+    
+    this.logger.debug(
+      `CV analysis usage check passed: ${user.usage.cvAnalysesThisMonth}/${monthlyLimit === -1 ? 'unlimited' : monthlyLimit} for ${plan} plan`
+    );
   }
 
   /**

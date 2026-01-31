@@ -7,6 +7,7 @@ import { TelegramVoiceService } from './telegram-voice.service';
 import { TelegramLiveService } from './telegram-live.service';
 import { TelegramSubscriptionService } from './telegram-subscription.service';
 import { TrialNotificationService } from './trial-notification.service';
+import { TelegramDailyTaskService } from './telegram-daily-task.service';
 import { TelegramController } from './telegram.controller';
 import { TelegramSession, TelegramSessionSchema } from './schemas/telegram-session.schema';
 import { User, UserSchema } from '../users/schemas/user.schema';
@@ -47,8 +48,9 @@ import { TasksModule } from '../tasks/tasks.module';
     TelegramLiveService,
     TelegramSubscriptionService,
     TrialNotificationService,
+    TelegramDailyTaskService,
   ],
-  exports: [TelegramService, TelegramSubscriptionService, TrialNotificationService],
+  exports: [TelegramService, TelegramSubscriptionService, TrialNotificationService, TelegramDailyTaskService],
 })
 export class TelegramModule {}
 
