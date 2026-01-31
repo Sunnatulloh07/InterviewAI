@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Cron, CronExpression } from '@nestjs/schedule';
@@ -21,6 +21,7 @@ export class DailyTasksService {
     private readonly dailyTaskModel: Model<DailyTaskDocument>,
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
+    @Inject(forwardRef(() => TelegramService))
     private readonly telegramService: TelegramService,
     private readonly configService: ConfigService,
     @InjectRedis() private readonly redis: Redis,
