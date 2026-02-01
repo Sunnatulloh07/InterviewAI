@@ -2,7 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRedis } from '@nestjs-modules/ioredis';
 import Redis from 'ioredis';
-import { Bot, Context, session } from 'grammy';
+import { Bot, Context, session, InputFile } from 'grammy';
 import { TelegramCommandsService } from './telegram-commands.service';
 import { TelegramVoiceService } from './telegram-voice.service';
 import { TelegramLiveService } from './telegram-live.service';

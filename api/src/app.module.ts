@@ -25,6 +25,7 @@ import { telegramConfig } from './config/telegram.config';
 import { DatabaseModule } from './database/database.module';
 import { RedisService } from './common/services/redis.service';
 import { LoggerModule } from './common/logger/logger.module';
+import { HttpCacheInterceptor } from './common/interceptors/http-cache.interceptor';
 
 // Monitoring & Security modules
 import { HealthModule } from './modules/health/health.module';
@@ -46,6 +47,7 @@ import { WebsocketModule } from './modules/websocket/websocket.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { AdminBotModule } from './modules/admin-bot/admin-bot.module';
+import { AdminModule } from './modules/admin/admin.module';
 import { EngagementModule } from './modules/engagement/engagement.module';
 import { TasksModule } from './modules/tasks/tasks.module';
 import { VoiceModule } from './modules/voice/voice.module';
@@ -339,12 +341,13 @@ import { VoiceModule } from './modules/voice/voice.module';
     NotificationsModule,
     AnalyticsModule,
     AdminBotModule,
+    AdminModule,
     EngagementModule,
     TasksModule,
     VoiceModule,
   ],
   controllers: [AppController],
-  providers: [AppService, RedisService],
+  providers: [AppService, RedisService, HttpCacheInterceptor],
 })
 export class AppModule {
   constructor(private configService: ConfigService) {

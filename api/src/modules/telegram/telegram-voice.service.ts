@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { AiSttService } from '../ai/ai-stt.service';
 import { AiAnswerService } from '../ai/ai-answer.service';
 import { AiGeminiAudioService } from '../ai/ai-gemini-audio.service';
+import { AiTtsService } from '../ai/ai-tts.service';
 import { BotContext } from './telegram.service';
 import { Voice } from 'grammy/types';
 import { UsersService } from '../users/users.service';
@@ -13,6 +14,8 @@ import { InterviewsService } from '../interviews/interviews.service';
 import { InterviewsFeedbackService } from '../interviews/interviews-feedback.service';
 import { SubscriptionService } from '../payments/subscription.service';
 import { VoiceQuotaService } from '../voice/voice-quota.service';
+import { COMPLETE_PLAN_LIMITS } from '../../common/constants/plan-limits.constant';
+import { InputFile } from 'grammy';
 
 @Injectable()
 export class TelegramVoiceService {
@@ -22,6 +25,7 @@ export class TelegramVoiceService {
     private readonly sttService: AiSttService,
     private readonly answerService: AiAnswerService,
     private readonly geminiAudioService: AiGeminiAudioService,
+    private readonly ttsService: AiTtsService,
     private readonly usersService: UsersService,
     private readonly liveService: TelegramLiveService,
     private readonly contextService: AiContextService,
@@ -561,6 +565,8 @@ export class TelegramVoiceService {
         await ctx.reply(completeText[lang] || completeText['en'], {
           parse_mode: 'HTML',
         });
+
+        await this.sendInterviewVoiceFeedback(ctx, userId, sessionId, lang);
       } else {
         // Show next question
         const nextQuestion = allQuestions[ctx.session.currentQuestionIndex];
@@ -894,6 +900,61 @@ export class TelegramVoiceService {
         // Fallback: send as plain text if Markdown parsing fails
         await ctx.reply(chunk);
       }
+    }
+  }
+
+  /**
+   * Send voice feedback after interview completion
+   */
+  private async sendInterviewVoiceFeedback(
+    ctx: BotContext,
+    userId: string,
+    sessionId: string,
+    lang: string,
+  ): Promise<void> {
+    try {
+      const user = await this.usersService.findById(userId);
+      if (!user) {
+        return;
+      }
+
+      const plan = user.subscription?.plan || 'free_trial';
+      const planLimits = COMPLETE_PLAN_LIMITS[plan];
+
+      if (!planLimits || !planLimits.aiFeatures.voiceExplanations) {
+        return;
+      }
+
+      if (!this.ttsService.isEnabled()) {
+        this.logger.debug('TTS service not enabled, skipping voice feedback');
+        return;
+      }
+
+      const session = await this.interviewsService.getSession(userId, sessionId);
+      const feedback = session?.feedback;
+
+      if (!feedback) {
+        this.logger.warn(`No feedback available for session ${sessionId}`);
+        return;
+      }
+
+      const feedbackText = typeof feedback === 'string' ? feedback : JSON.stringify(feedback);
+      const summaryText = feedbackText.length > 1000 
+        ? feedbackText.substring(0, 1000) + '...' 
+        : feedbackText;
+
+      const { audioBuffer } = await this.ttsService.synthesize(summaryText, {
+        language: lang,
+        voice: 'alloy',
+      });
+
+      await ctx.replyWithAudio(new InputFile(audioBuffer), {
+        caption: '🔊 Intervyu izohi (Interview feedback)',
+      });
+
+      this.logger.log(`Voice feedback sent to user ${userId} for session ${sessionId}`);
+    } catch (error: any) {
+      this.logger.error(`Failed to send interview voice feedback: ${error.message}`);
     }
   }
 

@@ -9,6 +9,7 @@ import { OpenAI } from 'openai';
 import { DailyTask, DailyTaskDocument } from './schemas/daily-task.schema';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { TelegramService } from '../telegram/telegram.service';
+import { FailedNotificationRetryService } from '../engagement/failed-notification-retry.service';
 import { createOpenAIClient } from '@common/utils/openai-client.factory';
 import {
   getPlanLimits,
@@ -29,6 +30,8 @@ export class DailyTasksService {
     private readonly userModel: Model<UserDocument>,
     @Inject(forwardRef(() => TelegramService))
     private readonly telegramService: TelegramService,
+    @Inject(forwardRef(() => FailedNotificationRetryService))
+    private readonly retryService: FailedNotificationRetryService,
     private readonly configService: ConfigService,
     @InjectRedis() private readonly redis: Redis,
   ) {
@@ -142,9 +145,25 @@ export class DailyTasksService {
               );
             }
           } catch (sendError: any) {
+            const errorMessage = sendError.description || sendError.message;
+            const isBlockedError =
+              errorMessage?.includes('bot was blocked') ||
+              errorMessage?.includes('user is deactivated') ||
+              errorMessage?.includes('chat not found');
+
             this.logger.warn(
-              `Failed to send notification to user ${user._id}: ${sendError.message}`,
+              `Failed to send notification to user ${user._id}: ${errorMessage}`,
             );
+
+            if (!isBlockedError) {
+              await this.retryService.trackFailedNotification(
+                user._id.toString(),
+                user.telegramId,
+                'daily_task_delivery',
+                errorMessage,
+                sendError.error_code,
+              );
+            }
           }
 
           successCount++;

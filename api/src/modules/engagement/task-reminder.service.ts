@@ -7,6 +7,7 @@ import { OpenAI } from 'openai';
 import { DailyTask, DailyTaskDocument } from '../tasks/schemas/daily-task.schema';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { TelegramService } from '../telegram/telegram.service';
+import { FailedNotificationRetryService } from './failed-notification-retry.service';
 import { createOpenAIClient } from '@common/utils/openai-client.factory';
 
 /**
@@ -35,6 +36,8 @@ export class TaskReminderService {
     private readonly userModel: Model<UserDocument>,
     @Inject(forwardRef(() => TelegramService))
     private readonly telegramService: TelegramService,
+    @Inject(forwardRef(() => FailedNotificationRetryService))
+    private readonly retryService: FailedNotificationRetryService,
     private readonly configService: ConfigService,
   ) {
     this.openai = createOpenAIClient(this.configService);
@@ -324,7 +327,19 @@ export class TaskReminderService {
               },
             });
           } else {
-            // Other Telegram errors (rate limit, network, etc.)
+            // Other Telegram errors (rate limit, network, etc.) - track for retry
+            await this.retryService.trackFailedNotification(
+              user._id.toString(),
+              user.telegramId,
+              reminderType === 'first' ? 'first_reminder' : reminderType === 'second' ? 'second_reminder' : 'third_reminder',
+              errorDescription,
+              errorCode,
+              {
+                taskId: task._id.toString(),
+                messageContent: learningTips,
+                incompleteTasks: incompleteTasks.length,
+              },
+            );
             throw sendError;
           }
         }

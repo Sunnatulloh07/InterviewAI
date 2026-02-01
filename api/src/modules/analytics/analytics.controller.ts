@@ -47,4 +47,47 @@ export class AnalyticsController {
   async getUsage(@CurrentUser() user: RequestUser, @Query('days') days?: number) {
     return await this.analyticsService.getUsageStats(user.id, days);
   }
+
+  @Get('overview')
+  @ApiOperation({ summary: 'Get analytics overview (admin)' })
+  @ApiResponse({ status: 200, description: 'Analytics overview retrieved' })
+  async getOverview() {
+    return await this.analyticsService.getAnalyticsOverview();
+  }
+
+  @Get('plans')
+  @ApiOperation({ summary: 'Get plan distribution (admin)' })
+  @ApiResponse({ status: 200, description: 'Plan distribution retrieved' })
+  async getPlanDistribution() {
+    return await this.analyticsService.getPlanDistribution();
+  }
+
+  @Get('features')
+  @ApiOperation({ summary: 'Get feature usage (admin)' })
+  @ApiResponse({ status: 200, description: 'Feature usage retrieved' })
+  async getFeatureUsage(@Query('days') days?: number) {
+    return await this.analyticsService.getFeatureUsage(days);
+  }
+
+  @Get('voice-quota')
+  @ApiOperation({ summary: 'Get voice quota usage (admin)' })
+  @ApiResponse({ status: 200, description: 'Voice quota usage retrieved' })
+  async getVoiceQuotaUsage(@Query('days') days?: number) {
+    return await this.analyticsService.getVoiceQuotaUsage(days);
+  }
+
+  @Get('daily-tasks')
+  @ApiOperation({ summary: 'Get daily task completion (admin)' })
+  @ApiResponse({ status: 200, description: 'Daily task completion retrieved' })
+  async getDailyTaskCompletion(@Query('days') days?: number) {
+    return await this.analyticsService.getDailyTaskCompletion(days);
+  }
+
+  @Get('revenue')
+  @ApiOperation({ summary: 'Get revenue metrics (admin)' })
+  @ApiResponse({ status: 200, description: 'Revenue metrics retrieved' })
+  async getRevenueMetrics(@Query('days') days?: number) {
+    return await this.analyticsService.getRevenueMetrics(days);
+  }
 }
+

@@ -16,6 +16,7 @@ import { AnalyticsService } from '../analytics/analytics.service';
 import { AiAnswerService } from '../ai/ai-answer.service';
 import { EngagementService } from '../engagement/engagement.service';
 import { SurveyHandlerService } from '../engagement/survey-handler.service';
+import { UnregisteredUserService } from '../engagement/unregistered-user.service';
 import { DailyTasksService } from '../tasks/daily-tasks.service';
 import { OpenAI } from 'openai';
 import { createOpenAIClient, getModelName } from '@common/utils/openai-client.factory';
@@ -44,6 +45,7 @@ export class TelegramCommandsService {
     private readonly surveyHandlerService: SurveyHandlerService,
     @Inject(forwardRef(() => DailyTasksService))
     private readonly dailyTasksService: DailyTasksService,
+    private readonly unregisteredUserService: UnregisteredUserService,
   ) {
     // Initialize OpenAI client with support for both OpenAI and OpenRouter
     this.openai = createOpenAIClient(this.configService);
@@ -89,6 +91,15 @@ export class TelegramCommandsService {
       // New user - start registration
       // Set initial language selection step
       if (!ctx.session) ctx.session = {} as any;
+
+      // Track unregistered user for engagement
+      await this.unregisteredUserService.trackUserStart(
+        telegramId,
+        ctx.from?.first_name,
+        ctx.from?.last_name,
+        ctx.from?.username,
+        'en', // Default language until selected
+      );
 
       // Show language selection
       const welcomeText = `👋 Welcome to InterviewAI Pro!\n\n🌍 Please select your language / Пожалуйста, выберите язык / Iltimos, tilni tanlang:`;

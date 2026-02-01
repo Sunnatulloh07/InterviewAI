@@ -4,6 +4,7 @@ import { Model } from 'mongoose';
 import { Cron } from '@nestjs/schedule';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { TelegramService } from '../telegram/telegram.service';
+import { FailedNotificationRetryService } from './failed-notification-retry.service';
 import {
   getRandomNonRegisteredMessage,
   getTrialReminderMessage,
@@ -35,6 +36,8 @@ export class UserActivationService {
     private readonly userModel: Model<UserDocument>,
     @Inject(forwardRef(() => TelegramService))
     private readonly telegramService: TelegramService,
+    @Inject(forwardRef(() => FailedNotificationRetryService))
+    private readonly retryService: FailedNotificationRetryService,
   ) {}
 
   /**
@@ -185,6 +188,20 @@ export class UserActivationService {
                   },
                 });
               } else {
+                // Track for retry
+                await this.retryService.trackFailedNotification(
+                  user._id.toString(),
+                  user.telegramId,
+                  'trial_reminder',
+                  errorDescription,
+                  errorCode,
+                  {
+                    daysRemaining,
+                    messageContent: message,
+                    usedInterviews,
+                    totalInterviews,
+                  },
+                );
                 throw sendError;
               }
             }

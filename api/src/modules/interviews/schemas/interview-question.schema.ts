@@ -75,6 +75,8 @@ export const InterviewQuestionSchema = SchemaFactory.createForClass(InterviewQue
 InterviewQuestionSchema.index({ category: 1, difficulty: 1 });
 InterviewQuestionSchema.index({ tags: 1 });
 InterviewQuestionSchema.index({ domain: 1 });
+InterviewQuestionSchema.index({ timesAsked: -1 }); // Sort by popularity
+InterviewQuestionSchema.index({ averageScore: -1 }); // Sort by score
 
 // Transform to JSON
 InterviewQuestionSchema.set('toJSON', {

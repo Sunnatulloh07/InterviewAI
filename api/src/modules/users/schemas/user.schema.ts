@@ -214,6 +214,14 @@ export class User {
   @Prop()
   lastTrialNotificationDate?: Date;
 
+  // Trial expired notification tracking
+  @Prop()
+  trialExpiredNotifiedAt?: Date;
+
+  // Limit exhausted notification tracking
+  @Prop()
+  limitExhaustedNotifiedAt?: Date;
+
   @Prop({ index: true })
   deletedAt?: Date;
 
@@ -318,6 +326,26 @@ UserSchema.index({
 
 // Index for lastTrialNotificationDate queries (prevent duplicate sends)
 UserSchema.index({ lastTrialNotificationDate: 1 });
+
+// CRITICAL: Inactivity tracking indexes (for inactivity-tracker.service)
+// Index for finding inactive users by last active date
+UserSchema.index({
+  'engagement.lastActiveAt': 1,
+  'engagement.isBotBlocked': 1,
+  'engagement.notificationsPaused': 1,
+});
+
+// Index for inactivity reminder level queries
+UserSchema.index({
+  'engagement.inactiveReminderLevel': 1,
+  'engagement.inactiveReminderSentAt': 1,
+});
+
+// Index for finding users who have never been active (createdAt = lastActiveAt)
+UserSchema.index({
+  'engagement.lastActiveAt': 1,
+  'createdAt': 1,
+});
 
 // Index for trial stats queries
 UserSchema.index({ 'subscription.status': 1, 'subscription.plan': 1, 'usage.mockInterviewsThisMonth': 1 });
@@ -477,6 +505,13 @@ UserSchema.pre('save', function (next) {
         user.engagement = {} as any;
       }
       user.engagement.scheduledSurveyAt = scheduledTime;
+    }
+    
+    // Initialize inactivity tracking fields for new users
+    if (user.isNew && user.engagement) {
+      user.engagement.inactiveReminderLevel = null;
+      user.engagement.inactiveReminderSentAt = null;
+      user.engagement.inactiveDaysCount = 0;
     }
   }
 

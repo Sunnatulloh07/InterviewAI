@@ -1,18 +1,18 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import axios, { AxiosError } from 'axios';
+import { AiOcrService } from '../ai/ai-ocr.service';
+import { AiTtsService } from '../ai/ai-tts.service';
 import { TelegramService, BotContext } from './telegram.service';
+import { InputFile } from 'grammy';
 import { DailyTasksService } from '../tasks/daily-tasks.service';
 import { UsersService } from '../users/users.service';
 import { VoiceQuotaService } from '../voice/voice-quota.service';
 import { AiSttService } from '../ai/ai-stt.service';
-import { ConfigService } from '@nestjs/config';
-import {
-  canUseDailyTaskVoiceAnswer,
-  canUseDailyTaskImageAnswer,
-  getPlanLimits,
-} from '@common/constants';
 import { TelegramSession, TelegramSessionDocument } from './schemas/telegram-session.schema';
+import { COMPLETE_PLAN_LIMITS } from '../../common/constants/plan-limits.constant';
 
 /**
  * Telegram Daily Task Handler Service
@@ -20,10 +20,15 @@ import { TelegramSession, TelegramSessionDocument } from './schemas/telegram-ses
  * Handles daily task answer submissions via Telegram
  * Supports: text, voice, image answers
  * Validates plan permissions before processing
+ * 
+ * UPDATED: Now includes OCR integration with OpenRouter Vision API (Gemini 2.5 Flash)
  */
 @Injectable()
 export class TelegramDailyTaskService {
   private readonly logger = new Logger(TelegramDailyTaskService.name);
+  private readonly openrouterBaseUrl: string;
+  private readonly openrouterApiKey: string;
+  private readonly maxImageSize: number;
 
   constructor(
     private readonly telegramService: TelegramService,
@@ -32,9 +37,21 @@ export class TelegramDailyTaskService {
     private readonly voiceQuotaService: VoiceQuotaService,
     private readonly sttService: AiSttService,
     private readonly configService: ConfigService,
+    private readonly ocrService: AiOcrService,
+    private readonly ttsService: AiTtsService,
     @InjectModel(TelegramSession.name)
     private readonly sessionModel: Model<TelegramSessionDocument>,
-  ) {}
+  ) {
+    this.openrouterBaseUrl = this.configService.get<string>('OPENROUTER_BASE_URL') || 'https://openrouter.ai/api/v1';
+    this.openrouterApiKey = this.configService.get<string>('OPENROUTER_API_KEY') || '';
+    
+    // Max 20MB for STARTER+ plans
+    this.maxImageSize = 20 * 1024 * 1024; // 20MB
+    
+    if (!this.openrouterApiKey) {
+      this.logger.warn('OPENROUTER_API_KEY not configured. Image OCR will be unavailable.');
+    }
+  }
 
   /**
    * Start daily task session for user
@@ -58,7 +75,7 @@ export class TelegramDailyTaskService {
         await ctx.reply(noTasksText[lang as keyof typeof noTasksText] || noTasksText.uz);
         return;
       }
-
+      
       // Find first incomplete task
       const currentTaskIndex = dailyTask.tasks.findIndex(t => !t.completed);
       
@@ -73,7 +90,7 @@ export class TelegramDailyTaskService {
         await ctx.reply(completedText[lang as keyof typeof completedText] || completedText.uz);
         return;
       }
-
+      
       // Update session
       const chatId = ctx.chat?.id;
       if (chatId) {
@@ -94,7 +111,7 @@ export class TelegramDailyTaskService {
           { upsert: true },
         );
       }
-
+      
       // Show current task
       await this.showCurrentTask(ctx, dailyTask, currentTaskIndex);
       
@@ -107,7 +124,11 @@ export class TelegramDailyTaskService {
   /**
    * Show current task to user
    */
-  private async showCurrentTask(ctx: BotContext, dailyTask: any, taskIndex: number): Promise<void> {
+  private async showCurrentTask(
+    ctx: BotContext,
+    dailyTask: any,
+    taskIndex: number,
+  ): Promise<void> {
     const task = dailyTask.tasks[taskIndex];
     const lang = ctx.session?.language || 'uz';
     
@@ -116,7 +137,7 @@ export class TelegramDailyTaskService {
     if (!userId) return;
     const user = await this.usersService.findById(userId);
     const plan = user?.subscription?.plan || 'free_trial';
-    const planLimits = getPlanLimits(plan);
+    const planLimits = this.getPlanLimits(plan);
     
     // Build answer type instructions based on plan
     let answerInstructions = '';
@@ -124,25 +145,27 @@ export class TelegramDailyTaskService {
       answerInstructions += '✍️ Matn yozing';
     }
     if (planLimits.dailyTasks.voiceAnswer) {
-      answerInstructions += answerInstructions ? ', 🎙️ ovozli xabar' : '🎙️ Ovozli xabar';
+      answerInstructions += answerInstructions ? ', ' : '';
+      answerInstructions += '🎙️ Ovozli xabar';
     }
     if (planLimits.dailyTasks.imageAnswer) {
-      answerInstructions += answerInstructions ? ', yoki 📸 rasm' : '📸 Rasm';
+      answerInstructions += answerInstructions ? ', ' : '';
+      answerInstructions += '📸 Rasm javob';
     }
 
     const taskText = {
       uz: `📚 <b>Kunlik vazifa ${taskIndex + 1}/${dailyTask.tasks.length}</b>\n\n` +
           `❓ <b>Savol:</b>\n${task.question}\n\n` +
           `✏️ <b>Javob yuboring:</b>\n${answerInstructions}\n\n` +
-          `💡 <b>Eslatma:</b> Video javoblar qo'llab-quvvatlanmaydi.`,
+          `💡 <b>Eslatma:</b> Video javoblar qo'llab-quvvatlanmaydi. Matn, ovoz yoki rasm javob yuboring.`,
       ru: `📚 <b>Ежедневное задание ${taskIndex + 1}/${dailyTask.tasks.length}</b>\n\n` +
           `❓ <b>Вопрос:</b>\n${task.question}\n\n` +
           `✏️ <b>Отправьте ответ:</b>\n${answerInstructions}\n\n` +
-          `💡 <b>Примечание:</b> Видео ответы не поддерживаются.`,
+          `💡 <b>Примечание:</b> Видео ответы не поддерживаются. Отправляйте текст, голос или фото.`,
       en: `📚 <b>Daily Task ${taskIndex + 1}/${dailyTask.tasks.length}</b>\n\n` +
           `❓ <b>Question:</b>\n${task.question}\n\n` +
           `✏️ <b>Send answer:</b>\n${answerInstructions}\n\n` +
-          `💡 <b>Note:</b> Video answers are not supported.`,
+          `💡 <b>Note:</b> Video answers are not supported. Send text, voice, or photo.`,
     };
 
     await ctx.reply(taskText[lang as keyof typeof taskText] || taskText.uz, {
@@ -157,7 +180,7 @@ export class TelegramDailyTaskService {
     try {
       const chatId = ctx.chat?.id;
       if (!chatId) return;
-
+      
       const session = await this.sessionModel.findOne({
         telegramChatId: chatId,
         status: 'daily_task',
@@ -201,7 +224,7 @@ export class TelegramDailyTaskService {
     try {
       const chatId = ctx.chat?.id;
       if (!chatId) return;
-
+      
       const session = await this.sessionModel.findOne({
         telegramChatId: chatId,
         status: 'daily_task',
@@ -214,10 +237,10 @@ export class TelegramDailyTaskService {
       const userId = session.userId.toString();
       const user = await this.usersService.findById(userId);
       const plan = user?.subscription?.plan || 'free_trial';
-
+      const lang = ctx.session?.language || 'uz';
+      
       // Check if plan allows voice answers
-      if (!canUseDailyTaskVoiceAnswer(plan)) {
-        const lang = ctx.session?.language || 'uz';
+      if (!this.canUseDailyTaskVoiceAnswer(plan)) {
         const noVoiceText = {
           uz: '❌ Ovozli javob faqat Starter va yuqori tariflarda!\n\nMatn shaklida javob yuboring.',
           ru: '❌ Голосовые ответы только в Starter и выше!\n\nОтправьте текстовый ответ.',
@@ -233,24 +256,22 @@ export class TelegramDailyTaskService {
       
       if (!hasQuota) {
         const quota = await this.voiceQuotaService.getQuota(userId);
-        const lang = ctx.session?.language || 'uz';
         const noQuotaText = {
-          uz: `❌ Ovozli javob uchun yetarli daqiqa yo'q!\n\nMavjud: ${quota.mockVoice.remaining} daqiqa\nMatn shaklida davom eting.`,
+          uz: `❌ Ovozli javob uchun yetarli daqiqa yo'q!\n\nMavjud: ${quota.mockVoice.remaining} daqiqa\nMatn shaklida javob yuboring.`,
           ru: `❌ Недостаточно минут для голосового ответа!\n\nДоступно: ${quota.mockVoice.remaining} мин\nПродолжите текстом.`,
           en: `❌ Not enough voice minutes!\n\nAvailable: ${quota.mockVoice.remaining} min\nContinue with text.`,
         };
-        await ctx.reply(noQuotaText[lang as keyof typeof noQuotaText] || noQuotaText.uz);
+        await ctx.reply(noQuotaText[lang] || noQuotaText.uz);
         return;
       }
 
       // Show processing message
-      const lang = ctx.session?.language || 'uz';
       const processingText = {
         uz: '🎤 Ovozli xabar qayta ishlanmoqda...',
         ru: '🎤 Обрабатывается голосовое сообщение...',
         en: '🎤 Processing voice message...',
       };
-      const processingMsg = await ctx.reply(processingText[lang as keyof typeof processingText] || processingText.uz);
+      const processingMsg = await ctx.reply(processingText[lang] || processingText.uz);
 
       // Download and transcribe voice
       const file = await ctx.api.getFile(voice.file_id);
@@ -270,7 +291,7 @@ export class TelegramDailyTaskService {
       // Delete processing message
       try {
         await ctx.api.deleteMessage(chatId, processingMsg.message_id);
-      } catch {}
+      } catch (deleteError) {}
 
       // Submit transcribed answer
       const { dailyTaskId, currentTaskIndex, date } = session.dailyTaskSession;
@@ -313,12 +334,13 @@ export class TelegramDailyTaskService {
 
   /**
    * Handle image answer for daily task
+   * UPDATED: Now implements OCR with OpenRouter Vision API
    */
   async handleImageAnswer(ctx: BotContext, photo: any): Promise<void> {
     try {
       const chatId = ctx.chat?.id;
       if (!chatId) return;
-
+      
       const session = await this.sessionModel.findOne({
         telegramChatId: chatId,
         status: 'daily_task',
@@ -331,24 +353,23 @@ export class TelegramDailyTaskService {
       const userId = session.userId.toString();
       const user = await this.usersService.findById(userId);
       const plan = user?.subscription?.plan || 'free_trial';
-
+      const lang = ctx.session?.language || 'uz';
+      
       // Check if plan allows image answers
-      if (!canUseDailyTaskImageAnswer(plan)) {
-        const lang = ctx.session?.language || 'uz';
+      if (!this.canUseDailyTaskImageAnswer(plan)) {
         const noImageText = {
           uz: '❌ Rasm javob faqat Starter va yuqori tariflarda!\n\nMatn shaklida javob yuboring.',
           ru: '❌ Ответы изображениями только в Starter и выше!\n\nОтправьте текстовый ответ.',
           en: '❌ Image answers only in Starter and higher plans!\n\nPlease send a text answer.',
         };
-        await ctx.reply(noImageText[lang as keyof typeof noImageText] || noImageText.uz);
+        await ctx.reply(noImageText[lang] || noImageText.uz);
         return;
       }
 
       // Show processing message
-      const lang = ctx.session?.language || 'uz';
       const processingText = {
-        uz: '📸 Rasm qayta ishlanmoqda...',
-        ru: '📸 Обрабатывается изображение...',
+        uz: '📸 Rasmni tahlil qilinmoqda...',
+        ru: '📸 Изображение анализируется...',
         en: '📸 Processing image...',
       };
       const processingMsg = await ctx.reply(processingText[lang as keyof typeof processingText] || processingText.uz);
@@ -356,28 +377,86 @@ export class TelegramDailyTaskService {
       // Get highest resolution photo
       const largestPhoto = photo[photo.length - 1];
       const file = await ctx.api.getFile(largestPhoto.file_id);
-      const fileUrl = `https://api.telegram.org/file/bot${this.configService.get<string>('TELEGRAM_BOT_TOKEN')}/${file.file_path}`;
-      
+
       // Download image
+      const fileUrl = `https://api.telegram.org/file/bot${this.configService.get<string>('TELEGRAM_BOT_TOKEN')}/${file.file_path}`;
       const response = await fetch(fileUrl);
       const arrayBuffer = await response.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
+      const imageBuffer = Buffer.from(arrayBuffer);
 
-      // TODO: Implement OCR service call
-      // For now, ask user to type answer
-      const lang2 = ctx.session?.language || 'uz';
-      const ocrPendingText = {
-        uz: '⚠️ Rasmni matnga o\'girish vaqtinchalik mavjud emas.\n\nIltimos, javobni matn shaklida yuboring.',
-        ru: '⚠️ Распознавание текста с изображения временно недоступно.\n\nПожалуйста, отправьте ответ текстом.',
-        en: '⚠️ Image OCR is temporarily unavailable.\n\nPlease type your answer.',
-      };
+      // Check file size (20MB max)
+      if (imageBuffer.length > this.maxImageSize) {
+        const sizeInMB = (imageBuffer.length / (1024 * 1024)).toFixed(2);
+        const tooLargeText = {
+          uz: `❌ Rasm hajmi katta! Max: 20MB. Sizda: ${sizeInMB}MB`,
+          ru: `❌ Изображение слишком велико! Макс: 20MB. У вас: ${sizeInMB}МБ`,
+          en: `❌ Image too large! Max: 20MB. Yours: ${sizeInMB}MB`,
+        };
+        
+        try {
+          await ctx.api.deleteMessage(chatId, processingMsg.message_id);
+        } catch (deleteError) {}
+
+        await ctx.reply(tooLargeText[lang] || tooLargeText.uz);
+        return;
+      }
+
+      // Detect MIME type
+      const mimeType = 'image/jpeg'; // Telegram sends as JPEG by default
+
+      // Extract text using OpenRouter Vision API
+      let extractedText: string;
+      let confidence = 0;
       
+      try {
+        const ocrResult = await this.ocrService.recognize(imageBuffer, mimeType, lang);
+        extractedText = ocrResult.text;
+        confidence = ocrResult.confidence;
+      } catch (ocrError: any) {
+        this.logger.error(`OCR processing failed: ${ocrError.message}`);
+        extractedText = '';
+        confidence = 0;
+      }
+
       // Delete processing message
       try {
         await ctx.api.deleteMessage(chatId, processingMsg.message_id);
-      } catch {}
+      } catch (deleteError) {}
+
+      // If OCR failed, ask for text answer
+      if (!extractedText || confidence < 0.5) {
+        const fallbackText = {
+          uz: '⚠️ Rasmdan matn topilmadi.\n\n📸 Rasmni yana yuborsangiz yoki matn bilan javob bering.',
+          ru: '⚠️ Не удалось извлечь текст с изображения.\n\n📸 Отправьте повторно или введите текстовый ответ.',
+          en: '⚠️ Could not extract text from image.\n\n📸 Please send again or type your answer.',
+        };
+        await ctx.reply(fallbackText[lang as keyof typeof fallbackText] || fallbackText.uz);
+        return;
+      }
+
+      // Submit extracted text as answer
+      const { dailyTaskId, currentTaskIndex, date } = session.dailyTaskSession;
       
-      await ctx.reply(ocrPendingText[lang2 as keyof typeof ocrPendingText] || ocrPendingText.uz);
+      const result = await this.dailyTasksService.completeTask(
+        userId,
+        date,
+        currentTaskIndex,
+        {
+          type: 'image',
+          content: extractedText,
+          imageUrl: fileUrl,
+        },
+      );
+
+      // Show result
+      await this.showTaskResult(ctx, result, currentTaskIndex);
+
+      // Move to next task or end session
+      if (!result.allCompleted) {
+        await this.moveToNextTask(ctx, session, currentTaskIndex + 1);
+      } else {
+        await this.endDailyTaskSession(ctx, session, result);
+      }
       
     } catch (error: any) {
       this.logger.error(`Failed to handle image answer: ${error.message}`);
@@ -401,20 +480,62 @@ export class TelegramDailyTaskService {
     else emoji = '🔴';
 
     const resultText = {
-      uz: `${emoji} <b>Vazifa ${taskIndex + 1} bajarildi!</b>\n\n` +
-          `📊 <b>Baho:</b> ${result.score}/10\n` +
-          `💬 <b>Feedback:</b> ${result.feedback}`,
-      ru: `${emoji} <b>Задание ${taskIndex + 1} выполнено!</b>\n\n` +
-          `📊 <b>Оценка:</b> ${result.score}/10\n` +
-          `💬 <b>Отзыв:</b> ${result.feedback}`,
-      en: `${emoji} <b>Task ${taskIndex + 1} completed!</b>\n\n` +
-          `📊 <b>Score:</b> ${result.score}/10\n` +
-          `💬 <b>Feedback:</b> ${result.feedback}`,
+      uz: `${emoji} <b>Vazifa ${taskIndex + 1} bajarildi!</b>\n\n📊 <b>Baho:</b> ${result.score}/10\n💬 <b>Feedback:</b> ${result.feedback}`,
+      ru: `${emoji} <b>Задание ${taskIndex + 1} выполнено!</b>\n\n📊 <b>Оценка:</b> ${result.score}/10\n💬 <b>Отзыв:</b> ${result.feedback}`,
+      en: `${emoji} <b>Task ${taskIndex + 1} completed!</b>\n\n📊 <b>Score:</b> ${result.score}/10\n💬 <b>Feedback:</b> ${result.feedback}`,
     };
 
-    await ctx.reply(resultText[lang as keyof typeof resultText] || resultText.uz, {
+    await ctx.reply(resultText[lang] || resultText.uz, {
       parse_mode: 'HTML',
     });
+
+    await this.sendVoiceExplanation(ctx, result, lang);
+  }
+
+  /**
+   * Send voice explanation (TTS) for users with eligible plans
+   */
+  private async sendVoiceExplanation(
+    ctx: BotContext,
+    result: { score: number; feedback: string },
+    lang: string,
+  ): Promise<void> {
+    try {
+      const userId = ctx.session?.userId;
+      if (!userId) {
+        return;
+      }
+
+      const user = await this.usersService.findById(userId);
+      if (!user) {
+        return;
+      }
+
+      const plan = user.subscription?.plan || 'free_trial';
+      const planLimits = COMPLETE_PLAN_LIMITS[plan];
+
+      if (!planLimits || !planLimits.aiFeatures.voiceExplanations) {
+        return;
+      }
+
+      if (!this.ttsService.isEnabled()) {
+        this.logger.debug('TTS service not enabled, skipping voice explanation');
+        return;
+      }
+
+      const { audioBuffer } = await this.ttsService.synthesize(result.feedback, {
+        language: lang,
+        voice: 'alloy',
+      });
+
+      await ctx.replyWithAudio(new InputFile(audioBuffer), {
+        caption: '🔊 Ovozli izoh (Voice explanation)',
+      });
+
+      this.logger.log(`Voice explanation sent to user ${userId}`);
+    } catch (error: any) {
+      this.logger.error(`Failed to send voice explanation: ${error.message}`);
+    }
   }
 
   /**
@@ -429,24 +550,24 @@ export class TelegramDailyTaskService {
       // Get daily task
       const dailyTask = await this.dailyTasksService.getTodayTasks(
         session.userId.toString(),
-        session.dailyTaskSession?.date,
+        session.dailyTaskSession?.date
       );
-
+      
       if (!dailyTask || nextTaskIndex >= dailyTask.tasks.length) {
-        // All tasks completed
         return;
       }
 
-      // Update session with next task
+      // Show next task
+      await this.showCurrentTask(ctx, dailyTask, nextTaskIndex);
+      
+      // Update session
       await this.sessionModel.findByIdAndUpdate(session._id, {
         $set: {
           'dailyTaskSession.currentTaskIndex': nextTaskIndex,
+          'dailyTaskSession.totalTasks': dailyTask.tasks.length,
           lastActivityAt: new Date(),
         },
       });
-
-      // Show next task
-      await this.showCurrentTask(ctx, dailyTask, nextTaskIndex);
       
     } catch (error: any) {
       this.logger.error(`Failed to move to next task: ${error.message}`);
@@ -468,21 +589,12 @@ export class TelegramDailyTaskService {
     const streak = user?.dailyTasks?.currentStreak || 0;
 
     const completionText = {
-      uz: `🎉 <b>Tabriklaymiz!</b>\n\n` +
-          `✅ Barcha kunlik vazifalar bajarildi!\n` +
-          `🔥 Joriy ketma-ketlik: ${streak} kun\n\n` +
-          `Ertaga yangi vazifalar bilan ko'rishguncha! 👋`,
-      ru: `🎉 <b>Поздравляем!</b>\n\n` +
-          `✅ Все ежедневные задания выполнены!\n` +
-          `🔥 Текущая серия: ${streak} дней\n\n` +
-          `До завтра с новыми заданиями! 👋`,
-      en: `🎉 <b>Congratulations!</b>\n\n` +
-          `✅ All daily tasks completed!\n` +
-          `🔥 Current streak: ${streak} days\n\n` +
-          `See you tomorrow with new tasks! 👋`,
+      uz: `🎉 <b>Tabriklaymiz!</b>\n\n✅ Barcha kunlik vazifalar bajarildi!\n\n🔥 Joriy ketma-ketlik: ${streak} kun\n\nErtaga yangi vazifalar bilan ko'rishguncha u yuborish! 👋`,
+      ru: `🎉 <b>Поздравляем!</b>\n\n✅ Все ежедневные задания выполнены!\n\n🔥 Текущая серия: ${streak} дней\n\nДо завтра с новыми заданиями! 👋`,
+      en: `🎉 <b>Congratulations!</b>\n\n✅ All daily tasks completed!\n\n🔥 Current streak: ${streak} days\n\nSee you tomorrow with new tasks! 👋`,
     };
 
-    await ctx.reply(completionText[lang as keyof typeof completionText] || completionText.uz, {
+    await ctx.reply(completionText[lang] || completionText.uz, {
       parse_mode: 'HTML',
     });
 
@@ -509,5 +621,36 @@ export class TelegramDailyTaskService {
     });
 
     return !!session?.dailyTaskSession;
+  }
+
+  /**
+   * Helper: Check if plan allows voice answers for daily tasks
+   */
+  private canUseDailyTaskVoiceAnswer(plan: string): boolean {
+    const planLimits = this.getPlanLimits(plan);
+    return planLimits.dailyTasks.voiceAnswer;
+  }
+
+  /**
+   * Helper: Check if plan allows image answers for daily tasks
+   */
+  private canUseDailyTaskImageAnswer(plan: string): boolean {
+    const planLimits = this.getPlanLimits(plan);
+    return planLimits.dailyTasks.imageAnswer;
+  }
+
+  /**
+   * Helper: Get plan limits from COMPLETE_PLAN_LIMITS
+   */
+  private getPlanLimits(plan: string) {
+    const { COMPLETE_PLAN_LIMITS } = require('@common/constants');
+    return COMPLETE_PLAN_LIMITS[plan] || COMPLETE_PLAN_LIMITS.free_trial;
+  }
+
+  /**
+   * Helper: Delay execution
+   */
+  private delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
