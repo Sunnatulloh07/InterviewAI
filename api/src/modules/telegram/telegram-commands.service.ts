@@ -866,32 +866,42 @@ Press the button below 👇`,
       }
       
       if (type === 'mock') {
-        // Start mock interview flow - show not implemented message
-        const notImplementedText: Record<string, string> = {
-          uz: `🚧 <b>Mock intervyu hozircha ishlamaydi</b>
+        // Start mock interview wizard - ask for domain first
+        ctx.session.interviewMode = 'mock';
+        ctx.session.interviewStep = 'domain';
+        
+        const domainText: Record<string, string> = {
+          uz: `🎯 <b>Mock Intervyu</b>
 
-Bu funksiya hali ishlab chiqilmoqda. Tez orada ishga tushadi!
-
-Hozircha Live Interview'dan foydalaning yoki Daily Tasks bilan mashq qiling.`,
+Qaysi sohada intervyu olishni xohlaysiz?`,
           
-          ru: `🚧 <b>Mock интервью временно недоступно</b>
+          ru: `🎯 <b>Mock Интервью</b>
 
-Эта функция находится в разработке. Скоро будет доступна!
-
-Пока используйте Live Interview или тренируйтесь с Daily Tasks.`,
+В какой области хотите пройти интервью?`,
           
-          en: `🚧 <b>Mock Interview Coming Soon</b>
+          en: `🎯 <b>Mock Interview</b>
 
-This feature is currently under development. Will be available soon!
-
-For now, use Live Interview or practice with Daily Tasks.`,
+Which domain would you like to practice?`,
         };
         
-        await ctx.reply(notImplementedText[lang] || notImplementedText.en, {
+        const domainKeyboard = new InlineKeyboard()
+          .text('💻 Frontend', 'mock_domain_frontend')
+          .text('⚙️ Backend', 'mock_domain_backend')
+          .row()
+          .text('🔄 Full Stack', 'mock_domain_fullstack')
+          .text('📱 Mobile', 'mock_domain_mobile')
+          .row()
+          .text('🤖 AI/ML', 'mock_domain_ai')
+          .text('☁️ DevOps', 'mock_domain_devops')
+          .row()
+          .text('❌ Bekor qilish', 'interview_cancel');
+        
+        await ctx.reply(domainText[lang] || domainText.en, {
           parse_mode: 'HTML',
+          reply_markup: domainKeyboard,
         });
         
-        this.logger.log(`Mock interview requested but not implemented yet`);
+        this.logger.log(`Mock interview wizard started - domain selection`);
         return;
       } 
       
@@ -937,6 +947,435 @@ For now, use Live Interview or practice with Daily Tasks.`,
       } catch (error: any) {
         this.logger.error(`Failed to update position: ${error.message}`);
         await ctx.reply('❌ Failed to update position');
+      }
+      
+      return;
+    }
+
+    // ============================================================
+    // MOCK INTERVIEW WIZARD - DOMAIN SELECTION
+    // ============================================================
+    if (callbackData.startsWith('mock_domain_')) {
+      const domain = callbackData.replace('mock_domain_', '');
+      ctx.session.interviewDomain = domain;
+      ctx.session.interviewStep = 'technology';
+      
+      const techText: Record<string, string> = {
+        uz: `✅ Soha: <b>${domain}</b>
+
+Qaysi texnologiya/til bo'yicha intervyu olishni xohlaysiz?`,
+        
+        ru: `✅ Область: <b>${domain}</b>
+
+Какую технологию/язык хотите практиковать?`,
+        
+        en: `✅ Domain: <b>${domain}</b>
+
+Which technology/language would you like to practice?`,
+      };
+      
+      // Technology keyboard based on domain
+      const techKeyboard = new InlineKeyboard();
+      
+      if (domain === 'frontend') {
+        techKeyboard
+          .text('⚛️ React', 'mock_tech_react')
+          .text('🅰️ Angular', 'mock_tech_angular')
+          .row()
+          .text('💚 Vue.js', 'mock_tech_vue')
+          .text('🔷 TypeScript', 'mock_tech_typescript')
+          .row();
+      } else if (domain === 'backend') {
+        techKeyboard
+          .text('🟢 Node.js', 'mock_tech_nodejs')
+          .text('🐍 Python', 'mock_tech_python')
+          .row()
+          .text('☕ Java', 'mock_tech_java')
+          .text('🔶 Go', 'mock_tech_go')
+          .row();
+      } else if (domain === 'mobile') {
+        techKeyboard
+          .text('📱 React Native', 'mock_tech_react_native')
+          .text('🍎 Swift', 'mock_tech_swift')
+          .row()
+          .text('🤖 Kotlin', 'mock_tech_kotlin')
+          .text('🎯 Flutter', 'mock_tech_flutter')
+          .row();
+      } else if (domain === 'ai') {
+        techKeyboard
+          .text('🐍 Python/ML', 'mock_tech_python_ml')
+          .text('🧠 TensorFlow', 'mock_tech_tensorflow')
+          .row()
+          .text('🔥 PyTorch', 'mock_tech_pytorch')
+          .text('📊 Data Science', 'mock_tech_data_science')
+          .row();
+      } else if (domain === 'devops') {
+        techKeyboard
+          .text('🐳 Docker', 'mock_tech_docker')
+          .text('☸️ Kubernetes', 'mock_tech_kubernetes')
+          .row()
+          .text('☁️ AWS', 'mock_tech_aws')
+          .text('🔵 Azure', 'mock_tech_azure')
+          .row();
+      } else {
+        // Full Stack or other domains
+        techKeyboard
+          .text('⚛️ React', 'mock_tech_react')
+          .text('🟢 Node.js', 'mock_tech_nodejs')
+          .row()
+          .text('🐍 Python', 'mock_tech_python')
+          .text('☕ Java', 'mock_tech_java')
+          .row();
+      }
+      
+      techKeyboard.text('❌ Bekor qilish', 'interview_cancel');
+      
+      await ctx.reply(techText[lang] || techText.en, {
+        parse_mode: 'HTML',
+        reply_markup: techKeyboard,
+      });
+      
+      return;
+    }
+
+    // ============================================================
+    // MOCK INTERVIEW WIZARD - TECHNOLOGY SELECTION
+    // ============================================================
+    if (callbackData.startsWith('mock_tech_')) {
+      const technology = callbackData.replace('mock_tech_', '');
+      ctx.session.interviewTechnology = technology;
+      ctx.session.interviewStep = 'duration';
+      
+      const durationText: Record<string, string> = {
+        uz: `✅ Texnologiya: <b>${technology}</b>
+
+Intervyu davomiyligini tanlang:`,
+        
+        ru: `✅ Технология: <b>${technology}</b>
+
+Выберите продолжительность интервью:`,
+        
+        en: `✅ Technology: <b>${technology}</b>
+
+Choose interview duration:`,
+      };
+      
+      const durationKeyboard = new InlineKeyboard()
+        .text('⚡ Tez (5-7 savol)', 'mock_duration_quick')
+        .row()
+        .text('📊 Standart (10-12 savol)', 'mock_duration_standard')
+        .row()
+        .text('🎯 Chuqur (15-20 savol)', 'mock_duration_deep_dive')
+        .row()
+        .text('❌ Bekor qilish', 'interview_cancel');
+      
+      await ctx.reply(durationText[lang] || durationText.en, {
+        parse_mode: 'HTML',
+        reply_markup: durationKeyboard,
+      });
+      
+      return;
+    }
+
+    // ============================================================
+    // MOCK INTERVIEW WIZARD - DURATION & START INTERVIEW
+    // ============================================================
+    if (callbackData.startsWith('mock_duration_')) {
+      const duration = callbackData.replace('mock_duration_', '') as 'quick' | 'standard' | 'deep_dive';
+      ctx.session.interviewDuration = duration;
+      
+      // Get user to check plan limits
+      const telegramId = ctx.from?.id as number;
+      const user = await this.usersService.findByTelegramId(telegramId);
+      
+      if (!user) {
+        await ctx.reply('Please register first using /start');
+        return;
+      }
+      
+      // Check mock interview limit
+      const canProceed = await this.subscriptionService.checkMockInterviewLimit(ctx, user, lang);
+      if (!canProceed) {
+        return; // Limit reached, error message already sent
+      }
+      
+      // Get user position (for difficulty level)
+      const position = user.profile?.position || 'junior';
+      
+      // Prepare StartInterviewDto
+      const startDto = {
+        type: 'technical',
+        difficulty: position === 'lead' ? 'senior' : position, // Map lead to senior
+        domain: ctx.session.interviewDomain || 'general',
+        technology: [ctx.session.interviewTechnology || 'general'],
+        interviewDuration: duration,
+        mode: 'text', // Default to text mode
+        language: lang,
+      };
+      
+      try {
+        // Start the interview
+        const userId = (user as any).id || (user as any)._id?.toString();
+        const session = await this.interviewsService.startInterview(userId, startDto as any);
+        
+        // Save session ID to context
+        ctx.session.currentInterviewSessionId = session.id;
+        ctx.session.currentQuestionIndex = 0;
+        ctx.session.interviewStep = 'answering';
+        
+        // Get first question from session
+        // Session has questions array populated
+        const sessionWithQuestions = await this.interviewsService.getSession(userId, session.id);
+        const firstQuestion = (sessionWithQuestions.questions as any)[0];
+        
+        const startText: Record<string, string> = {
+          uz: `🎯 <b>Mock Intervyu Boshlandi!</b>
+
+📋 Intervyu ma'lumotlari:
+• Soha: ${ctx.session.interviewDomain}
+• Texnologiya: ${ctx.session.interviewTechnology}
+• Davomiyligi: ${duration === 'quick' ? 'Tez' : duration === 'standard' ? 'Standart' : 'Chuqur'}
+• Savollar soni: ${session.numQuestions}
+
+━━━━━━━━━━━━━━━━━━
+
+<b>Savol ${session.currentQuestionIndex + 1}/${session.numQuestions}:</b>
+
+${firstQuestion.text}
+
+${firstQuestion.codeSnippet ? `\n\`\`\`\n${firstQuestion.codeSnippet}\n\`\`\`\n` : ''}
+
+💡 <i>Javobingizni yozing yoki ovozli xabar yuboring</i>`,
+          
+          ru: `🎯 <b>Mock Интервью Начато!</b>
+
+📋 Информация об интервью:
+• Область: ${ctx.session.interviewDomain}
+• Технология: ${ctx.session.interviewTechnology}
+• Продолжительность: ${duration === 'quick' ? 'Быстрое' : duration === 'standard' ? 'Стандартное' : 'Глубокое'}
+• Количество вопросов: ${session.numQuestions}
+
+━━━━━━━━━━━━━━━━━━
+
+<b>Вопрос ${session.currentQuestionIndex + 1}/${session.numQuestions}:</b>
+
+${firstQuestion.text}
+
+${firstQuestion.codeSnippet ? `\n\`\`\`\n${firstQuestion.codeSnippet}\n\`\`\`\n` : ''}
+
+💡 <i>Напишите ответ или отправьте голосовое сообщение</i>`,
+          
+          en: `🎯 <b>Mock Interview Started!</b>
+
+📋 Interview Details:
+• Domain: ${ctx.session.interviewDomain}
+• Technology: ${ctx.session.interviewTechnology}
+• Duration: ${duration === 'quick' ? 'Quick' : duration === 'standard' ? 'Standard' : 'Deep Dive'}
+• Questions: ${session.numQuestions}
+
+━━━━━━━━━━━━━━━━━━
+
+<b>Question ${session.currentQuestionIndex + 1}/${session.numQuestions}:</b>
+
+${firstQuestion.text}
+
+${firstQuestion.codeSnippet ? `\n\`\`\`\n${firstQuestion.codeSnippet}\n\`\`\`\n` : ''}
+
+💡 <i>Type your answer or send a voice message</i>`,
+        };
+        
+        const answerKeyboard = new InlineKeyboard()
+          .text('⏭️ Skip', `skip_question_${session.id}`)
+          .text('🛑 End Interview', `end_interview_${session.id}`);
+        
+        await ctx.reply(startText[lang] || startText.en, {
+          parse_mode: 'HTML',
+          reply_markup: answerKeyboard,
+        });
+        
+        this.logger.log(`Mock interview started: session ${session.id} for user ${userId}`);
+      } catch (error: any) {
+        this.logger.error(`Failed to start mock interview: ${error.message}`);
+        
+        const errorText: Record<string, string> = {
+          uz: `❌ Intervyu boshlanmadi. Iltimos, qaytadan urinib ko'ring.
+
+${error.message || 'Noma\'lum xatolik'}`,
+          ru: `❌ Не удалось начать интервью. Пожалуйста, попробуйте снова.
+
+${error.message || 'Неизвестная ошибка'}`,
+          en: `❌ Failed to start interview. Please try again.
+
+${error.message || 'Unknown error'}`,
+        };
+        
+        await ctx.reply(errorText[lang] || errorText.en, {
+          parse_mode: 'HTML',
+        });
+      }
+      
+      return;
+    }
+
+    // ============================================================
+    // SKIP QUESTION HANDLER
+    // ============================================================
+    if (callbackData.startsWith('skip_question_')) {
+      const sessionId = callbackData.replace('skip_question_', '');
+      const telegramId = ctx.from?.id as number;
+      const user = await this.usersService.findByTelegramId(telegramId);
+      
+      if (!user) {
+        await ctx.reply('Please register first using /start');
+        return;
+      }
+      
+      const userId = (user as any).id || (user as any)._id?.toString();
+      
+      try {
+        // Get current session and question
+        const currentSession = await this.interviewsService.getSession(userId, sessionId);
+        const currentQuestion = (currentSession.questions as any)[currentSession.currentQuestionIndex];
+        
+        // Skip current question (submit empty answer)
+        await this.interviewsService.submitAnswer(userId, sessionId, {
+          questionId: currentQuestion._id?.toString() || currentQuestion.id?.toString(),
+          answerText: '[SKIPPED]',
+          answerType: 'text',
+          duration: 0,
+        });
+        
+        // Get next question
+        const session = await this.interviewsService.getSession(userId, sessionId);
+        
+        if (session.status === 'completed') {
+          const finishText: Record<string, string> = {
+            uz: `🎉 <b>Mock Intervyu Yakunlandi!</b>
+
+Tabriklaymiz! Siz barcha savollarga javob berdingiz.
+
+📊 Natijalaringizni ko'rish uchun /profile buyrug'idan foydalaning.`,
+            
+            ru: `🎉 <b>Mock Интервью Завершено!</b>
+
+Поздравляем! Вы ответили на все вопросы.
+
+📊 Используйте /profile чтобы посмотреть результаты.`,
+            
+            en: `🎉 <b>Mock Interview Completed!</b>
+
+Congratulations! You've completed all questions.
+
+📊 Use /profile to view your results.`,
+          };
+          
+          await ctx.reply(finishText[lang] || finishText.en, { parse_mode: 'HTML' });
+          
+          // Clear session
+          ctx.session.interviewStep = undefined;
+          ctx.session.currentInterviewSessionId = undefined;
+          ctx.session.currentQuestionIndex = undefined;
+          
+          await this.showMainMenu(ctx, user);
+          return;
+        }
+        
+        const sessionAfterSkip = await this.interviewsService.getSession(userId, sessionId);
+        const nextQuestion = (sessionAfterSkip.questions as any)[sessionAfterSkip.currentQuestionIndex];
+        ctx.session.currentQuestionIndex = sessionAfterSkip.currentQuestionIndex;
+        
+        const skipText: Record<string, string> = {
+          uz: `⏭️ <b>Savol o'tkazib yuborildi</b>
+
+<b>Savol ${sessionAfterSkip.currentQuestionIndex + 1}/${sessionAfterSkip.numQuestions}:</b>
+
+${nextQuestion.text}
+
+${nextQuestion.codeSnippet ? `\n\`\`\`\n${nextQuestion.codeSnippet}\n\`\`\`\n` : ''}`,
+          
+          ru: `⏭️ <b>Вопрос пропущен</b>
+
+<b>Вопрос ${sessionAfterSkip.currentQuestionIndex + 1}/${sessionAfterSkip.numQuestions}:</b>
+
+${nextQuestion.text}
+
+${nextQuestion.codeSnippet ? `\n\`\`\`\n${nextQuestion.codeSnippet}\n\`\`\`\n` : ''}`,
+          
+          en: `⏭️ <b>Question Skipped</b>
+
+<b>Question ${sessionAfterSkip.currentQuestionIndex + 1}/${sessionAfterSkip.numQuestions}:</b>
+
+${nextQuestion.text}
+
+${nextQuestion.codeSnippet ? `\n\`\`\`\n${nextQuestion.codeSnippet}\n\`\`\`\n` : ''}`,
+        };
+        
+        const keyboard = new InlineKeyboard()
+          .text('⏭️ Skip', `skip_question_${sessionId}`)
+          .text('🛑 End Interview', `end_interview_${sessionId}`);
+        
+        await ctx.reply(skipText[lang] || skipText.en, {
+          parse_mode: 'HTML',
+          reply_markup: keyboard,
+        });
+        
+      } catch (error: any) {
+        this.logger.error(`Failed to skip question: ${error.message}`);
+        await ctx.reply('❌ Error skipping question');
+      }
+      
+      return;
+    }
+
+    // ============================================================
+    // END INTERVIEW HANDLER
+    // ============================================================
+    if (callbackData.startsWith('end_interview_')) {
+      const sessionId = callbackData.replace('end_interview_', '');
+      const telegramId = ctx.from?.id as number;
+      const user = await this.usersService.findByTelegramId(telegramId);
+      
+      if (!user) {
+        await ctx.reply('Please register first using /start');
+        return;
+      }
+      
+      const userId = (user as any).id || (user as any)._id?.toString();
+      
+      try {
+        // End the interview session
+        await this.interviewsService.completeSession(userId, sessionId);
+        
+        const endText: Record<string, string> = {
+          uz: `🛑 <b>Intervyu To'xtatildi</b>
+
+Intervyu yakunlandi. Natijalaringizni ko'rish uchun /profile buyrug'idan foydalaning.`,
+          
+          ru: `🛑 <b>Интервью Остановлено</b>
+
+Интервью завершено. Используйте /profile чтобы посмотреть результаты.`,
+          
+          en: `🛑 <b>Interview Ended</b>
+
+Interview session has been ended. Use /profile to view your results.`,
+        };
+        
+        await ctx.reply(endText[lang] || endText.en, { parse_mode: 'HTML' });
+        
+        // Clear session state
+        ctx.session.interviewStep = undefined;
+        ctx.session.currentInterviewSessionId = undefined;
+        ctx.session.currentQuestionIndex = undefined;
+        ctx.session.interviewDomain = undefined;
+        ctx.session.interviewTechnology = undefined;
+        ctx.session.interviewDuration = undefined;
+        
+        // Show main menu
+        await this.showMainMenu(ctx, user);
+        
+      } catch (error: any) {
+        this.logger.error(`Failed to end interview: ${error.message}`);
+        await ctx.reply('❌ Error ending interview');
       }
       
       return;
@@ -1020,12 +1459,162 @@ For now, use Live Interview or practice with Daily Tasks.`,
    */
   async handleInterviewText(ctx: BotContext): Promise<void> {
     const lang = ctx.session?.language || 'en';
+    const text = ctx.message?.text;
+    
+    if (!text) {
+      return;
+    }
+    
+    // Check if user is currently answering a mock interview question
+    if (ctx.session?.interviewStep === 'answering' && ctx.session?.currentInterviewSessionId) {
+      const telegramId = ctx.from?.id as number;
+      const user = await this.usersService.findByTelegramId(telegramId);
+      
+      if (!user) {
+        await ctx.reply('Please register first using /start');
+        return;
+      }
+      
+      const userId = (user as any).id || (user as any)._id?.toString();
+      const sessionId = ctx.session.currentInterviewSessionId;
+      
+      try {
+        // Show processing message
+        const processingText: Record<string, string> = {
+          uz: '⏳ Javobingiz tahlil qilinmoqda...',
+          ru: '⏳ Анализируем ваш ответ...',
+          en: '⏳ Analyzing your answer...',
+        };
+        await ctx.reply(processingText[lang] || processingText.en);
+        
+        // Get current session and question
+        const currentSession = await this.interviewsService.getSession(userId, sessionId);
+        const currentQuestion = (currentSession.questions as any)[currentSession.currentQuestionIndex];
+        
+        // Submit the answer
+        await this.interviewsService.submitAnswer(userId, sessionId, {
+          questionId: currentQuestion._id?.toString() || currentQuestion.id?.toString(),
+          answerText: text,
+          answerType: 'text',
+          duration: 60, // Default 60 seconds for text answers
+        });
+        
+        // Get next question or finish interview
+        const session = await this.interviewsService.getSession(userId, sessionId);
+        
+        if (session.status === 'completed') {
+          // Interview finished
+          const finishText: Record<string, string> = {
+            uz: `🎉 <b>Mock Intervyu Yakunlandi!</b>
+
+Tabriklaymiz! Siz barcha savollarga javob berdingiz.
+
+📊 Natijalaringizni ko'rish uchun /profile buyrug'idan foydalaning.`,
+            
+            ru: `🎉 <b>Mock Интервью Завершено!</b>
+
+Поздравляем! Вы ответили на все вопросы.
+
+📊 Используйте /profile чтобы посмотреть результаты.`,
+            
+            en: `🎉 <b>Mock Interview Completed!</b>
+
+Congratulations! You've answered all questions.
+
+📊 Use /profile to view your results.`,
+          };
+          
+          await ctx.reply(finishText[lang] || finishText.en, {
+            parse_mode: 'HTML',
+          });
+          
+          // Clear session state
+          ctx.session.interviewStep = undefined;
+          ctx.session.currentInterviewSessionId = undefined;
+          ctx.session.currentQuestionIndex = undefined;
+          ctx.session.interviewDomain = undefined;
+          ctx.session.interviewTechnology = undefined;
+          ctx.session.interviewDuration = undefined;
+          
+          // Show main menu
+          await this.showMainMenu(ctx, user);
+          return;
+        }
+        
+        // Get next question
+        const updatedSession = await this.interviewsService.getSession(userId, sessionId);
+        const nextQuestion = (updatedSession.questions as any)[updatedSession.currentQuestionIndex];
+        ctx.session.currentQuestionIndex = updatedSession.currentQuestionIndex;
+        
+        const nextText: Record<string, string> = {
+          uz: `✅ <b>Javob qabul qilindi!</b>
+
+━━━━━━━━━━━━━━━━━━
+
+<b>Savol ${updatedSession.currentQuestionIndex + 1}/${updatedSession.numQuestions}:</b>
+
+${nextQuestion.text}
+
+${nextQuestion.codeSnippet ? `\n\`\`\`\n${nextQuestion.codeSnippet}\n\`\`\`\n` : ''}
+
+💡 <i>Javobingizni yozing yoki ovozli xabar yuboring</i>`,
+          
+          ru: `✅ <b>Ответ принят!</b>
+
+━━━━━━━━━━━━━━━━━━
+
+<b>Вопрос ${updatedSession.currentQuestionIndex + 1}/${updatedSession.numQuestions}:</b>
+
+${nextQuestion.text}
+
+${nextQuestion.codeSnippet ? `\n\`\`\`\n${nextQuestion.codeSnippet}\n\`\`\`\n` : ''}
+
+💡 <i>Напишите ответ или отправьте голосовое сообщение</i>`,
+          
+          en: `✅ <b>Answer received!</b>
+
+━━━━━━━━━━━━━━━━━━
+
+<b>Question ${updatedSession.currentQuestionIndex + 1}/${updatedSession.numQuestions}:</b>
+
+${nextQuestion.text}
+
+${nextQuestion.codeSnippet ? `\n\`\`\`\n${nextQuestion.codeSnippet}\n\`\`\`\n` : ''}
+
+💡 <i>Type your answer or send a voice message</i>`,
+        };
+        
+        const answerKeyboard = new InlineKeyboard()
+          .text('⏭️ Skip', `skip_question_${sessionId}`)
+          .text('🛑 End Interview', `end_interview_${sessionId}`);
+        
+        await ctx.reply(nextText[lang] || nextText.en, {
+          parse_mode: 'HTML',
+          reply_markup: answerKeyboard,
+        });
+        
+      } catch (error: any) {
+        this.logger.error(`Failed to submit answer: ${error.message}`);
+        
+        const errorText: Record<string, string> = {
+          uz: `❌ Javob yuborishda xatolik yuz berdi. Iltimos, qaytadan urinib ko'ring.`,
+          ru: `❌ Ошибка при отправке ответа. Пожалуйста, попробуйте снова.`,
+          en: `❌ Failed to submit answer. Please try again.`,
+        };
+        
+        await ctx.reply(errorText[lang] || errorText.en);
+      }
+      
+      return;
+    }
+    
+    // Default fallback
     const processingText: Record<string, string> = {
       uz: '⏳ Intervyu jarayonida...',
       ru: '⏳ Интервью в процессе...',
       en: '⏳ Interview in progress...',
     };
-    await ctx.reply(processingText[lang] || processingText['en']);
+    await ctx.reply(processingText[lang] || processingText.en);
   }
 
   /**

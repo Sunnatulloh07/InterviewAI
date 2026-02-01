@@ -31,7 +31,8 @@ export interface BotContext extends Context {
       | 'position'
       | 'company'
       | 'cv'
-      | 'ready';
+      | 'ready'
+      | 'answering';
     // CV analysis flow state
     cvUploadStep?: 'waiting' | 'analyzing' | 'complete';
     currentCvId?: string;
