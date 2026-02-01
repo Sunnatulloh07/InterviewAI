@@ -125,8 +125,9 @@ export class Cv {
 export const CvSchema = SchemaFactory.createForClass(Cv);
 
 // Indexes
+// Note: analysisStatus already has index: true in @Prop
 CvSchema.index({ userId: 1, createdAt: -1 });
-CvSchema.index({ analysisStatus: 1 });
+// Removed duplicate: CvSchema.index({ analysisStatus: 1 });
 CvSchema.index({ 'analysis.atsScore': -1 });
 
 // Transform to JSON

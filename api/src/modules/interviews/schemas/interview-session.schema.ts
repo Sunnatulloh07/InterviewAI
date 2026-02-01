@@ -119,8 +119,10 @@ export class InterviewSession {
 export const InterviewSessionSchema = SchemaFactory.createForClass(InterviewSession);
 
 // Indexes
+// Note: userId and status already have index: true in @Prop
+// Only add composite indexes here
 InterviewSessionSchema.index({ userId: 1, createdAt: -1 });
-InterviewSessionSchema.index({ status: 1 });
+// Removed duplicate: InterviewSessionSchema.index({ status: 1 });
 InterviewSessionSchema.index({ type: 1, difficulty: 1 });
 
 // Transform to JSON

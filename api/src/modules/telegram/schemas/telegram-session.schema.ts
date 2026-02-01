@@ -71,7 +71,9 @@ export class TelegramSession {
 export const TelegramSessionSchema = SchemaFactory.createForClass(TelegramSession);
 
 // Indexes
-TelegramSessionSchema.index({ telegramChatId: 1 });
+// Note: telegramChatId and userId already have index: true in @Prop
+// Only add composite indexes here
+// Removed duplicate: TelegramSessionSchema.index({ telegramChatId: 1 });
 TelegramSessionSchema.index({ userId: 1, status: 1 });
 
 // Transform to JSON

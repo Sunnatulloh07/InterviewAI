@@ -300,6 +300,8 @@ export class User {
 export const UserSchema = SchemaFactory.createForClass(User);
 
 // Indexes
+// Note: phoneNumber and telegramId already have index: true in @Prop
+// Only add composite indexes here
 UserSchema.index({ phoneNumber: 1, deletedAt: 1 });
 UserSchema.index({ telegramId: 1, deletedAt: 1 });
 UserSchema.index({ createdAt: -1 });

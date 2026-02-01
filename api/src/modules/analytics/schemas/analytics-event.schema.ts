@@ -31,8 +31,8 @@ export class AnalyticsEvent {
     version: string;
   };
 
-  @Prop({ type: Date, default: () => Date.now(), index: true })
-  timestamp: Date;
+  @Prop({ type: Date, default: () => Date.now() })
+  timestamp: Date; // Index removed: already covered by composite indexes below
 }
 
 export const AnalyticsEventSchema = SchemaFactory.createForClass(AnalyticsEvent);

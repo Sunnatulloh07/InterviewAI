@@ -65,7 +65,8 @@ export class InterviewAnswer {
 export const InterviewAnswerSchema = SchemaFactory.createForClass(InterviewAnswer);
 
 // Indexes
-InterviewAnswerSchema.index({ sessionId: 1 });
+// Note: sessionId already has index: true in @Prop
+// Removed duplicate: InterviewAnswerSchema.index({ sessionId: 1 });
 InterviewAnswerSchema.index({ analyzed: 1 });
 
 // Transform to JSON
