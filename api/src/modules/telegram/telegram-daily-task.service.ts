@@ -28,7 +28,6 @@ export class TelegramDailyTaskService {
   private readonly logger = new Logger(TelegramDailyTaskService.name);
   private readonly openrouterBaseUrl: string;
   private readonly openrouterApiKey: string;
-  private readonly maxImageSize: number;
 
   constructor(
     @Inject(forwardRef(() => TelegramService))
@@ -45,9 +44,6 @@ export class TelegramDailyTaskService {
   ) {
     this.openrouterBaseUrl = this.configService.get<string>('OPENROUTER_BASE_URL') || 'https://openrouter.ai/api/v1';
     this.openrouterApiKey = this.configService.get<string>('OPENROUTER_API_KEY') || '';
-    
-    // Max 20MB for STARTER+ plans
-    this.maxImageSize = 20 * 1024 * 1024; // 20MB
     
     if (!this.openrouterApiKey) {
       this.logger.warn('OPENROUTER_API_KEY not configured. Image OCR will be unavailable.');
@@ -385,13 +381,17 @@ export class TelegramDailyTaskService {
       const arrayBuffer = await response.arrayBuffer();
       const imageBuffer = Buffer.from(arrayBuffer);
 
-      // Check file size (20MB max)
-      if (imageBuffer.length > this.maxImageSize) {
+      // Check file size (plan-based limit)
+      const planLimits = COMPLETE_PLAN_LIMITS[plan];
+      const maxSizeMB = planLimits.fileUploads.maxSize;
+      const maxSizeBytes = maxSizeMB * 1024 * 1024;
+      
+      if (imageBuffer.length > maxSizeBytes) {
         const sizeInMB = (imageBuffer.length / (1024 * 1024)).toFixed(2);
         const tooLargeText = {
-          uz: `❌ Rasm hajmi katta! Max: 20MB. Sizda: ${sizeInMB}MB`,
-          ru: `❌ Изображение слишком велико! Макс: 20MB. У вас: ${sizeInMB}МБ`,
-          en: `❌ Image too large! Max: 20MB. Yours: ${sizeInMB}MB`,
+          uz: `❌ Rasm hajmi katta! Max: ${maxSizeMB}MB. Sizda: ${sizeInMB}MB`,
+          ru: `❌ Изображение слишком велико! Макс: ${maxSizeMB}МБ. У вас: ${sizeInMB}МБ`,
+          en: `❌ Image too large! Max: ${maxSizeMB}MB. Yours: ${sizeInMB}MB`,
         };
         
         try {
