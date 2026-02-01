@@ -1,5 +1,6 @@
-import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Body, HttpCode, HttpStatus, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 
 import { AuthTelegramService } from './auth-telegram.service';
 import { PhoneLoginDto, VerifyOtpDto } from './dto/phone-login.dto';
@@ -9,12 +10,14 @@ import { Public } from '@common/decorators/public.decorator';
 
 @ApiTags('Authentication')
 @Controller('auth')
+@UseGuards(ThrottlerGuard) // Apply rate limiting to all auth endpoints
 export class AuthController {
   constructor(private readonly authService: AuthTelegramService) {}
 
   @Public()
   @Post('request-otp')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 60000 } }) // 5 OTP requests per minute per IP
   @ApiOperation({
     summary: 'Request OTP for phone login',
     description: 'Send OTP code to user Telegram account. Called from Chrome extension.',
@@ -42,6 +45,7 @@ export class AuthController {
   @Public()
   @Post('verify-otp')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 10, ttl: 60000 } }) // 10 verify attempts per minute per IP (brute-force protection)
   @ApiOperation({
     summary: 'Verify OTP and login',
     description: 'Verify OTP code and return JWT tokens',
@@ -63,6 +67,7 @@ export class AuthController {
   @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 20, ttl: 60000 } }) // 20 refresh attempts per minute per IP
   @ApiOperation({
     summary: 'Refresh access token',
     description: 'Generate new access token using refresh token',

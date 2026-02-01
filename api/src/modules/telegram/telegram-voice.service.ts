@@ -129,6 +129,25 @@ export class TelegramVoiceService {
         }
       }
 
+      // FIX #3: Pre-check quota for LIVE sessions to prevent bandwidth waste
+      // Same logic as mock interviews - check before downloading
+      if (isInLiveSession) {
+        const quota = await this.voiceQuotaService.getQuota(userId);
+        const estimatedMinutes = Math.ceil(voice.duration / 60);
+
+        if (quota.realVoice.remaining < estimatedMinutes) {
+          const quotaExceededText: Record<string, string> = {
+            uz: `❌ Live sessiya uchun yetarli daqiqalar yo'q.\n\nKerak: ${estimatedMinutes} min\nMavjud: ${quota.realVoice.remaining} min\n\nMatn shaklida davom eting yoki /voice buyrug'i orqali tarifni yangilang.`,
+            ru: `❌ Недостаточно минут для live сессии.\n\nНужно: ${estimatedMinutes} мин\nДоступно: ${quota.realVoice.remaining} min\n\nПродолжите текстом или обновите тариф через /voice.`,
+            en: `❌ Not enough voice minutes for live session.\n\nNeed: ${estimatedMinutes} min\nAvailable: ${quota.realVoice.remaining} min\n\nContinue with text or upgrade via /voice.`,
+          };
+          await ctx.reply(quotaExceededText[lang] || quotaExceededText['en'], {
+            parse_mode: 'HTML',
+          });
+          return; // ✅ Don't download file if quota exhausted
+        }
+      }
+
       // Show processing message
       const processingText: Record<string, string> = {
         uz: `🎤 Ovozli xabar qayta ishlanmoqda...`,
@@ -199,10 +218,12 @@ export class TelegramVoiceService {
           // If quota fails, don't send response (user not charged for failed service)
           const estimatedDurationSeconds = Math.max(30, voice.duration || 30);
           
-          // 1. Track usage for limit checking
-          await this.subscriptionService.addLiveMinutes(userId, 1);
+          // REMOVED: Old double tracking system
+          // await this.subscriptionService.addLiveMinutes(userId, 1);
+          // REASON: voiceQuota.realVoice.used already tracks live interview usage
+          // No need for separate usage.liveInterviewMinutesThisMonth counter
           
-          // 2. Deduct from realVoice quota (throws if insufficient)
+          // Deduct from realVoice quota (throws if insufficient)
           await this.voiceQuotaService.checkAndUseVoice(
             userId,
             'real', // ✅ Use 'real' type for live interviews
@@ -496,22 +517,12 @@ export class TelegramVoiceService {
       // OPTIMIZATION: Removed redundant messages for speed
       const audioUrl: string | undefined = undefined;
 
-      // Submit answer with audio support
-      await this.interviewsService.submitAnswer(userId, sessionId, {
-        questionId,
-        answerType: 'audio', // Mark as audio answer
-        answerText: transcribedText, // Transcribed text from Aisha STT
-        transcript: transcribedText, // Explicit transcript field
-        audioUrl: audioUrl, // Optional: URL to stored audio file
-        duration: transcription.duration || 0, // Audio duration from transcription
-      });
-
-      // Deduct voice quota for mock interviews
-      // CRITICAL: Pass ACTUAL duration in SECONDS (not minutes)
-      // Service will round up to nearest minute and log to history
+      // FIX #4: CRITICAL - Deduct quota BEFORE submitting answer
+      // Prevents revenue loss if quota deduction fails after answer is saved
       if (ctx.session.interviewMode === 'mock') {
         try {
           const durationSeconds = transcription.duration || 0;
+          // First deduct quota - if this fails, we don't submit the answer
           await this.voiceQuotaService.checkAndUseVoice(
             userId,
             'mock',
@@ -520,20 +531,45 @@ export class TelegramVoiceService {
             transcribedText, // Log transcription for reference
           );
           this.logger.log(
-            `Deducted voice quota for user ${userId}: ${durationSeconds}s in mock interview`,
+            `Deducted voice quota for user ${userId}: ${durationSeconds}s in mock interview BEFORE submitting answer`,
           );
         } catch (error: any) {
-          // CRITICAL: Log as ERROR (not warn) because quota deduction failure is serious
-          // Answer was already submitted, so we can't rollback, but we MUST alert admins
+          // CRITICAL: Quota deduction failed - DON'T submit answer
+          // This prevents users from getting free service
           this.logger.error(
             `CRITICAL: Failed to deduct mock voice quota for user ${userId}: ${error.message}. ` +
-            `User may have bypassed quota check! Duration: ${transcription.duration}s`,
+            `Answer NOT submitted to prevent revenue loss. Duration: ${transcription.duration}s`,
             error.stack,
           );
-          // Continue - already processed the answer, can't rollback
-          // But admin should investigate this user for potential abuse
+          
+          // Inform user that their answer was not saved due to quota issue
+          const quotaErrorText: Record<string, string> = {
+            uz: `❌ <b>Ovozli javob saqlanmadi</b>\n\n` +
+                `Hisobingizda yetarli daqiqalar yo'q.\n` +
+                `Iltimos, /voice buyrug'i orqali tarifni yangilang va qayta urinib ko'ring.`,
+            ru: `❌ <b>Голосовой ответ не сохранен</b>\n\n` +
+                `Недостаточно минут на вашем счете.\n` +
+                `Пожалуйста, обновите тариф через /voice и попробуйте снова.`,
+            en: `❌ <b>Voice answer not saved</b>\n\n` +
+                `Not enough minutes on your account.\n` +
+                `Please upgrade via /voice and try again.`,
+          };
+          await ctx.reply(quotaErrorText[lang] || quotaErrorText['en'], {
+            parse_mode: 'HTML',
+          });
+          return; // ✅ Exit without submitting answer - protects revenue
         }
       }
+
+      // Submit answer with audio support (only reached if quota deduction succeeded)
+      await this.interviewsService.submitAnswer(userId, sessionId, {
+        questionId,
+        answerType: 'audio', // Mark as audio answer
+        answerText: transcribedText, // Transcribed text from Aisha STT
+        transcript: transcribedText, // Explicit transcript field
+        audioUrl: audioUrl, // Optional: URL to stored audio file
+        duration: transcription.duration || 0, // Audio duration from transcription
+      });
 
       // Simple confirmation
       const confirmText: Record<string, string> = {
@@ -749,20 +785,20 @@ export class TelegramVoiceService {
     });
 
     // CRITICAL FIX: Deduct from realVoice quota for STT fallback path
-    // Get duration from voice object (Telegram voice duration in seconds)
+    // This method is only called from STT path (not Gemini), so always deduct
     const durationSeconds = voice.duration || 30; // Default 30s if unknown
     
     try {
-      // Deduct from realVoice quota (was missing in STT fallback!)
+      // Deduct from realVoice quota for live interviews
       await this.voiceQuotaService.checkAndUseVoice(
         userId,
-        'real', // ✅ Use 'real' type for live interviews
+        'real', // Use 'real' type for live interviews
         durationSeconds,
         undefined, // No session ID for live interviews
         transcribedText, // Log transcription for tracking
       );
       this.logger.log(
-        `Real voice quota deducted for live session: user=${userId}, duration=${durationSeconds}s`,
+        `Real voice quota deducted for live session (STT path): user=${userId}, duration=${durationSeconds}s`,
       );
     } catch (error: any) {
       // CRITICAL: Log as ERROR for quota deduction failures
@@ -853,22 +889,10 @@ export class TelegramVoiceService {
         parse_mode: 'HTML',
       });
 
-      // Deduct live interview minutes
-      try {
-        const allowed = await this.subscriptionService.addLiveMinutes(userId, 1);
-        if (!allowed) {
-          const limitText: Record<string, string> = {
-            uz: `⚠️ <b>Live intervyu daqiqalari tugadi</b>\n\nKo'proq daqiqalar uchun: /upgrade`,
-            ru: `⚠️ <b>Минуты live-интервью закончились</b>\n\nДля продолжения: /upgrade`,
-            en: `⚠️ <b>Live interview minutes exhausted</b>\n\nTo continue: /upgrade`,
-          };
-          await ctx.reply(limitText[lang] || limitText['en'], {
-            parse_mode: 'HTML',
-          });
-        }
-      } catch (error: any) {
-        this.logger.warn(`Failed to deduct live minutes: ${error.message}`);
-      }
+      // REMOVED: Old double tracking system
+      // Live interview minutes now tracked via voiceQuota.realVoice.used
+      // No separate usage.liveInterviewMinutesThisMonth counter needed
+      // Quota already deducted above via voiceQuotaService.checkAndUseVoice()
 
       this.logger.log(
         `Gemini live audio processed: ${response.processingTime}ms, user=${userId}`,

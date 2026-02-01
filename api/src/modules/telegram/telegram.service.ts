@@ -338,7 +338,7 @@ export class TelegramService implements OnModuleInit {
    */
   async sendOtp(telegramChatId: number, otpCode: string, phoneNumber: string): Promise<void> {
     try {
-      const message = `🔐 *Authentication Code*\n\nYour verification code is: \`${otpCode}\`\n\nThis code will expire in 5 minutes.\n\nIf you didn't request this code, please ignore this message.`;
+      const message = `🔐 <b>Authentication Code</b>\n\nYour verification code is: <code>${otpCode}</code>\n\nThis code will expire in 5 minutes.\n\nIf you didn't request this code, please ignore this message.`;
 
       await this.bot.api.sendMessage(telegramChatId, message, {
         parse_mode: 'HTML',

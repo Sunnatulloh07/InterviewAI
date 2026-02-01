@@ -83,7 +83,7 @@ export class TelegramCommandsService {
       const user = await this.usersService.findByTelegramId(telegramId);
 
       if (user) {
-        // Existing user - show main menu
+        // Existing user - show main menu with full info
         await this.showMainMenu(ctx, user);
         return;
       }
@@ -101,8 +101,22 @@ export class TelegramCommandsService {
         'en', // Default language until selected
       );
 
-      // Show language selection
-      const welcomeText = `👋 Welcome to InterviewAI Pro!\n\n🌍 Please select your language / Пожалуйста, выберите язык / Iltimos, tilni tanlang:`;
+      // Show comprehensive welcome message with language selection
+      const welcomeText = 
+`👋 <b>Welcome to InterviewAI Pro!</b>
+
+🤖 <b>What is this bot?</b>
+AI-powered interview preparation assistant that helps you:
+
+✅ <b>Mock Interviews</b> - Practice with AI interviewer
+✅ <b>Live Interview Help</b> - Real-time answers during interviews
+✅ <b>Daily Tasks</b> - Daily practice questions to stay sharp
+✅ <b>CV Analysis</b> - AI-powered resume review
+✅ <b>Voice Support</b> - Answer with voice messages
+
+🌍 <b>Please select your language:</b>
+Пожалуйста, выберите язык:
+Iltimos, tilni tanlang:`;
       
       const langKeyboard = new InlineKeyboard()
         .text('🇺🇿 O\'zbek', 'lang_uz')
@@ -110,6 +124,7 @@ export class TelegramCommandsService {
         .text('🇬🇧 English', 'lang_en');
 
       await ctx.reply(welcomeText, {
+        parse_mode: 'HTML',
         reply_markup: langKeyboard,
       });
 
@@ -121,25 +136,86 @@ export class TelegramCommandsService {
   }
 
   /**
-   * Show main menu to user
+   * Show main menu to user with comprehensive information
    */
   private async showMainMenu(ctx: BotContext, user: any) {
     const lang = this.getUserLanguage(ctx, user);
     
+    // Get subscription info
+    const plan = user.subscription?.plan || 'free_trial';
+    const planEmoji: Record<string, string> = {
+      'free_trial': '🆓',
+      'starter': '💎',
+      'pro': '🚀',
+      'elite': '👑',
+    };
+    const planNames: Record<string, Record<string, string>> = {
+      'free_trial': { uz: 'Bepul sinov', ru: 'Пробный', en: 'Free Trial' },
+      'starter': { uz: 'Starter', ru: 'Starter', en: 'Starter' },
+      'pro': { uz: 'Pro', ru: 'Pro', en: 'Pro' },
+      'elite': { uz: 'Elite', ru: 'Elite', en: 'Elite' },
+    };
+
+    // Get usage stats
+    const mockInterviews = user.usage?.mockInterviewsThisMonth || 0;
+    const streak = user.dailyTasks?.currentStreak || 0;
+    const mockVoiceRemaining = user.voiceQuota?.mockVoice?.remaining || 0;
+    const realVoiceRemaining = user.voiceQuota?.realVoice?.remaining || 0;
+
     const menuText: Record<string, string> = {
-      uz: `👋 <b>Xush kelibsiz, ${user.firstName}!</b>\n\nNima qilmoqchisiz?`,
-      ru: `👋 <b>Добро пожаловать, ${user.firstName}!</b>\n\nЧто хотите сделать?`,
-      en: `👋 <b>Welcome, ${user.firstName}!</b>\n\nWhat would you like to do?`,
+      uz: `👋 <b>Xush kelibsiz, ${user.firstName}!</b>
+
+${planEmoji[plan]} Tarif: <b>${planNames[plan]?.uz || plan}</b>
+
+📊 <b>Bu oylik statistika:</b>
+• Mock intervyular: ${mockInterviews}
+• 🔥 Streak: ${streak} kun
+• 🎤 Ovozli: Mock ${mockVoiceRemaining} | Live ${realVoiceRemaining} daqiqa
+
+━━━━━━━━━━━━━━━━━━
+<b>Nima qilmoqchisiz?</b>`,
+
+      ru: `👋 <b>Добро пожаловать, ${user.firstName}!</b>
+
+${planEmoji[plan]} Тариф: <b>${planNames[plan]?.ru || plan}</b>
+
+📊 <b>Статистика за месяц:</b>
+• Mock интервью: ${mockInterviews}
+• 🔥 Серия: ${streak} дней
+• 🎤 Голосовые: Mock ${mockVoiceRemaining} | Live ${realVoiceRemaining} мин
+
+━━━━━━━━━━━━━━━━━━
+<b>Что хотите сделать?</b>`,
+
+      en: `👋 <b>Welcome, ${user.firstName}!</b>
+
+${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
+
+📊 <b>This month's stats:</b>
+• Mock interviews: ${mockInterviews}
+• 🔥 Streak: ${streak} days
+• 🎤 Voice: Mock ${mockVoiceRemaining} | Live ${realVoiceRemaining} min
+
+━━━━━━━━━━━━━━━━━━
+<b>What would you like to do?</b>`,
+    };
+
+    const buttonLabels: Record<string, Record<string, string>> = {
+      interview: { uz: '🎯 Intervyu', ru: '🎯 Интервью', en: '🎯 Interview' },
+      tasks: { uz: '📋 Vazifalar', ru: '📋 Задания', en: '📋 Tasks' },
+      profile: { uz: '👤 Profil', ru: '👤 Профиль', en: '👤 Profile' },
+      upgrade: { uz: '💳 Tarif', ru: '💳 Тарифы', en: '💳 Plans' },
+      help: { uz: '❓ Yordam', ru: '❓ Помощь', en: '❓ Help' },
     };
 
     const keyboard = new InlineKeyboard()
-      .text('🎯 Intervyu', 'menu_interview')
-      .text('📋 Vazifalar', 'menu_tasks')
+      .text(buttonLabels.interview[lang] || buttonLabels.interview.en, 'menu_interview')
+      .text(buttonLabels.tasks[lang] || buttonLabels.tasks.en, 'menu_tasks')
       .row()
-      .text('👤 Profil', 'menu_profile')
-      .text('💳 Tarif', 'menu_upgrade')
+      .text(buttonLabels.profile[lang] || buttonLabels.profile.en, 'menu_profile')
+      .text(buttonLabels.upgrade[lang] || buttonLabels.upgrade.en, 'menu_upgrade')
       .row()
-      .text('❓ Yordam', 'menu_help');
+      .text(buttonLabels.help[lang] || buttonLabels.help.en, 'menu_help');
 
     await ctx.reply(menuText[lang] || menuText['en'], {
       parse_mode: 'HTML',
@@ -501,16 +577,65 @@ export class TelegramCommandsService {
     const callbackData = ctx.callbackQuery?.data;
     if (!callbackData) return;
 
-    // Answer callback to remove loading state
-    await ctx.answerCallbackQuery();
+    const lang = ctx.session?.language || 'en';
+
+    // Note: ctx.answerCallbackQuery() is already called by telegram.service.ts
+    // before this method. Do NOT call it again here to avoid "query is too old" errors.
 
     // Route to appropriate handler based on callback data
-    if (callbackData.startsWith('lang_')) {
-      const lang = callbackData.replace('lang_', '');
-      ctx.session.language = lang;
-      await ctx.reply(`✅ Language set to ${lang.toUpperCase()}`);
+
+    // ============================================================
+    // LIVE SESSION CALLBACKS - route to live service
+    // ============================================================
+    if (callbackData.startsWith('live_domain_') || 
+        callbackData.startsWith('live_tech_') || 
+        callbackData.startsWith('live_position_')) {
+      await this.liveService.handleLiveMetadataCallback(ctx, callbackData);
+      return;
     }
-    else if (callbackData.startsWith('menu_')) {
+
+    // ============================================================
+    // SUBSCRIPTION CALLBACKS - route to subscription service
+    // ============================================================
+    if (callbackData.startsWith('upgrade_') || 
+        callbackData === 'show_plans' || 
+        callbackData === 'contact_support' ||
+        callbackData === 'back_to_menu') {
+      
+      // Special case: back_to_menu returns to main menu
+      if (callbackData === 'back_to_menu') {
+        // Get user to pass to showMainMenu
+        const userId = ctx.session?.userId;
+        if (userId) {
+          const user = await this.usersService.findById(userId);
+          if (user) {
+            await this.showMainMenu(ctx, user);
+            return;
+          }
+        }
+        // Fallback: redirect to /start if no user found
+        await this.handleStart(ctx);
+        return;
+      }
+      
+      const handled = await this.subscriptionService.handleSubscriptionCallback(ctx, callbackData, lang);
+      if (handled) return;
+    }
+
+    // ============================================================
+    // LANGUAGE SELECTION
+    // ============================================================
+    if (callbackData.startsWith('lang_')) {
+      const selectedLang = callbackData.replace('lang_', '');
+      ctx.session.language = selectedLang;
+      await ctx.reply(`✅ Language set to ${selectedLang.toUpperCase()}`);
+      return;
+    }
+
+    // ============================================================
+    // MAIN MENU CALLBACKS
+    // ============================================================
+    if (callbackData.startsWith('menu_')) {
       const menu = callbackData.replace('menu_', '');
       switch (menu) {
         case 'interview':
@@ -529,8 +654,13 @@ export class TelegramCommandsService {
           await this.handleHelp(ctx);
           break;
       }
+      return;
     }
-    else if (callbackData.startsWith('interview_')) {
+
+    // ============================================================
+    // INTERVIEW TYPE SELECTION
+    // ============================================================
+    if (callbackData.startsWith('interview_')) {
       const type = callbackData.replace('interview_', '');
       if (type === 'mock') {
         // Start mock interview flow
@@ -539,12 +669,21 @@ export class TelegramCommandsService {
         // Start live interview flow
         await this.liveService.handleStartLive(ctx);
       }
+      return;
     }
-    else if (callbackData.startsWith('position_')) {
+
+    // ============================================================
+    // POSITION SELECTION
+    // ============================================================
+    if (callbackData.startsWith('position_')) {
       const position = callbackData.replace('position_', '');
       // Update user position
       await ctx.reply(`✅ Lavozim o'rnatildi: ${position}`);
+      return;
     }
+
+    // Unknown callback - log for debugging
+    this.logger.warn(`Unknown callback data: ${callbackData}`);
   }
 
   /**
