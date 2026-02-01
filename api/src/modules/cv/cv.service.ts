@@ -63,14 +63,15 @@ export class CvService {
     file: Express.Multer.File,
     uploadCvDto: UploadCvDto,
   ): Promise<CvDocument> {
-    // Validate file
-    this.validateFile(file);
+    // Get user subscription plan first
+    const user = await this.usersService.findById(userId);
+    const plan = user.subscription?.plan || 'free_trial';
+
+    // Validate file with plan limits
+    this.validateFile(file, plan);
 
     // Check usage limits
     await this.checkUsageLimits(userId);
-
-    // Get user subscription plan
-    const user = await this.usersService.findById(userId);
 
     // Check version limit (keep last 5 versions)
     const userCvCount = await this.cvRepository.countByUserId(userId);
@@ -803,16 +804,25 @@ export class CvService {
   /**
    * Validate file
    */
-  private validateFile(file: Express.Multer.File): void {
+  private validateFile(file: Express.Multer.File, plan: string): void {
     if (!file) {
       throw new BadRequestException('No file provided');
     }
 
-    if (file.size > MAX_FILE_SIZE) {
-      throw new BadRequestException(`File size exceeds ${MAX_FILE_SIZE / 1024 / 1024}MB limit`);
+    // Get plan-specific limits
+    const planLimits = getPlanLimits(plan);
+    const maxSizeMB = planLimits.cvAnalysis.maxFileSize;
+    const maxSizeBytes = maxSizeMB * 1024 * 1024;
+
+    if (file.size > maxSizeBytes) {
+      throw new BadRequestException(
+        `File size exceeds ${maxSizeMB}MB limit for ${plan} plan. Your file: ${(file.size / 1024 / 1024).toFixed(2)}MB`
+      );
     }
 
-    if (!ALLOWED_CV_FORMATS.includes(file.mimetype)) {
+    // Check allowed formats
+    const allowedFormats = planLimits.cvAnalysis.allowedFormats;
+    if (allowedFormats !== '*' && !ALLOWED_CV_FORMATS.includes(file.mimetype)) {
       throw new BadRequestException('Invalid file format. Allowed formats: PDF, DOCX, TXT');
     }
   }
