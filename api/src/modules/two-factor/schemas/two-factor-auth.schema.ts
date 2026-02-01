@@ -10,7 +10,7 @@ import { Document, Types } from 'mongoose';
   collection: 'two_factor_auth',
 })
 export class TwoFactorAuth extends Document {
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true, unique: true, index: true })
+  @Prop({ type: Types.ObjectId, ref: 'User', required: true, unique: true })
   userId: Types.ObjectId;
 
   // TOTP Secret (encrypted)

@@ -10,7 +10,6 @@ export class Subscription {
     ref: 'User',
     required: true,
     unique: true,
-    index: true,
   })
   userId: MongooseSchema.Types.ObjectId;
 
