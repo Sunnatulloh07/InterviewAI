@@ -547,14 +547,149 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
    * Handle contact message (phone number registration)
    */
   async handleContactMessage(ctx: BotContext) {
-    // Implementation for phone number registration
-    const lang = ctx.session?.language || 'en';
-    const contactText: Record<string, string> = {
-      uz: '✅ Telefon raqami qabul qilindi!',
-      ru: '✅ Номер телефона получен!',
-      en: '✅ Phone number received!',
-    };
-    await ctx.reply(contactText[lang] || contactText['en']);
+    try {
+      const contact = ctx.message?.contact;
+      if (!contact || !contact.phone_number) {
+        const lang = ctx.session?.language || 'en';
+        const errorText: Record<string, string> = {
+          uz: '❌ Telefon raqami topilmadi. Iltimos qayta urinib ko\'ring.',
+          ru: '❌ Номер телефона не найден. Пожалуйста, попробуйте снова.',
+          en: '❌ Phone number not found. Please try again.',
+        };
+        await ctx.reply(errorText[lang] || errorText.en);
+        return;
+      }
+
+      const lang = ctx.session?.language || 'en';
+      let phoneNumber = contact.phone_number;
+      const telegramId = ctx.from?.id as number;
+
+      // Format phone number to international format
+      phoneNumber = this.otpService.formatPhoneNumber(phoneNumber);
+
+      // Update unregistered user status
+      await this.unregisteredUserService.updateRegistrationStatus(telegramId, 'phone_entered');
+
+      // Check if user already exists
+      let user = await this.usersService.findByPhoneNumber(phoneNumber);
+
+      if (user) {
+        // User exists - update telegram ID if not set and log in
+        if (!user.telegramId || user.telegramId !== telegramId) {
+          await this.usersService.updateProfile((user as any).id || (user as any)._id?.toString(), {
+            telegramId,
+            telegramUsername: ctx.from?.username,
+            telegramFirstName: ctx.from?.first_name,
+            telegramLastName: ctx.from?.last_name,
+          } as any);
+        }
+
+        // User is logged in - show main menu
+        ctx.session.userId = (user as any).id?.toString() || (user as any)._id?.toString();
+
+        const welcomeBackText: Record<string, string> = {
+          uz: `✅ <b>Xush kelibsiz, ${user.firstName || user.telegramUsername || 'foydalanuvchi'}!</b>`,
+          ru: `✅ <b>С возвращением, ${user.firstName || user.telegramUsername || 'пользователь'}!</b>`,
+          en: `✅ <b>Welcome back, ${user.firstName || user.telegramUsername || 'user'}!</b>`,
+        };
+        
+        await ctx.reply(welcomeBackText[lang] || welcomeBackText.en, {
+          parse_mode: 'HTML',
+          reply_markup: { remove_keyboard: true },
+        });
+
+        // Show main menu
+        await this.showMainMenu(ctx, user);
+
+        this.logger.log(`Existing user ${telegramId} logged in with phone ${phoneNumber.substring(0, 5)}***`);
+        return;
+      }
+
+      // New user - create account
+      user = await this.usersService.create({
+        phoneNumber,
+        telegramId,
+        telegramUsername: ctx.from?.username,
+        telegramFirstName: ctx.from?.first_name,
+        telegramLastName: ctx.from?.last_name,
+        firstName: ctx.from?.first_name || ctx.from?.username || 'User',
+        lastName: ctx.from?.last_name || '',
+        language: lang,
+      });
+
+      // Set user ID in session
+      ctx.session.userId = (user as any).id?.toString() || (user as any)._id?.toString();
+
+      const welcomeText: Record<string, string> = {
+        uz: `🎉 <b>Xush kelibsiz, ${user.firstName || user.telegramUsername || 'foydalanuvchi'}!</b>
+
+✅ Siz muvaffaqiyatli ro'yxatdan o'tdingiz!
+
+📊 <b>Bepul sinov davri:</b>
+• 30 kun bepul
+• 5 ta mock intervyu
+• 10 daqiqa ovozli javoblar
+
+Keling, boshlaymiz! 🚀`,
+        
+        ru: `🎉 <b>Добро пожаловать, ${user.firstName || user.telegramUsername || 'пользователь'}!</b>
+
+✅ Вы успешно зарегистрированы!
+
+📊 <b>Пробный период:</b>
+• 30 дней бесплатно
+• 5 пробных интервью
+• 10 минут голосовых ответов
+
+Давайте начнем! 🚀`,
+        
+        en: `🎉 <b>Welcome, ${user.firstName || user.telegramUsername || 'user'}!</b>
+
+✅ You've successfully registered!
+
+📊 <b>Free trial:</b>
+• 30 days free
+• 5 mock interviews
+• 10 minutes voice answers
+
+Let's get started! 🚀`,
+      };
+
+      await ctx.reply(welcomeText[lang] || welcomeText.en, {
+        parse_mode: 'HTML',
+        reply_markup: { remove_keyboard: true },
+      });
+
+      // Show main menu
+      await this.showMainMenu(ctx, user);
+
+      // Log analytics
+      try {
+        await this.analyticsService.trackEvent({
+          userId: ctx.session.userId as any,
+          eventType: 'user_registered',
+          metadata: {
+            userAgent: 'telegram_bot',
+            ipAddress: '0.0.0.0',
+            platform: 'telegram',
+            version: '1.0',
+          } as any,
+        });
+      } catch (error: any) {
+        this.logger.warn(`Failed to track analytics: ${error.message}`);
+      }
+
+      this.logger.log(`New user ${telegramId} registered with phone ${phoneNumber.substring(0, 5)}***`);
+    } catch (error: any) {
+      this.logger.error(`Failed to handle contact message: ${error.message}`, error.stack);
+      const lang = ctx.session?.language || 'en';
+      const errorText: Record<string, string> = {
+        uz: '❌ Xatolik yuz berdi. Iltimos /start bosib qayta urinib ko\'ring.',
+        ru: '❌ Произошла ошибка. Пожалуйста, нажмите /start и попробуйте снова.',
+        en: '❌ Error occurred. Please press /start and try again.',
+      };
+      await ctx.reply(errorText[lang] || errorText.en);
+    }
   }
 
   /**
@@ -628,7 +763,62 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
     if (callbackData.startsWith('lang_')) {
       const selectedLang = callbackData.replace('lang_', '');
       ctx.session.language = selectedLang;
-      await ctx.reply(`✅ Language set to ${selectedLang.toUpperCase()}`);
+      
+      const telegramId = ctx.from?.id;
+      if (telegramId) {
+        await this.unregisteredUserService.trackUserStart(
+          telegramId,
+          ctx.from?.first_name,
+          ctx.from?.last_name,
+          ctx.from?.username,
+          selectedLang,
+        );
+      }
+      
+      // Show phone number request
+      const registrationText: Record<string, string> = {
+        uz: `✅ <b>Til o'rnatildi!</b>
+
+🔐 <b>Ro'yxatdan o'tish</b>
+
+Botdan foydalanish uchun telefon raqamingizni tasdiqlang.
+
+Quyidagi tugmani bosing 👇`,
+        
+        ru: `✅ <b>Язык установлен!</b>
+
+🔐 <b>Регистрация</b>
+
+Для использования бота подтвердите номер телефона.
+
+Нажмите кнопку ниже 👇`,
+        
+        en: `✅ <b>Language set!</b>
+
+🔐 <b>Registration</b>
+
+To use the bot, verify your phone number.
+
+Press the button below 👇`,
+      };
+      
+      const phoneButton: Record<string, string> = {
+        uz: '📱 Telefon raqamni yuborish',
+        ru: '📱 Отправить номер',
+        en: '📱 Share phone number',
+      };
+      
+      const keyboard = new Keyboard()
+        .requestContact(phoneButton[selectedLang] || phoneButton.en)
+        .resized()
+        .oneTime();
+      
+      await ctx.reply(registrationText[selectedLang] || registrationText.en, {
+        parse_mode: 'HTML',
+        reply_markup: keyboard,
+      });
+      
+      this.logger.log(`User ${telegramId} selected language: ${selectedLang}`);
       return;
     }
 
