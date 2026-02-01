@@ -283,9 +283,21 @@ export class TelegramLiveService {
       .text('Data Science', 'live_domain_datascience');
 
     const domainText: Record<string, string> = {
-      uz: `📋 <b>Qaysi soha bo'yicha intervyu?</b>\n\nTugmalardan birini tanlang:`,
-      ru: `📋 <b>По какой области интервью?</b>\n\nВыберите одну из кнопок:`,
-      en: `📋 <b>What domain is the interview for?</b>\n\nSelect one of the buttons:`,
+      uz: `📋 <b>Live Intervyu - Soha Tanlang</b>
+
+Qaysi soha bo'yicha intervyu?
+
+📝 <i>Quyidagi tugmalardan birini tanlang:</i>`,
+      ru: `📋 <b>Live Интервью - Выбор Области</b>
+
+По какой области интервью?
+
+📝 <i>Выберите одну из кнопок ниже:</i>`,
+      en: `📋 <b>Live Interview - Select Domain</b>
+
+What domain is the interview for?
+
+📝 <i>Select one of the buttons below:</i>`,
     };
 
     await this.replyOrTransition(ctx, domainText[lang] || domainText['en'], {
@@ -328,26 +340,29 @@ export class TelegramLiveService {
 
     const techText: Record<string, string> = {
       uz:
-        `💻 <b>Qaysi texnologiyalar ishlatiladi?</b>\n\n` +
-        `Bir nechta texnologiyalarni tanlashingiz mumkin:\n` +
+        `💻 <b>Live Intervyu - Texnologiyalar</b>\n\n` +
+        `Qaysi texnologiyalar ishlatiladi?\n\n` +
+        `📌 <b>Ko'p tanlash mumkin:</b>\n` +
         `• Tugmalardan tanlash\n` +
-        `• Yoki "➕ Qo'lda kiritish" tugmasini bosib, texnologiyalarni vergul bilan ajratib yozing\n` +
-        `Masalan: "React, Node.js, PostgreSQL"\n\n` +
-        `Tanlaganingizdan keyin "✅ Tugadi" tugmasini bosing.`,
+        `• Yoki "➕ Qo'lda kiritish" tugmasini bosib vergul bilan ajratib yozing\n` +
+        `  Masalan: <code>React, Node.js, PostgreSQL</code>\n\n` +
+        `✅ Tanlaganingizdan keyin "✅ Tugadi" bosing.`,
       ru:
-        `💻 <b>Какие технологии используются?</b>\n\n` +
-        `Вы можете выбрать несколько технологий:\n` +
+        `💻 <b>Live Интервью - Технологии</b>\n\n` +
+        `Какие технологии используются?\n\n` +
+        `📌 <b>Можно выбрать несколько:</b>\n` +
         `• Выбрать из кнопок\n` +
-        `• Или нажать "➕ Ввести вручную" и написать технологии через запятую\n` +
-        `Например: "React, Node.js, PostgreSQL"\n\n` +
-        `После выбора нажмите "✅ Готово".`,
+        `• Или нажать "➕ Ввести вручную" и написать через запятую\n` +
+        `  Например: <code>React, Node.js, PostgreSQL</code>\n\n` +
+        `✅ После выбора нажмите "✅ Готово".`,
       en:
-        `💻 <b>What technologies are used?</b>\n\n` +
-        `You can select multiple technologies:\n` +
+        `💻 <b>Live Interview - Technologies</b>\n\n` +
+        `What technologies are used?\n\n` +
+        `📌 <b>Multiple selection allowed:</b>\n` +
         `• Select from buttons\n` +
-        `• Or press "➕ Enter manually" and type technologies separated by commas\n` +
-        `Example: "React, Node.js, PostgreSQL"\n\n` +
-        `After selecting, press "✅ Done".`,
+        `• Or press "➕ Enter manually" and type comma-separated\n` +
+        `  Example: <code>React, Node.js, PostgreSQL</code>\n\n` +
+        `✅ After selecting, press "✅ Done".`,
     };
 
     await this.replyOrTransition(ctx, techText[lang] || techText['en'], {
@@ -368,9 +383,21 @@ export class TelegramLiveService {
       .text('Lead', 'live_position_lead');
 
     const positionText: Record<string, string> = {
-      uz: `👔 <b>Qaysi pozitsiya uchun intervyu?</b>\n\nTugmalardan birini tanlang:`,
-      ru: `👔 <b>На какую позицию интервью?</b>\n\nВыберите одну из кнопок:`,
-      en: `👔 <b>What position is the interview for?</b>\n\nSelect one of the buttons:`,
+      uz: `👔 <b>Live Intervyu - Pozitsiya</b>
+
+Qaysi pozitsiya uchun intervyu?
+
+📝 <i>Quyidagi tugmalardan birini tanlang:</i>`,
+      ru: `👔 <b>Live Интервью - Позиция</b>
+
+На какую позицию интервью?
+
+📝 <i>Выберите одну из кнопок ниже:</i>`,
+      en: `👔 <b>Live Interview - Position</b>
+
+What position is the interview for?
+
+📝 <i>Select one of the buttons below:</i>`,
     };
 
     await this.replyOrTransition(ctx, positionText[lang] || positionText['en'], {
@@ -384,9 +411,24 @@ export class TelegramLiveService {
    */
   private async askLiveCompany(ctx: BotContext, lang: string) {
     const companyText: Record<string, string> = {
-      uz: `🏢 <b>Qaysi kompaniya uchun intervyu?</b>\n\nKompaniya nomini yuboring:`,
-      ru: `🏢 <b>Для какой компании интервью?</b>\n\nОтправьте название компании:`,
-      en: `🏢 <b>What company is the interview for?</b>\n\nSend the company name:`,
+      uz: `🏢 <b>Live Intervyu - Kompaniya</b>
+
+Qaysi kompaniya uchun intervyu?
+
+✍️ <i>Kompaniya nomini yozing va yuboring:</i>
+Masalan: <code>Google</code>, <code>Microsoft</code>, <code>Uzum</code>`,
+      ru: `🏢 <b>Live Интервью - Компания</b>
+
+Для какой компании интервью?
+
+✍️ <i>Напишите название компании и отправьте:</i>
+Например: <code>Google</code>, <code>Microsoft</code>, <code>Яндекс</code>`,
+      en: `🏢 <b>Live Interview - Company</b>
+
+What company is the interview for?
+
+✍️ <i>Type the company name and send:</i>
+Example: <code>Google</code>, <code>Microsoft</code>, <code>Amazon</code>`,
     };
 
     await this.replyOrTransition(ctx, companyText[lang] || companyText['en'], {

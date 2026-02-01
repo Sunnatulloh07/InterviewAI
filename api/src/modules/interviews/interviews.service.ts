@@ -987,6 +987,10 @@ Your response must be valid JSON that can be parsed directly. All questions must
   /**
    * CRITICAL: Check mock interview usage limits based on plan
    * ✅ STEP 2 FIX: Now uses COMPLETE_PLAN_LIMITS for accurate enforcement
+   * 
+   * NOTE: This method is now ONLY used for API/direct calls.
+   * Telegram bot uses TelegramSubscriptionService.checkMockInterviewLimit() 
+   * for proper multilingual messages and user experience.
    */
   private async checkUsageLimits(userId: string): Promise<void> {
     const user = await this.usersService.findById(userId);
@@ -997,15 +1001,31 @@ Your response must be valid JSON that can be parsed directly. All questions must
     
     // Check if limit reached (-1 means unlimited)
     if (monthlyLimit !== -1 && user.usage.mockInterviewsThisMonth >= monthlyLimit) {
-      // Provide helpful upgrade message based on current plan
+      // Multi-language upgrade messages for better UX
       const upgradeMessages = {
-        free_trial: 'Mock interview limit reached (3/month). Upgrade to Starter for 10/month.',
-        starter: 'Mock interview limit reached (10/month). Upgrade to Pro for 30/month.',
-        pro: 'Mock interview limit reached (30/month). Upgrade to Elite for unlimited interviews.',
+        free_trial: {
+          uz: `Mock intervyu limiti tugadi (${user.usage.mockInterviewsThisMonth}/${monthlyLimit}). Starter tarifiga o'ting - 10 ta/oy.`,
+          ru: `Лимит mock-интервью исчерпан (${user.usage.mockInterviewsThisMonth}/${monthlyLimit}). Переходите на Starter - 10/мес.`,
+          en: `Mock interview limit reached (${user.usage.mockInterviewsThisMonth}/${monthlyLimit}). Upgrade to Starter for 10/month.`,
+        },
+        starter: {
+          uz: `Mock intervyu limiti tugadi (${user.usage.mockInterviewsThisMonth}/${monthlyLimit}). Pro tarifiga o'ting - 30 ta/oy.`,
+          ru: `Лимит mock-интервью исчерпан (${user.usage.mockInterviewsThisMonth}/${monthlyLimit}). Переходите на Pro - 30/мес.`,
+          en: `Mock interview limit reached (${user.usage.mockInterviewsThisMonth}/${monthlyLimit}). Upgrade to Pro for 30/month.`,
+        },
+        pro: {
+          uz: `Mock intervyu limiti tugadi (${user.usage.mockInterviewsThisMonth}/${monthlyLimit}). Elite tarifiga o'ting - cheksiz intervyu.`,
+          ru: `Лимит mock-интервью исчерпан (${user.usage.mockInterviewsThisMonth}/${monthlyLimit}). Переходите на Elite - безлимит.`,
+          en: `Mock interview limit reached (${user.usage.mockInterviewsThisMonth}/${monthlyLimit}). Upgrade to Elite for unlimited interviews.`,
+        },
       };
       
-      const message = upgradeMessages[plan as keyof typeof upgradeMessages] 
-        || `Mock interview limit reached for ${plan} plan. Upgrade to practice more.`;
+      // Use user's language preference or default to English
+      const userLang = user.preferences?.language || user.language || 'en';
+      const planMessages = upgradeMessages[plan as keyof typeof upgradeMessages];
+      const message = planMessages 
+        ? planMessages[userLang as keyof typeof planMessages] || planMessages.en
+        : `Mock interview limit reached for ${plan} plan. Upgrade to practice more.`;
       
       throw new ForbiddenException(message);
     }

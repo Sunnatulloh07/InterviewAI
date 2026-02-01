@@ -948,17 +948,23 @@ Press the button below 👇`,
         ctx.session.interviewStep = 'domain';
         
         const domainText: Record<string, string> = {
-          uz: `🎯 <b>Mock Intervyu</b>
+          uz: `🎯 <b>Mock Intervyu Boshlash</b>
 
-Qaysi sohada intervyu olishni xohlaysiz?`,
+Qaysi sohada intervyu olishni xohlaysiz?
+
+📝 <i>Quyidagi tugmalardan birini tanlang:</i>`,
           
-          ru: `🎯 <b>Mock Интервью</b>
+          ru: `🎯 <b>Начать Mock Интервью</b>
 
-В какой области хотите пройти интервью?`,
+В какой области хотите пройти интервью?
+
+📝 <i>Выберите одну из кнопок ниже:</i>`,
           
-          en: `🎯 <b>Mock Interview</b>
+          en: `🎯 <b>Start Mock Interview</b>
 
-Which domain would you like to practice?`,
+Which domain would you like to practice?
+
+📝 <i>Select one of the buttons below:</i>`,
         };
         
         const domainKeyboard = new InlineKeyboard()
@@ -1040,15 +1046,21 @@ Which domain would you like to practice?`,
       const techText: Record<string, string> = {
         uz: `✅ Soha: <b>${domain}</b>
 
-Qaysi texnologiya/til bo'yicha intervyu olishni xohlaysiz?`,
+💻 Qaysi texnologiya/til bo'yicha intervyu olishni xohlaysiz?
+
+📝 <i>Quyidagi tugmalardan birini tanlang:</i>`,
         
         ru: `✅ Область: <b>${domain}</b>
 
-Какую технологию/язык хотите практиковать?`,
+💻 Какую технологию/язык хотите практиковать?
+
+📝 <i>Выберите одну из кнопок ниже:</i>`,
         
         en: `✅ Domain: <b>${domain}</b>
 
-Which technology/language would you like to practice?`,
+💻 Which technology/language would you like to practice?
+
+📝 <i>Select one of the buttons below:</i>`,
       };
       
       // Technology keyboard based on domain
@@ -1126,15 +1138,21 @@ Which technology/language would you like to practice?`,
       const durationText: Record<string, string> = {
         uz: `✅ Texnologiya: <b>${technology}</b>
 
-Intervyu davomiyligini tanlang:`,
+⏱️ Intervyu davomiyligini tanlang:
+
+📌 <i>Davomiyligi qancha savollar berilishini belgilaydi</i>`,
         
         ru: `✅ Технология: <b>${technology}</b>
 
-Выберите продолжительность интервью:`,
+⏱️ Выберите продолжительность интервью:
+
+📌 <i>Продолжительность определяет количество вопросов</i>`,
         
         en: `✅ Technology: <b>${technology}</b>
 
-Choose interview duration:`,
+⏱️ Choose interview duration:
+
+📌 <i>Duration determines the number of questions</i>`,
       };
       
       const durationKeyboard = new InlineKeyboard()
