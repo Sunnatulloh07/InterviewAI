@@ -1583,20 +1583,55 @@ Interview session has been ended. Use /profile to view your results.`,
     const text = ctx.message?.text;
     if (!text) return false;
 
-    // Check for menu button texts
+    // Check for menu button texts (Reply Keyboard)
+    // Includes both current and legacy button texts for backward compatibility
     const menuMap: Record<string, string> = {
+      // Interview buttons
       '🎯 Intervyu': 'interview',
       '🎯 Interview': 'interview',
       '🎯 Интервью': 'interview',
+      
+      // Tasks buttons
       '📋 Vazifalar': 'tasks',
       '📋 Tasks': 'tasks',
       '📋 Задания': 'tasks',
+      
+      // Profile buttons (current and legacy)
       '👤 Profil': 'profile',
       '👤 Profile': 'profile',
       '👤 Профиль': 'profile',
+      '📊 Profil': 'profile',  // Legacy
+      '📊 Profile': 'profile',  // Legacy
+      '📊 Профиль': 'profile',  // Legacy
+      
+      // Upgrade/Tariff buttons
       '💳 Tarif': 'upgrade',
       '💳 Plans': 'upgrade',
       '💳 Тарифы': 'upgrade',
+      '💳 Tariflar': 'upgrade',  // Legacy
+      
+      // Help buttons (legacy - not in current inline menu)
+      '❓ Yordam': 'help',
+      '❓ Help': 'help',
+      '❓ Помощь': 'help',
+      'ℹ️ Yordam': 'help',  // Legacy
+      'ℹ️ Help': 'help',  // Legacy
+      'ℹ️ Помощь': 'help',  // Legacy
+      
+      // Settings buttons (legacy)
+      '⚙️ Sozlamalar': 'settings',
+      '⚙️ Settings': 'settings',
+      '⚙️ Настройки': 'settings',
+      
+      // CV Analysis buttons (legacy)
+      '📄 CV Tahlil': 'cv',
+      '📄 CV Analysis': 'cv',
+      '📄 Анализ CV': 'cv',
+      
+      // Statistics buttons (legacy)
+      '📈 Statistika': 'stats',
+      '📈 Statistics': 'stats',
+      '📈 Статистика': 'stats',
     };
 
     const menu = menuMap[text];
@@ -1613,6 +1648,18 @@ Interview session has been ended. Use /profile to view your results.`,
           return true;
         case 'upgrade':
           await this.handleUpgrade(ctx);
+          return true;
+        case 'help':
+          await this.handleHelp(ctx);
+          return true;
+        case 'settings':
+          await this.handleSettings(ctx);
+          return true;
+        case 'cv':
+          await this.handleAnalyzeCv(ctx);
+          return true;
+        case 'stats':
+          await this.handleStats(ctx);
           return true;
       }
     }
