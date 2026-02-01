@@ -132,7 +132,13 @@ Iltimos, tilni tanlang:`;
       this.logger.log(`New user started registration: ${telegramId}`);
     } catch (error: any) {
       this.logger.error(`Failed to handle start: ${error.message}`, error.stack);
-      await ctx.reply('❌ Error occurred. Please try again.');
+      const lang = ctx.session?.language || 'en';
+      const errorText: Record<string, string> = {
+        uz: '❌ Xatolik yuz berdi. Iltimos, qaytadan urinib ko\'ring.',
+        ru: '❌ Произошла ошибка. Пожалуйста, попробуйте снова.',
+        en: '❌ Error occurred. Please try again.',
+      };
+      await ctx.reply(errorText[lang] || errorText.en);
     }
   }
 
@@ -430,7 +436,13 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
       });
     } catch (error: any) {
       this.logger.error(`Failed to handle interview: ${error.message}`);
-      await ctx.reply('❌ Error occurred');
+      const lang = ctx.session?.language || 'en';
+      const errorText: Record<string, string> = {
+        uz: '❌ Xatolik yuz berdi. Iltimos, qaytadan urinib ko\'ring.',
+        ru: '❌ Произошла ошибка. Пожалуйста, попробуйте снова.',
+        en: '❌ Error occurred. Please try again.',
+      };
+      await ctx.reply(errorText[lang] || errorText.en);
     }
   }
 
@@ -664,28 +676,166 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
 
   /**
    * Handle /stats command
+   * Shows detailed statistics for the user
    */
   async handleStats(ctx: BotContext) {
-    const lang = ctx.session?.language || 'en';
-    const statsText: Record<string, string> = {
-      uz: '📊 Statistika tez orada qo\'shiladi!',
-      ru: '📊 Статистика скоро будет добавлена!',
-      en: '📊 Statistics coming soon!',
-    };
-    await ctx.reply(statsText[lang] || statsText['en']);
+    try {
+      const telegramId = ctx.from?.id as number;
+      const user = await this.usersService.findByTelegramId(telegramId);
+
+      if (!user) {
+        await ctx.reply('Please register first using /start');
+        return;
+      }
+
+      const lang = this.getUserLanguage(ctx, user);
+      
+      // Get usage stats
+      const mockInterviews = user.usage?.mockInterviewsThisMonth || 0;
+      const totalMockInterviews = user.usage?.totalMockInterviews || 0;
+      const liveMinutes = user.usage?.liveInterviewMinutesThisMonth || 0;
+      const totalLiveMinutes = user.usage?.totalLiveInterviewMinutes || 0;
+      const cvAnalyses = user.usage?.cvAnalysesThisMonth || 0;
+      const totalCvAnalyses = user.usage?.totalCvAnalyses || 0;
+      const streak = user.dailyTasks?.currentStreak || 0;
+      const maxStreak = user.dailyTasks?.maxStreak || 0;
+      
+      const statsText: Record<string, string> = {
+        uz: `📊 <b>Statistika</b>
+
+📈 <b>Bu oylik:</b>
+• Mock intervyular: ${mockInterviews}
+• Live intervyu: ${liveMinutes} daq
+• CV tahlillari: ${cvAnalyses}
+• 🔥 Streak: ${streak} kun
+
+📊 <b>Jami:</b>
+• Mock intervyular: ${totalMockInterviews}
+• Live intervyu: ${totalLiveMinutes} daq
+• CV tahlillari: ${totalCvAnalyses}
+• 🔥 Eng uzun streak: ${maxStreak} kun`,
+        
+        ru: `📊 <b>Статистика</b>
+
+📈 <b>За месяц:</b>
+• Mock-интервью: ${mockInterviews}
+• Live-интервью: ${liveMinutes} мин
+• Анализов CV: ${cvAnalyses}
+• 🔥 Серия: ${streak} дней
+
+📊 <b>Всего:</b>
+• Mock-интервью: ${totalMockInterviews}
+• Live-интервью: ${totalLiveMinutes} мин
+• Анализов CV: ${totalCvAnalyses}
+• 🔥 Макс. серия: ${maxStreak} дней`,
+        
+        en: `📊 <b>Statistics</b>
+
+📈 <b>This Month:</b>
+• Mock interviews: ${mockInterviews}
+• Live interviews: ${liveMinutes} min
+• CV analyses: ${cvAnalyses}
+• 🔥 Streak: ${streak} days
+
+📊 <b>Total:</b>
+• Mock interviews: ${totalMockInterviews}
+• Live interviews: ${totalLiveMinutes} min
+• CV analyses: ${totalCvAnalyses}
+• 🔥 Max streak: ${maxStreak} days`,
+      };
+      
+      await ctx.reply(statsText[lang] || statsText['en'], {
+        parse_mode: 'HTML',
+      });
+    } catch (error: any) {
+      this.logger.error(`Failed to show stats: ${error.message}`);
+      const lang = ctx.session?.language || 'en';
+      const errorText: Record<string, string> = {
+        uz: '❌ Xatolik yuz berdi. Iltimos, qaytadan urinib ko\'ring.',
+        ru: '❌ Произошла ошибка. Пожалуйста, попробуйте снова.',
+        en: '❌ Error occurred. Please try again.',
+      };
+      await ctx.reply(errorText[lang] || errorText.en);
+    }
   }
 
   /**
    * Handle /settings command
+   * Shows available settings
    */
   async handleSettings(ctx: BotContext) {
-    const lang = ctx.session?.language || 'en';
-    const settingsText: Record<string, string> = {
-      uz: '⚙️ Sozlamalar tez orada qo\'shiladi!',
-      ru: '⚙️ Настройки скоро будут добавлены!',
-      en: '⚙️ Settings coming soon!',
-    };
-    await ctx.reply(settingsText[lang] || settingsText['en']);
+    try {
+      const telegramId = ctx.from?.id as number;
+      const user = await this.usersService.findByTelegramId(telegramId);
+
+      if (!user) {
+        await ctx.reply('Please register first using /start');
+        return;
+      }
+
+      const lang = this.getUserLanguage(ctx, user);
+      
+      const settingsText: Record<string, string> = {
+        uz: `⚙️ <b>Sozlamalar</b>
+
+🔧 <b>Mavjud sozlamalar:</b>
+
+▪️ /set_position - Lavozimni o'zgartirish
+▪️ /voice - Ovozli xabar limiti
+▪️ /profile - Profil ma'lumotlari
+
+💡 <b>Tez orada qo'shiladi:</b>
+• Til sozlamalari
+• Xabarnoma sozlamalari
+• Intervyu rejimi sozlamalari`,
+        
+        ru: `⚙️ <b>Настройки</b>
+
+🔧 <b>Доступные настройки:</b>
+
+▪️ /set_position - Изменить должность
+▪️ /voice - Лимит голосовых сообщений
+▪️ /profile - Информация профиля
+
+💡 <b>Скоро будет добавлено:</b>
+• Настройки языка
+• Настройки уведомлений
+• Настройки режима интервью`,
+        
+        en: `⚙️ <b>Settings</b>
+
+🔧 <b>Available settings:</b>
+
+▪️ /set_position - Change position
+▪️ /voice - Voice message quota
+▪️ /profile - Profile information
+
+💡 <b>Coming soon:</b>
+• Language settings
+• Notification settings
+• Interview mode settings`,
+      };
+      
+      const keyboard = new InlineKeyboard()
+        .text('👤 Lavozim', 'set_position')
+        .text('🎤 Ovozli', 'voice_quota')
+        .row()
+        .text('🔙 Orqaga', 'back_to_menu');
+      
+      await ctx.reply(settingsText[lang] || settingsText['en'], {
+        parse_mode: 'HTML',
+        reply_markup: keyboard,
+      });
+    } catch (error: any) {
+      this.logger.error(`Failed to show settings: ${error.message}`);
+      const lang = ctx.session?.language || 'en';
+      const errorText: Record<string, string> = {
+        uz: '❌ Xatolik yuz berdi. Iltimos, qaytadan urinib ko\'ring.',
+        ru: '❌ Произошла ошибка. Пожалуйста, попробуйте снова.',
+        en: '❌ Error occurred. Please try again.',
+      };
+      await ctx.reply(errorText[lang] || errorText.en);
+    }
   }
 
   /**
@@ -1318,7 +1468,39 @@ Which domain would you like to practice?
         // Get first question from session
         // Session has questions array populated
         const sessionWithQuestions = await this.interviewsService.getSession(userId, session.id);
-        const firstQuestion = (sessionWithQuestions.questions as any)[0];
+        const questions = sessionWithQuestions.questions as any[];
+        
+        // Check if questions exist
+        if (!questions || questions.length === 0) {
+          const noQuestionsText: Record<string, string> = {
+            uz: `❌ <b>Savollar yaratilmadi</b>
+
+Texnik xatolik yuz berdi. Iltimos, qaytadan urinib ko'ring.
+
+Yoki boshqa soha/texnologiya tanlang.`,
+            ru: `❌ <b>Вопросы не созданы</b>
+
+Произошла техническая ошибка. Пожалуйста, попробуйте снова.
+
+Или выберите другую область/технологию.`,
+            en: `❌ <b>No questions created</b>
+
+A technical error occurred. Please try again.
+
+Or select a different domain/technology.`,
+          };
+          
+          await ctx.reply(noQuestionsText[lang] || noQuestionsText.en, {
+            parse_mode: 'HTML',
+          });
+          
+          // Reset session
+          ctx.session.interviewMode = undefined;
+          ctx.session.interviewStep = undefined;
+          return;
+        }
+        
+        const firstQuestion = questions[0];
         
         const startText: Record<string, string> = {
           uz: `🎯 <b>Mock Intervyu Boshlandi!</b>
@@ -1570,6 +1752,19 @@ Interview session has been ended. Use /profile to view your results.`,
         await ctx.reply('❌ Error ending interview');
       }
       
+      return;
+    }
+
+    // ============================================================
+    // SETTINGS CALLBACKS
+    // ============================================================
+    if (callbackData === 'set_position') {
+      await this.handleSetPosition(ctx);
+      return;
+    }
+    
+    if (callbackData === 'voice_quota') {
+      await this.handleVoice(ctx);
       return;
     }
 
