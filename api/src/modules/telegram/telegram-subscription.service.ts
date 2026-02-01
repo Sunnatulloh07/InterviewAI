@@ -658,36 +658,43 @@ Remaining: ${remaining}
    * Handle upgrade request for a specific plan
    * Shows plan details and contact info for payment
    */
+  /**
+   * ✅ UPDATED: Now uses COMPLETE_PLAN_LIMITS for accurate plan details
+   */
   async handleUpgradeCallback(
     ctx: BotContext,
     plan: 'starter' | 'pro' | 'elite',
     lang: string,
   ): Promise<void> {
+    // Import COMPLETE_PLAN_LIMITS at runtime
+    const { COMPLETE_PLAN_LIMITS } = require('@common/constants/plan-limits.constant');
+    const planLimits = COMPLETE_PLAN_LIMITS[plan];
+    
     const planDetails: Record<string, Record<string, { emoji: string; name: string; price: string; features: string[] }>> = {
       uz: {
         starter: {
           emoji: '💼',
           name: 'STARTER',
-          price: '$4.99/oy',
+          price: '$9.99/oy',
           features: [
-            '✓ 15 ta mock intervyu',
-            '✓ 15 daqiqa live intervyu',
-            '✓ 5 ta CV tahlili',
-            '✓ Voice xabarlar (Mock uchun)',
+            `✓ ${planLimits.mockInterviews.perMonth} ta mock intervyu/oy`,
+            `✓ ${planLimits.voice.mockVoice} daq mock + ${planLimits.voice.realVoice} daq live ovoz`,
+            `✓ ${planLimits.cvAnalysis.perMonth} ta CV tahlili`,
+            '✓ Ovoz va rasm javoblari',
+            '✓ Batafsil AI tahlil',
           ],
         },
         pro: {
           emoji: '🚀',
           name: 'PRO',
-          price: '$14.99/oy',
+          price: '$19.99/oy',
           features: [
-            '✓ 100 ta mock intervyu',
-            '✓ 60 daqiqa live intervyu',
-            '✓ 20 ta CV tahlili',
-            '✓ CV optimizatsiya',
-            '✓ Voice xabarlar (Mock + Live)',
+            `✓ ${COMPLETE_PLAN_LIMITS.pro.mockInterviews.perMonth} ta mock intervyu/oy`,
+            `✓ ${COMPLETE_PLAN_LIMITS.pro.voice.mockVoice} daq mock + ${COMPLETE_PLAN_LIMITS.pro.voice.realVoice} daq live ovoz`,
+            `✓ ${COMPLETE_PLAN_LIMITS.pro.cvAnalysis.perMonth} ta CV tahlili`,
+            '✓ Video javoblar',
             '✓ Chrome Extension',
-            '✓ Stealth Mode',
+            '✓ Ilg\'or AI tahlil',
           ],
         },
         elite: {
@@ -695,11 +702,11 @@ Remaining: ${remaining}
           name: 'ELITE',
           price: '$29.99/oy',
           features: [
-            '✓ 200 ta mock intervyu',
-            '✓ 160 daqiqa live intervyu',
-            '✓ 50 ta CV tahlili',
+            '✓ Cheksiz mock intervyu',
+            `✓ ${COMPLETE_PLAN_LIMITS.elite.voice.mockVoice} daq mock + ${COMPLETE_PLAN_LIMITS.elite.voice.realVoice} daq live ovoz`,
+            `✓ ${COMPLETE_PLAN_LIMITS.elite.cvAnalysis.perMonth} ta CV tahlili`,
+            '✓ Premium AI modellari',
             '✓ Priority Support',
-            '✓ Ilg\'or AI modellari',
             '✓ Barcha xususiyatlar',
           ],
         },
@@ -708,26 +715,26 @@ Remaining: ${remaining}
         starter: {
           emoji: '💼',
           name: 'STARTER',
-          price: '$4.99/мес',
+          price: '$9.99/мес',
           features: [
-            '✓ 15 mock-интервью',
-            '✓ 15 минут live-интервью',
-            '✓ 5 анализов CV',
-            '✓ Голосовые сообщения (Mock)',
+            `✓ ${planLimits.mockInterviews.perMonth} mock-интервью/мес`,
+            `✓ ${planLimits.voice.mockVoice} мин mock + ${planLimits.voice.realVoice} мин live голос`,
+            `✓ ${planLimits.cvAnalysis.perMonth} анализов CV`,
+            '✓ Голос и изображения',
+            '✓ Подробный AI анализ',
           ],
         },
         pro: {
           emoji: '🚀',
           name: 'PRO',
-          price: '$14.99/мес',
+          price: '$19.99/мес',
           features: [
-            '✓ 100 mock-интервью',
-            '✓ 60 минут live-интервью',
-            '✓ 20 анализов CV',
-            '✓ Оптимизация CV',
-            '✓ Голосовые (Mock + Live)',
+            `✓ ${COMPLETE_PLAN_LIMITS.pro.mockInterviews.perMonth} mock-интервью/мес`,
+            `✓ ${COMPLETE_PLAN_LIMITS.pro.voice.mockVoice} мин mock + ${COMPLETE_PLAN_LIMITS.pro.voice.realVoice} мин live голос`,
+            `✓ ${COMPLETE_PLAN_LIMITS.pro.cvAnalysis.perMonth} анализов CV`,
+            '✓ Видео ответы',
             '✓ Chrome Extension',
-            '✓ Stealth Mode',
+            '✓ Продвинутый AI',
           ],
         },
         elite: {
@@ -735,11 +742,11 @@ Remaining: ${remaining}
           name: 'ELITE',
           price: '$29.99/мес',
           features: [
-            '✓ 200 mock-интервью',
-            '✓ 160 минут live-интервью',
-            '✓ 50 анализов CV',
-            '✓ Priority Support',
-            '✓ Продвинутый AI',
+            '✓ Безлимит mock-интервью',
+            `✓ ${COMPLETE_PLAN_LIMITS.elite.voice.mockVoice} мин mock + ${COMPLETE_PLAN_LIMITS.elite.voice.realVoice} мин live голос`,
+            `✓ ${COMPLETE_PLAN_LIMITS.elite.cvAnalysis.perMonth} анализов CV`,
+            '✓ Premium AI модели',
+            '✓ Приоритетная поддержка',
             '✓ Все функции',
           ],
         },
@@ -748,26 +755,26 @@ Remaining: ${remaining}
         starter: {
           emoji: '💼',
           name: 'STARTER',
-          price: '$4.99/mo',
+          price: '$9.99/mo',
           features: [
-            '✓ 15 mock interviews',
-            '✓ 15 min live interview',
-            '✓ 5 CV analyses',
-            '✓ Voice messages (Mock only)',
+            `✓ ${planLimits.mockInterviews.perMonth} mock interviews/mo`,
+            `✓ ${planLimits.voice.mockVoice} min mock + ${planLimits.voice.realVoice} min live voice`,
+            `✓ ${planLimits.cvAnalysis.perMonth} CV analyses`,
+            '✓ Voice & image answers',
+            '✓ Detailed AI analysis',
           ],
         },
         pro: {
           emoji: '🚀',
           name: 'PRO',
-          price: '$14.99/mo',
+          price: '$19.99/mo',
           features: [
-            '✓ 100 mock interviews',
-            '✓ 60 min live interview',
-            '✓ 20 CV analyses',
-            '✓ CV optimization',
-            '✓ Voice messages (Mock + Live)',
+            `✓ ${COMPLETE_PLAN_LIMITS.pro.mockInterviews.perMonth} mock interviews/mo`,
+            `✓ ${COMPLETE_PLAN_LIMITS.pro.voice.mockVoice} min mock + ${COMPLETE_PLAN_LIMITS.pro.voice.realVoice} min live voice`,
+            `✓ ${COMPLETE_PLAN_LIMITS.pro.cvAnalysis.perMonth} CV analyses`,
+            '✓ Video answers',
             '✓ Chrome Extension',
-            '✓ Stealth Mode',
+            '✓ Advanced AI analysis',
           ],
         },
         elite: {
@@ -775,11 +782,11 @@ Remaining: ${remaining}
           name: 'ELITE',
           price: '$29.99/mo',
           features: [
-            '✓ 200 mock interviews',
-            '✓ 160 min live interview',
-            '✓ 50 CV analyses',
+            '✓ Unlimited mock interviews',
+            `✓ ${COMPLETE_PLAN_LIMITS.elite.voice.mockVoice} min mock + ${COMPLETE_PLAN_LIMITS.elite.voice.realVoice} min live voice`,
+            `✓ ${COMPLETE_PLAN_LIMITS.elite.cvAnalysis.perMonth} CV analyses`,
+            '✓ Premium AI models',
             '✓ Priority Support',
-            '✓ Advanced AI models',
             '✓ All features',
           ],
         },

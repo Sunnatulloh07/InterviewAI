@@ -20,6 +20,7 @@ import { UnregisteredUserService } from '../engagement/unregistered-user.service
 import { DailyTasksService } from '../tasks/daily-tasks.service';
 import { OpenAI } from 'openai';
 import { createOpenAIClient, getModelName } from '@common/utils/openai-client.factory';
+import { COMPLETE_PLAN_LIMITS } from '../../common/constants/plan-limits.constant';
 
 @Injectable()
 export class TelegramCommandsService {
@@ -363,27 +364,103 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
 
   /**
    * Handle /upgrade command
+   * ✅ Updated to match COMPLETE_PLAN_LIMITS exactly
    */
   async handleUpgrade(ctx: BotContext) {
     const lang = ctx.session?.language || 'en';
+    
+    // Get limits from COMPLETE_PLAN_LIMITS
+    const freeLimits = COMPLETE_PLAN_LIMITS.free_trial;
+    const starterLimits = COMPLETE_PLAN_LIMITS.starter;
+    const proLimits = COMPLETE_PLAN_LIMITS.pro;
+    const eliteLimits = COMPLETE_PLAN_LIMITS.elite;
+    
     const plansText: Record<string, string> = {
       uz: `💳 <b>Tariflar</b>\n\n` +
-          `🆓 Free Trial - 7 kun\n` +
-          `💎 Starter - $9.99/oy\n` +
-          `🚀 Pro - $19.99/oy\n` +
-          `👑 Elite - $29.99/oy\n\n` +
+          `🆓 <b>Free Trial</b> - 7 kun\n` +
+          `• ${freeLimits.mockInterviews.perMonth} ta mock intervyu/oy\n` +
+          `• ${freeLimits.voice.mockVoice} daqiqa mock ovoz\n` +
+          `• ${freeLimits.cvAnalysis.perMonth} ta CV tahlili\n` +
+          `• Faqat matn javoblari\n\n` +
+          
+          `💎 <b>Starter</b> - $9.99/oy\n` +
+          `• ${starterLimits.mockInterviews.perMonth} ta mock intervyu/oy\n` +
+          `• ${starterLimits.voice.mockVoice} daq mock + ${starterLimits.voice.realVoice} daq live ovoz\n` +
+          `• ${starterLimits.cvAnalysis.perMonth} ta CV tahlili\n` +
+          `• Ovoz va rasm javoblari\n\n` +
+          
+          `🚀 <b>Pro</b> - $19.99/oy\n` +
+          `• ${proLimits.mockInterviews.perMonth} ta mock intervyu/oy\n` +
+          `• ${proLimits.voice.mockVoice} daq mock + ${proLimits.voice.realVoice} daq live ovoz\n` +
+          `• ${proLimits.cvAnalysis.perMonth} ta CV tahlili\n` +
+          `• Batafsil AI tahlil\n` +
+          `• Chrome Extension\n\n` +
+          
+          `👑 <b>Elite</b> - $29.99/oy\n` +
+          `• Cheksiz mock intervyu\n` +
+          `• ${eliteLimits.voice.mockVoice} daq mock + ${eliteLimits.voice.realVoice} daq live ovoz\n` +
+          `• ${eliteLimits.cvAnalysis.perMonth} ta CV tahlili\n` +
+          `• Premium AI modellari\n` +
+          `• Priority support\n\n` +
+          
           `Batafsil: /help`,
+          
       ru: `💳 <b>Тарифы</b>\n\n` +
-          `🆓 Free Trial - 7 дней\n` +
-          `💎 Starter - $9.99/мес\n` +
-          `🚀 Pro - $19.99/мес\n` +
-          `👑 Elite - $29.99/мес\n\n` +
+          `🆓 <b>Free Trial</b> - 7 дней\n` +
+          `• ${freeLimits.mockInterviews.perMonth} mock-интервью/мес\n` +
+          `• ${freeLimits.voice.mockVoice} мин mock-голос\n` +
+          `• ${freeLimits.cvAnalysis.perMonth} анализа CV\n` +
+          `• Только текстовые ответы\n\n` +
+          
+          `💎 <b>Starter</b> - $9.99/мес\n` +
+          `• ${starterLimits.mockInterviews.perMonth} mock-интервью/мес\n` +
+          `• ${starterLimits.voice.mockVoice} мин mock + ${starterLimits.voice.realVoice} мин live голос\n` +
+          `• ${starterLimits.cvAnalysis.perMonth} анализов CV\n` +
+          `• Голос и изображения\n\n` +
+          
+          `🚀 <b>Pro</b> - $19.99/мес\n` +
+          `• ${proLimits.mockInterviews.perMonth} mock-интервью/мес\n` +
+          `• ${proLimits.voice.mockVoice} мин mock + ${proLimits.voice.realVoice} мин live голос\n` +
+          `• ${proLimits.cvAnalysis.perMonth} анализов CV\n` +
+          `• Подробный AI анализ\n` +
+          `• Chrome Extension\n\n` +
+          
+          `👑 <b>Elite</b> - $29.99/мес\n` +
+          `• Безлимит mock-интервью\n` +
+          `• ${eliteLimits.voice.mockVoice} мин mock + ${eliteLimits.voice.realVoice} мин live голос\n` +
+          `• ${eliteLimits.cvAnalysis.perMonth} анализов CV\n` +
+          `• Premium AI модели\n` +
+          `• Приоритетная поддержка\n\n` +
+          
           `Подробнее: /help`,
+          
       en: `💳 <b>Plans</b>\n\n` +
-          `🆓 Free Trial - 7 days\n` +
-          `💎 Starter - $9.99/month\n` +
-          `🚀 Pro - $19.99/month\n` +
-          `👑 Elite - $29.99/month\n\n` +
+          `🆓 <b>Free Trial</b> - 7 days\n` +
+          `• ${freeLimits.mockInterviews.perMonth} mock interviews/mo\n` +
+          `• ${freeLimits.voice.mockVoice} min mock voice\n` +
+          `• ${freeLimits.cvAnalysis.perMonth} CV analyses\n` +
+          `• Text answers only\n\n` +
+          
+          `💎 <b>Starter</b> - $9.99/month\n` +
+          `• ${starterLimits.mockInterviews.perMonth} mock interviews/mo\n` +
+          `• ${starterLimits.voice.mockVoice} min mock + ${starterLimits.voice.realVoice} min live voice\n` +
+          `• ${starterLimits.cvAnalysis.perMonth} CV analyses\n` +
+          `• Voice & image answers\n\n` +
+          
+          `🚀 <b>Pro</b> - $19.99/month\n` +
+          `• ${proLimits.mockInterviews.perMonth} mock interviews/mo\n` +
+          `• ${proLimits.voice.mockVoice} min mock + ${proLimits.voice.realVoice} min live voice\n` +
+          `• ${proLimits.cvAnalysis.perMonth} CV analyses\n` +
+          `• Detailed AI analysis\n` +
+          `• Chrome Extension\n\n` +
+          
+          `👑 <b>Elite</b> - $29.99/month\n` +
+          `• Unlimited mock interviews\n` +
+          `• ${eliteLimits.voice.mockVoice} min mock + ${eliteLimits.voice.realVoice} min live voice\n` +
+          `• ${eliteLimits.cvAnalysis.perMonth} CV analyses\n` +
+          `• Premium AI models\n` +
+          `• Priority support\n\n` +
+          
           `More info: /help`,
     };
     await ctx.reply(plansText[lang] || plansText['en'], { parse_mode: 'HTML' });
