@@ -240,17 +240,25 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
       .resized()
       .persistent();
 
-    // Send main menu with inline keyboard (for nice clickable UI)
+    // Send main menu with inline keyboard (primary interaction method)
     await ctx.reply(menuText[lang] || menuText['en'], {
       parse_mode: 'HTML',
       reply_markup: inlineKeyboard,
     });
     
-    // Also set the persistent reply keyboard at bottom (invisible separator message)
-    // This ensures ReplyKeyboard matches InlineKeyboard buttons
-    await ctx.reply('·', {
-      reply_markup: replyKeyboard,
-    });
+    // Send reply keyboard as a separate message for persistent bottom buttons
+    // This allows users to type button names or click them
+    try {
+      const chatId = ctx.chat?.id;
+      if (chatId) {
+        await ctx.reply('┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅', {
+          reply_markup: replyKeyboard,
+        });
+      }
+    } catch (error) {
+      // Silent fail - reply keyboard is optional
+      this.logger.debug('Could not set reply keyboard:', error.message);
+    }
   }
 
   /**
@@ -1451,10 +1459,29 @@ Which domain would you like to practice?
         language: lang,
       };
       
+      // Show loading message while questions are being generated
+      const loadingText: Record<string, string> = {
+        uz: '⏳ <b>Intervyu tayyorlanmoqda...</b>\n\nSavollar yaratilmoqda, bir necha soniya kuting.',
+        ru: '⏳ <b>Подготовка интервью...</b>\n\nВопросы генерируются, подождите несколько секунд.',
+        en: '⏳ <b>Preparing interview...</b>\n\nGenerating questions, please wait a few seconds.',
+      };
+      const loadingMsg = await ctx.reply(loadingText[lang] || loadingText.en, {
+        parse_mode: 'HTML',
+      });
+      
       try {
         // Start the interview
         const userId = (user as any).id || (user as any)._id?.toString();
         const session = await this.interviewsService.startInterview(userId, startDto as any);
+        
+        // Delete loading message
+        try {
+          if (ctx.chat?.id) {
+            await ctx.api.deleteMessage(ctx.chat.id, loadingMsg.message_id);
+          }
+        } catch (deleteError) {
+          // Silent fail - message might be already deleted
+        }
         
         // Save session ID to context
         ctx.session.currentInterviewSessionId = session.id;
@@ -1511,9 +1538,9 @@ Or select a different domain/technology.`,
 
 <b>Savol ${session.currentQuestionIndex + 1}/${session.numQuestions}:</b>
 
-${firstQuestion.text}
+${firstQuestion.question || firstQuestion.text || 'Savol yuklanmoqda...'}
 
-${firstQuestion.codeSnippet ? `\n\`\`\`\n${firstQuestion.codeSnippet}\n\`\`\`\n` : ''}
+${firstQuestion.codeSnippet || firstQuestion.sampleAnswer ? `\n\`\`\`\n${firstQuestion.codeSnippet || firstQuestion.sampleAnswer}\n\`\`\`\n` : ''}
 
 💡 <i>Javobingizni yozing yoki ovozli xabar yuboring</i>`,
           
@@ -1529,9 +1556,9 @@ ${firstQuestion.codeSnippet ? `\n\`\`\`\n${firstQuestion.codeSnippet}\n\`\`\`\n`
 
 <b>Вопрос ${session.currentQuestionIndex + 1}/${session.numQuestions}:</b>
 
-${firstQuestion.text}
+${firstQuestion.question || firstQuestion.text || 'Вопрос загружается...'}
 
-${firstQuestion.codeSnippet ? `\n\`\`\`\n${firstQuestion.codeSnippet}\n\`\`\`\n` : ''}
+${firstQuestion.codeSnippet || firstQuestion.sampleAnswer ? `\n\`\`\`\n${firstQuestion.codeSnippet || firstQuestion.sampleAnswer}\n\`\`\`\n` : ''}
 
 💡 <i>Напишите ответ или отправьте голосовое сообщение</i>`,
           
@@ -1547,9 +1574,9 @@ ${firstQuestion.codeSnippet ? `\n\`\`\`\n${firstQuestion.codeSnippet}\n\`\`\`\n`
 
 <b>Question ${session.currentQuestionIndex + 1}/${session.numQuestions}:</b>
 
-${firstQuestion.text}
+${firstQuestion.question || firstQuestion.text || 'Loading question...'}
 
-${firstQuestion.codeSnippet ? `\n\`\`\`\n${firstQuestion.codeSnippet}\n\`\`\`\n` : ''}
+${firstQuestion.codeSnippet || firstQuestion.sampleAnswer ? `\n\`\`\`\n${firstQuestion.codeSnippet || firstQuestion.sampleAnswer}\n\`\`\`\n` : ''}
 
 💡 <i>Type your answer or send a voice message</i>`,
         };
