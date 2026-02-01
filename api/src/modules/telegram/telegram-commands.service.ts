@@ -209,7 +209,8 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
       help: { uz: '❓ Yordam', ru: '❓ Помощь', en: '❓ Help' },
     };
 
-    const keyboard = new InlineKeyboard()
+    // Inline keyboard (message buttons)
+    const inlineKeyboard = new InlineKeyboard()
       .text(buttonLabels.interview[lang] || buttonLabels.interview.en, 'menu_interview')
       .text(buttonLabels.tasks[lang] || buttonLabels.tasks.en, 'menu_tasks')
       .row()
@@ -218,9 +219,28 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
       .row()
       .text(buttonLabels.help[lang] || buttonLabels.help.en, 'menu_help');
 
+    // Reply keyboard (persistent bottom keyboard) - SAME buttons as inline
+    const replyKeyboard = new Keyboard()
+      .text(buttonLabels.interview[lang] || buttonLabels.interview.en)
+      .text(buttonLabels.tasks[lang] || buttonLabels.tasks.en)
+      .row()
+      .text(buttonLabels.profile[lang] || buttonLabels.profile.en)
+      .text(buttonLabels.upgrade[lang] || buttonLabels.upgrade.en)
+      .row()
+      .text(buttonLabels.help[lang] || buttonLabels.help.en)
+      .resized()
+      .persistent();
+
+    // Send main menu with inline keyboard (for nice clickable UI)
     await ctx.reply(menuText[lang] || menuText['en'], {
       parse_mode: 'HTML',
-      reply_markup: keyboard,
+      reply_markup: inlineKeyboard,
+    });
+    
+    // Also set the persistent reply keyboard at bottom (invisible separator message)
+    // This ensures ReplyKeyboard matches InlineKeyboard buttons
+    await ctx.reply('·', {
+      reply_markup: replyKeyboard,
     });
   }
 
