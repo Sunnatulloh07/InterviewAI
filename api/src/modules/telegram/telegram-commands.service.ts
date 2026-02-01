@@ -204,15 +204,17 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
     const buttonLabels: Record<string, Record<string, string>> = {
       interview: { uz: '🎯 Intervyu', ru: '🎯 Интервью', en: '🎯 Interview' },
       tasks: { uz: '📋 Vazifalar', ru: '📋 Задания', en: '📋 Tasks' },
+      cv: { uz: '📄 CV Tahlil', ru: '📄 Анализ CV', en: '📄 CV Analysis' },
       profile: { uz: '👤 Profil', ru: '👤 Профиль', en: '👤 Profile' },
       upgrade: { uz: '💳 Tarif', ru: '💳 Тарифы', en: '💳 Plans' },
       help: { uz: '❓ Yordam', ru: '❓ Помощь', en: '❓ Help' },
     };
 
-    // Inline keyboard (message buttons)
+    // Inline keyboard (message buttons) - ALL main features
     const inlineKeyboard = new InlineKeyboard()
       .text(buttonLabels.interview[lang] || buttonLabels.interview.en, 'menu_interview')
       .text(buttonLabels.tasks[lang] || buttonLabels.tasks.en, 'menu_tasks')
+      .text(buttonLabels.cv[lang] || buttonLabels.cv.en, 'menu_cv')
       .row()
       .text(buttonLabels.profile[lang] || buttonLabels.profile.en, 'menu_profile')
       .text(buttonLabels.upgrade[lang] || buttonLabels.upgrade.en, 'menu_upgrade')
@@ -223,6 +225,7 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
     const replyKeyboard = new Keyboard()
       .text(buttonLabels.interview[lang] || buttonLabels.interview.en)
       .text(buttonLabels.tasks[lang] || buttonLabels.tasks.en)
+      .text(buttonLabels.cv[lang] || buttonLabels.cv.en)
       .row()
       .text(buttonLabels.profile[lang] || buttonLabels.profile.en)
       .text(buttonLabels.upgrade[lang] || buttonLabels.upgrade.en)
@@ -1001,6 +1004,9 @@ Press the button below 👇`,
           break;
         case 'tasks':
           await this.handleTasks(ctx);
+          break;
+        case 'cv':
+          await this.handleAnalyzeCv(ctx);
           break;
         case 'profile':
           await this.handleProfile(ctx);
