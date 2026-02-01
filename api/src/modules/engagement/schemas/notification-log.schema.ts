@@ -44,7 +44,7 @@ export enum NotificationDeliveryStatus {
 @Schema({ timestamps: true, collection: 'notification_logs' })
 export class NotificationLog {
   /** Reference to the user who received this notification */
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
+  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   userId: Types.ObjectId;
 
   /** Telegram ID for quick lookup (denormalized for performance) */

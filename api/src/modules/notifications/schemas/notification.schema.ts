@@ -9,7 +9,6 @@ export class Notification {
     type: MongooseSchema.Types.ObjectId,
     ref: 'User',
     required: true,
-    index: true,
   })
   userId: MongooseSchema.Types.ObjectId;
 

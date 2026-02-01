@@ -5,7 +5,7 @@ export type FailedNotificationDocument = FailedNotification & Document;
 
 @Schema({ timestamps: true })
 export class FailedNotification {
-  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', required: true, index: true })
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', required: true })
   userId: MongooseSchema.Types.ObjectId;
 
   @Prop({ required: true })
