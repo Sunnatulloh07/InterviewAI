@@ -290,30 +290,79 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
 
       const lang = this.getUserLanguage(ctx, user);
       
+      // Get plan and limits
+      const plan = user.subscription?.plan || 'free_trial';
+      const planNames: Record<string, Record<string, string>> = {
+        'free_trial': { uz: '🆓 Bepul sinov', ru: '🆓 Пробный', en: '🆓 Free Trial' },
+        'starter': { uz: '💎 Starter', ru: '💎 Starter', en: '💎 Starter' },
+        'pro': { uz: '🚀 Pro', ru: '🚀 Pro', en: '🚀 Pro' },
+        'elite': { uz: '👑 Elite', ru: '👑 Elite', en: '👑 Elite' },
+      };
+      const planName = planNames[plan]?.[lang] || plan;
+      
+      // Get plan limits
+      const limits = COMPLETE_PLAN_LIMITS[plan as keyof typeof COMPLETE_PLAN_LIMITS] || COMPLETE_PLAN_LIMITS.free_trial;
+      const mockLimit = limits.mockInterviews.perMonth;
+      const liveLimit = limits.voice.realVoice;
+      const cvLimit = limits.cvAnalysis.perMonth;
+      
+      // Get current usage
+      const mockUsed = user.usage?.mockInterviewsThisMonth || 0;
+      const liveUsed = user.usage?.liveInterviewMinutesThisMonth || 0;
+      const cvUsed = user.usage?.cvAnalysesThisMonth || 0;
+      const mockVoiceRemaining = user.voiceQuota?.mockVoice?.remaining || 0;
+      const liveVoiceRemaining = user.voiceQuota?.realVoice?.remaining || 0;
+      
+      // Format limits display
+      const mockLimitText = mockLimit === -1 ? '∞' : mockLimit;
+      const liveLimitText = liveLimit === -1 ? '∞' : liveLimit;
+      const cvLimitText = cvLimit === -1 ? '∞' : cvLimit;
+      
       const profileText = {
         uz: `👤 <b>Profil</b>\n\n` +
             `Ism: ${user.firstName} ${user.lastName}\n` +
             `Telefon: ${user.phoneNumber}\n` +
             `Lavozim: ${user.profile?.position || 'Aniqlanmagan'}\n\n` +
-            `📊 <b>Statistika</b>\n` +
-            `Intervyular: ${user.usage?.mockInterviewsThisMonth || 0}\n` +
-            `CV tahlili: ${user.usage?.cvAnalysesThisMonth || 0}\n` +
+            `━━━━━━━━━━━━━━━━━━\n` +
+            `💳 <b>Tarif: ${planName}</b>\n\n` +
+            `📊 <b>Bu oylik limitlar:</b>\n` +
+            `• Mock intervyu: ${mockUsed}/${mockLimitText}\n` +
+            `• Live intervyu: ${liveUsed}/${liveLimitText} daq\n` +
+            `• CV tahlili: ${cvUsed}/${cvLimitText}\n\n` +
+            `🎤 <b>Ovozli:</b>\n` +
+            `• Mock: ${mockVoiceRemaining} daq\n` +
+            `• Live: ${liveVoiceRemaining} daq\n\n` +
+            `━━━━━━━━━━━━━━━━━━\n` +
             `🔥 Streak: ${user.dailyTasks?.currentStreak || 0} kun`,
         ru: `👤 <b>Профиль</b>\n\n` +
             `Имя: ${user.firstName} ${user.lastName}\n` +
             `Телефон: ${user.phoneNumber}\n` +
             `Должность: ${user.profile?.position || 'Не указана'}\n\n` +
-            `📊 <b>Статистика</b>\n` +
-            `Интервью: ${user.usage?.mockInterviewsThisMonth || 0}\n` +
-            `Анализ CV: ${user.usage?.cvAnalysesThisMonth || 0}\n` +
+            `━━━━━━━━━━━━━━━━━━\n` +
+            `💳 <b>Тариф: ${planName}</b>\n\n` +
+            `📊 <b>Лимиты за месяц:</b>\n` +
+            `• Mock-интервью: ${mockUsed}/${mockLimitText}\n` +
+            `• Live-интервью: ${liveUsed}/${liveLimitText} мин\n` +
+            `• Анализ CV: ${cvUsed}/${cvLimitText}\n\n` +
+            `🎤 <b>Голосовые:</b>\n` +
+            `• Mock: ${mockVoiceRemaining} мин\n` +
+            `• Live: ${liveVoiceRemaining} мин\n\n` +
+            `━━━━━━━━━━━━━━━━━━\n` +
             `🔥 Серия: ${user.dailyTasks?.currentStreak || 0} дней`,
         en: `👤 <b>Profile</b>\n\n` +
             `Name: ${user.firstName} ${user.lastName}\n` +
             `Phone: ${user.phoneNumber}\n` +
             `Position: ${user.profile?.position || 'Not set'}\n\n` +
-            `📊 <b>Statistics</b>\n` +
-            `Interviews: ${user.usage?.mockInterviewsThisMonth || 0}\n` +
-            `CV Analyses: ${user.usage?.cvAnalysesThisMonth || 0}\n` +
+            `━━━━━━━━━━━━━━━━━━\n` +
+            `💳 <b>Plan: ${planName}</b>\n\n` +
+            `📊 <b>Monthly Limits:</b>\n` +
+            `• Mock interviews: ${mockUsed}/${mockLimitText}\n` +
+            `• Live interviews: ${liveUsed}/${liveLimitText} min\n` +
+            `• CV analyses: ${cvUsed}/${cvLimitText}\n\n` +
+            `🎤 <b>Voice:</b>\n` +
+            `• Mock: ${mockVoiceRemaining} min\n` +
+            `• Live: ${liveVoiceRemaining} min\n\n` +
+            `━━━━━━━━━━━━━━━━━━\n` +
             `🔥 Streak: ${user.dailyTasks?.currentStreak || 0} days`,
       };
 
@@ -403,7 +452,8 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
           `• Premium AI modellari\n` +
           `• Priority support\n\n` +
           
-          `Batafsil: /help`,
+          `━━━━━━━━━━━━━━━━━━\n` +
+          `📞 Tarif o'zgartirish uchun @interviewai_support_bot ga murojaat qiling`,
           
       ru: `💳 <b>Тарифы</b>\n\n` +
           `🆓 <b>Free Trial</b> - 7 дней\n` +
@@ -432,7 +482,8 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
           `• Premium AI модели\n` +
           `• Приоритетная поддержка\n\n` +
           
-          `Подробнее: /help`,
+          `━━━━━━━━━━━━━━━━━━\n` +
+          `📞 Для изменения тарифа обратитесь в @interviewai_support_bot`,
           
       en: `💳 <b>Plans</b>\n\n` +
           `🆓 <b>Free Trial</b> - 7 days\n` +
@@ -461,9 +512,18 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
           `• Premium AI models\n` +
           `• Priority support\n\n` +
           
-          `More info: /help`,
+          `━━━━━━━━━━━━━━━━━━\n` +
+          `📞 To change your plan, contact @interviewai_support_bot`,
     };
-    await ctx.reply(plansText[lang] || plansText['en'], { parse_mode: 'HTML' });
+    
+    // Add inline keyboard with support bot link
+    const keyboard = new InlineKeyboard()
+      .url('📞 Support Bot', 'https://t.me/interviewai_support_bot');
+    
+    await ctx.reply(plansText[lang] || plansText['en'], { 
+      parse_mode: 'HTML',
+      reply_markup: keyboard,
+    });
   }
 
   /**
@@ -535,36 +595,47 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
     const lang = ctx.session?.language || 'en';
     const helpText: Record<string, string> = {
       uz: `❓ <b>Yordam</b>\n\n` +
-          `/start - Botni ishga tushirish\n` +
-          `/interview - Intervyu boshlash\n` +
-          `/tasks - Kunlik vazifalar\n` +
-          `/profile - Profilni ko'rish\n` +
-          `/upgrade - Tarifni o'zgartirish\n` +
-          `/voice - Ovozli xabar limiti\n` +
-          `/help - Yordam\n\n` +
-          `Savollar uchun: @interviewai_support`,
+          `<b>Buyruqlar:</b>\n` +
+          `▪️ /start - Botni ishga tushirish\n` +
+          `▪️ /interview - Intervyu boshlash\n` +
+          `▪️ /tasks - Kunlik vazifalar\n` +
+          `▪️ /profile - Profilni ko'rish\n` +
+          `▪️ /upgrade - Tarifni o'zgartirish\n` +
+          `▪️ /voice - Ovozli xabar limiti\n` +
+          `▪️ /help - Yordam\n\n` +
+          `━━━━━━━━━━━━━━━━━━\n` +
+          `📞 Savollar uchun: @interviewai_support_bot`,
       ru: `❓ <b>Помощь</b>\n\n` +
-          `/start - Запуск бота\n` +
-          `/interview - Начать интервью\n` +
-          `/tasks - Ежедневные задания\n` +
-          `/profile - Профиль\n` +
-          `/upgrade - Изменить тариф\n` +
-          `/voice - Лимит голосовых\n` +
-          `/help - Помощь\n\n` +
-          `Поддержка: @interviewai_support`,
+          `<b>Команды:</b>\n` +
+          `▪️ /start - Запуск бота\n` +
+          `▪️ /interview - Начать интервью\n` +
+          `▪️ /tasks - Ежедневные задания\n` +
+          `▪️ /profile - Профиль\n` +
+          `▪️ /upgrade - Изменить тариф\n` +
+          `▪️ /voice - Лимит голосовых\n` +
+          `▪️ /help - Помощь\n\n` +
+          `━━━━━━━━━━━━━━━━━━\n` +
+          `📞 Поддержка: @interviewai_support_bot`,
       en: `❓ <b>Help</b>\n\n` +
-          `/start - Start bot\n` +
-          `/interview - Start interview\n` +
-          `/tasks - Daily tasks\n` +
-          `/profile - View profile\n` +
-          `/upgrade - Change plan\n` +
-          `/voice - Voice quota status\n` +
-          `/help - Help\n\n` +
-          `Support: @interviewai_support`,
+          `<b>Commands:</b>\n` +
+          `▪️ /start - Start bot\n` +
+          `▪️ /interview - Start interview\n` +
+          `▪️ /tasks - Daily tasks\n` +
+          `▪️ /profile - View profile\n` +
+          `▪️ /upgrade - Change plan\n` +
+          `▪️ /voice - Voice quota status\n` +
+          `▪️ /help - Help\n\n` +
+          `━━━━━━━━━━━━━━━━━━\n` +
+          `📞 Support: @interviewai_support_bot`,
     };
+    
+    // Add support bot button
+    const keyboard = new InlineKeyboard()
+      .url('📞 Support Bot', 'https://t.me/interviewai_support_bot');
 
     await ctx.reply(helpText[lang] || helpText['en'], {
       parse_mode: 'HTML',
+      reply_markup: keyboard,
     });
   }
 
