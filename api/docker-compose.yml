@@ -2,26 +2,27 @@ version: '3.8'
 
 services:
   # InterviewAI Pro API
-  api:
-    build: .
-    container_name: interviewai-api
-    restart: unless-stopped
-    ports:
-      - '3000:3000'
-    env_file:
-      - .env
-    environment:
-      - MONGODB_URI=mongodb://${MONGODB_ROOT_USERNAME:-admin}:${MONGODB_ROOT_PASSWORD:-admin123}@mongodb:27017/${MONGODB_DB_NAME:-interviewai}?authSource=admin
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-redis123}
-    depends_on:
-      mongodb:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - interviewai-network
+  # api:
+  #   build: .
+  #   container_name: interviewai-api
+  #   restart: unless-stopped
+  #   ports:
+  #     - '3000:3000'
+  #   env_file:
+  #     - .env
+  #   environment:
+  #     - MONGODB_URI=mongodb://${MONGODB_ROOT_USERNAME:-admin}:${MONGODB_ROOT_PASSWORD:-admin123}@mongodb:27017/${MONGODB_DB_NAME:-interviewai}?authSource=admin
+  #     - REDIS_HOST=redis
+  #     - REDIS_PORT=6379
+  #     - REDIS_PASSWORD=${REDIS_PASSWORD:-redis123}
+  #   depends_on:
+  #     mongodb:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #   networks:
+  #     - interviewai-network
+  
   # MongoDB Database
   mongodb:
     image: mongo:7.0

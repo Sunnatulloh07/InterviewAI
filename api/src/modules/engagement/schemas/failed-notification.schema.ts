@@ -45,7 +45,7 @@ export class FailedNotification {
   @Prop({ type: Date })
   nextRetryAt?: Date;
 
-  @Prop()
+  @Prop({ type: MongooseSchema.Types.Mixed })
   metadata?: {
     taskId?: string;
     taskIndex?: number;

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -31,6 +31,7 @@ export class TelegramDailyTaskService {
   private readonly maxImageSize: number;
 
   constructor(
+    @Inject(forwardRef(() => TelegramService))
     private readonly telegramService: TelegramService,
     private readonly dailyTasksService: DailyTasksService,
     private readonly usersService: UsersService,

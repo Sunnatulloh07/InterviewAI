@@ -1,4 +1,4 @@
-import { Injectable, Logger, Inject } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -27,7 +27,7 @@ export class InactivityTrackerService {
 
   constructor(
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
-    @Inject(() => TelegramService) private readonly telegramService: TelegramService,
+    @Inject(forwardRef(() => TelegramService)) private readonly telegramService: TelegramService,
   ) {}
 
   /**

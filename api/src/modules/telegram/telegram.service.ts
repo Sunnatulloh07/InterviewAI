@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, Inject, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRedis } from '@nestjs-modules/ioredis';
 import Redis from 'ioredis';
@@ -71,6 +71,7 @@ export class TelegramService implements OnModuleInit {
     private readonly commandsService: TelegramCommandsService,
     private readonly voiceService: TelegramVoiceService,
     private readonly liveService: TelegramLiveService,
+    @Inject(forwardRef(() => TelegramDailyTaskService))
     private readonly dailyTaskService: TelegramDailyTaskService,
     @InjectRedis() private readonly redis: Redis,
   ) {
