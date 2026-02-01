@@ -690,15 +690,14 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
 
       const lang = this.getUserLanguage(ctx, user);
       
-      // Get usage stats
+      // Get usage stats (schema only has monthly tracking)
       const mockInterviews = user.usage?.mockInterviewsThisMonth || 0;
-      const totalMockInterviews = user.usage?.totalMockInterviews || 0;
       const liveMinutes = user.usage?.liveInterviewMinutesThisMonth || 0;
-      const totalLiveMinutes = user.usage?.totalLiveInterviewMinutes || 0;
       const cvAnalyses = user.usage?.cvAnalysesThisMonth || 0;
-      const totalCvAnalyses = user.usage?.totalCvAnalyses || 0;
+      const chromeQuestions = user.usage?.chromeQuestionsThisMonth || 0;
       const streak = user.dailyTasks?.currentStreak || 0;
-      const maxStreak = user.dailyTasks?.maxStreak || 0;
+      const longestStreak = user.dailyTasks?.longestStreak || 0;
+      const totalCompleted = user.dailyTasks?.totalCompleted || 0;
       
       const statsText: Record<string, string> = {
         uz: `📊 <b>Statistika</b>
@@ -707,13 +706,12 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
 • Mock intervyular: ${mockInterviews}
 • Live intervyu: ${liveMinutes} daq
 • CV tahlillari: ${cvAnalyses}
-• 🔥 Streak: ${streak} kun
+• Chrome savollari: ${chromeQuestions}
 
-📊 <b>Jami:</b>
-• Mock intervyular: ${totalMockInterviews}
-• Live intervyu: ${totalLiveMinutes} daq
-• CV tahlillari: ${totalCvAnalyses}
-• 🔥 Eng uzun streak: ${maxStreak} kun`,
+🔥 <b>Streak:</b>
+• Joriy: ${streak} kun
+• Eng uzun: ${longestStreak} kun
+• Jami bajarilgan: ${totalCompleted}`,
         
         ru: `📊 <b>Статистика</b>
 
@@ -721,13 +719,12 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
 • Mock-интервью: ${mockInterviews}
 • Live-интервью: ${liveMinutes} мин
 • Анализов CV: ${cvAnalyses}
-• 🔥 Серия: ${streak} дней
+• Chrome вопросы: ${chromeQuestions}
 
-📊 <b>Всего:</b>
-• Mock-интервью: ${totalMockInterviews}
-• Live-интервью: ${totalLiveMinutes} мин
-• Анализов CV: ${totalCvAnalyses}
-• 🔥 Макс. серия: ${maxStreak} дней`,
+🔥 <b>Серия:</b>
+• Текущая: ${streak} дней
+• Максимальная: ${longestStreak} дней
+• Всего выполнено: ${totalCompleted}`,
         
         en: `📊 <b>Statistics</b>
 
@@ -735,13 +732,12 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
 • Mock interviews: ${mockInterviews}
 • Live interviews: ${liveMinutes} min
 • CV analyses: ${cvAnalyses}
-• 🔥 Streak: ${streak} days
+• Chrome questions: ${chromeQuestions}
 
-📊 <b>Total:</b>
-• Mock interviews: ${totalMockInterviews}
-• Live interviews: ${totalLiveMinutes} min
-• CV analyses: ${totalCvAnalyses}
-• 🔥 Max streak: ${maxStreak} days`,
+🔥 <b>Streak:</b>
+• Current: ${streak} days
+• Longest: ${longestStreak} days
+• Total completed: ${totalCompleted}`,
       };
       
       await ctx.reply(statsText[lang] || statsText['en'], {

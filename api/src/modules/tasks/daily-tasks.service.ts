@@ -5,12 +5,11 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import { InjectRedis } from '@nestjs-modules/ioredis';
 import Redis from 'ioredis';
-import { OpenAI } from 'openai';
+import { GoogleGenAI } from '@google/genai';
 import { DailyTask, DailyTaskDocument } from './schemas/daily-task.schema';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { TelegramService } from '../telegram/telegram.service';
 import { FailedNotificationRetryService } from '../engagement/failed-notification-retry.service';
-import { createOpenAIClient } from '@common/utils/openai-client.factory';
 import {
   getPlanLimits,
   canUseDailyTaskVoiceAnswer,
@@ -21,7 +20,7 @@ import {
 @Injectable()
 export class DailyTasksService {
   private readonly logger = new Logger(DailyTasksService.name);
-  private readonly openai: OpenAI | null;
+  private readonly genAI: GoogleGenAI | null;
 
   constructor(
     @InjectModel(DailyTask.name)
@@ -35,7 +34,15 @@ export class DailyTasksService {
     private readonly configService: ConfigService,
     @InjectRedis() private readonly redis: Redis,
   ) {
-    this.openai = createOpenAIClient(this.configService);
+    // Initialize Gemini AI client
+    const apiKey = this.configService.get<string>('GOOGLE_API_KEY') || this.configService.get<string>('GEMINI_API_KEY');
+    if (apiKey) {
+      this.genAI = new GoogleGenAI({ apiKey });
+      this.logger.log('Gemini AI client initialized for daily tasks');
+    } else {
+      this.genAI = null;
+      this.logger.warn('No Google/Gemini API key found. Daily task scoring will use basic scoring only.');
+    }
   }
 
   /**
@@ -505,13 +512,13 @@ export class DailyTasksService {
   }
 
   /**
-   * Advanced scoring (STARTER plan) - GPT-3.5 with concise prompt
+   * Advanced scoring (STARTER plan) - Gemini 2.5 Flash Lite with concise prompt
    */
   private async scoreAnswerAdvanced(
     question: string,
     answer: string,
   ): Promise<{ score: number; feedback: string }> {
-    if (!this.openai) {
+    if (!this.genAI) {
       return this.scoreAnswerBasic(question, answer);
     }
 
@@ -522,36 +529,40 @@ Answer: ${answer}
 JSON response: {"score": <0-10>, "feedback": "<brief feedback>"}`;
 
     try {
-      const completion = await this.openai.chat.completions.create({
-        model: 'gpt-3.5-turbo',
-        messages: [
-          { role: 'system', content: 'Score interview answers briefly. Return JSON only.' },
-          { role: 'user', content: prompt },
+      const response = await this.genAI.models.generateContent({
+        model: 'gemini-2.5-flash-lite',
+        contents: [
+          { role: 'user', parts: [{ text: prompt }] },
         ],
-        temperature: 0.5,
-        max_tokens: 150,
-        response_format: { type: 'json_object' },
+        config: {
+          temperature: 0.5,
+          maxOutputTokens: 150,
+        },
       });
 
-      const result = JSON.parse(completion.choices[0]?.message?.content || '{"score": 5, "feedback": "Reviewed."}');
+      const responseText = response.text || '{"score": 5, "feedback": "Reviewed."}';
+      // Extract JSON from response (handle markdown code blocks)
+      const jsonMatch = responseText.match(/\{[^}]+\}/);
+      const result = JSON.parse(jsonMatch ? jsonMatch[0] : '{"score": 5, "feedback": "Reviewed."}');
+      
       return {
         score: Math.min(10, Math.max(0, result.score || 5)),
         feedback: result.feedback || 'Keep practicing!',
       };
     } catch (error: any) {
-      this.logger.error(`Advanced scoring failed: ${error.message}`);
+      this.logger.error(`Advanced scoring with Gemini failed: ${error.message}`);
       return this.scoreAnswerBasic(question, answer);
     }
   }
 
   /**
-   * AI-Powered scoring (PRO/ELITE) - Full analysis with detailed feedback
+   * AI-Powered scoring (PRO/ELITE) - Gemini 2.5 Flash with detailed analysis
    */
   private async scoreAnswerAIPowered(
     question: string,
     answer: string,
   ): Promise<{ score: number; feedback: string }> {
-    if (!this.openai) {
+    if (!this.genAI) {
       return this.scoreAnswerAdvanced(question, answer);
     }
 
@@ -577,21 +588,21 @@ Provide your response in JSON format:
 }`;
 
     try {
-      const completion = await this.openai.chat.completions.create({
-        model: 'gpt-4-turbo-preview',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are an expert interview coach who provides detailed, actionable feedback. Return valid JSON only.',
-          },
-          { role: 'user', content: prompt },
+      const response = await this.genAI.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: [
+          { role: 'user', parts: [{ text: prompt }] },
         ],
-        temperature: 0.7,
-        max_tokens: 500,
-        response_format: { type: 'json_object' },
+        config: {
+          temperature: 0.7,
+          maxOutputTokens: 500,
+        },
       });
 
-      const result = JSON.parse(completion.choices[0]?.message?.content || '{}');
+      const responseText = response.text || '{}';
+      // Extract JSON from response (handle markdown code blocks)
+      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+      const result = JSON.parse(jsonMatch ? jsonMatch[0] : '{}');
       
       // Build enhanced feedback
       let feedback = result.feedback || 'Good effort!';
@@ -607,7 +618,7 @@ Provide your response in JSON format:
         feedback,
       };
     } catch (error: any) {
-      this.logger.error(`AI-powered scoring failed: ${error.message}`);
+      this.logger.error(`AI-powered scoring with Gemini failed: ${error.message}`);
       return this.scoreAnswerAdvanced(question, answer);
     }
   }
