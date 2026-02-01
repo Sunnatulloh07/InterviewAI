@@ -60,6 +60,7 @@ export class TwoFactorAuth extends Document {
 export const TwoFactorAuthSchema = SchemaFactory.createForClass(TwoFactorAuth);
 
 // Indexes for performance
-TwoFactorAuthSchema.index({ userId: 1 }, { unique: true });
+// Note: userId already has unique: true which creates an index automatically
+// TwoFactorAuthSchema.index({ userId: 1 }, { unique: true }); - REMOVED to avoid duplicate
 TwoFactorAuthSchema.index({ enabled: 1 });
 TwoFactorAuthSchema.index({ lockedUntil: 1 });

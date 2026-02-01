@@ -61,7 +61,8 @@ export class Subscription {
 
 export const SubscriptionSchema = SchemaFactory.createForClass(Subscription);
 
-SubscriptionSchema.index({ userId: 1 });
+// Note: userId already has unique: true which creates an index automatically
+// SubscriptionSchema.index({ userId: 1 }); - REMOVED to avoid duplicate
 SubscriptionSchema.index({ stripeCustomerId: 1 });
 SubscriptionSchema.index({ status: 1 });
 
