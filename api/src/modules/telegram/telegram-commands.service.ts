@@ -852,13 +852,57 @@ Press the button below 👇`,
     // ============================================================
     if (callbackData.startsWith('interview_')) {
       const type = callbackData.replace('interview_', '');
+      
+      if (type === 'cancel') {
+        // Cancel interview selection - go back to main menu
+        const telegramId = ctx.from?.id as number;
+        const user = await this.usersService.findByTelegramId(telegramId);
+        if (user) {
+          await this.showMainMenu(ctx, user);
+        } else {
+          await this.handleStart(ctx);
+        }
+        return;
+      }
+      
       if (type === 'mock') {
-        // Start mock interview flow
-        await ctx.reply('🎯 Mock intervyu boshlanmoqda...');
-      } else if (type === 'live') {
+        // Start mock interview flow - show not implemented message
+        const notImplementedText: Record<string, string> = {
+          uz: `🚧 <b>Mock intervyu hozircha ishlamaydi</b>
+
+Bu funksiya hali ishlab chiqilmoqda. Tez orada ishga tushadi!
+
+Hozircha Live Interview'dan foydalaning yoki Daily Tasks bilan mashq qiling.`,
+          
+          ru: `🚧 <b>Mock интервью временно недоступно</b>
+
+Эта функция находится в разработке. Скоро будет доступна!
+
+Пока используйте Live Interview или тренируйтесь с Daily Tasks.`,
+          
+          en: `🚧 <b>Mock Interview Coming Soon</b>
+
+This feature is currently under development. Will be available soon!
+
+For now, use Live Interview or practice with Daily Tasks.`,
+        };
+        
+        await ctx.reply(notImplementedText[lang] || notImplementedText.en, {
+          parse_mode: 'HTML',
+        });
+        
+        this.logger.log(`Mock interview requested but not implemented yet`);
+        return;
+      } 
+      
+      if (type === 'live') {
         // Start live interview flow
         await this.liveService.handleStartLive(ctx);
+        return;
       }
+      
+      // Unknown interview type
+      this.logger.warn(`Unknown interview type: ${type}`);
       return;
     }
 
@@ -867,8 +911,34 @@ Press the button below 👇`,
     // ============================================================
     if (callbackData.startsWith('position_')) {
       const position = callbackData.replace('position_', '');
-      // Update user position
-      await ctx.reply(`✅ Lavozim o'rnatildi: ${position}`);
+      const telegramId = ctx.from?.id as number;
+      const user = await this.usersService.findByTelegramId(telegramId);
+      
+      if (!user) {
+        await ctx.reply('Please register first using /start');
+        return;
+      }
+      
+      try {
+        // Update user profile with position
+        await this.usersService.updateProfile((user as any).id || (user as any)._id?.toString(), {
+          jobRole: position,
+        } as any);
+        
+        const confirmText: Record<string, string> = {
+          uz: `✅ Lavozim o'rnatildi: <b>${position}</b>`,
+          ru: `✅ Должность установлена: <b>${position}</b>`,
+          en: `✅ Position set: <b>${position}</b>`,
+        };
+        
+        await ctx.reply(confirmText[lang] || confirmText.en, { parse_mode: 'HTML' });
+        
+        this.logger.log(`User ${telegramId} updated position to: ${position}`);
+      } catch (error: any) {
+        this.logger.error(`Failed to update position: ${error.message}`);
+        await ctx.reply('❌ Failed to update position');
+      }
+      
       return;
     }
 
