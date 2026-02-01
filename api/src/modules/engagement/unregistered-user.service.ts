@@ -81,81 +81,103 @@ export class UnregisteredUserService {
     try {
       const now = new Date();
       
-      const unregisteredUsers = await this.unregisteredUserModel.find({
+      // SCALABILITY FIX: Count total users first
+      const totalUsers = await this.unregisteredUserModel.countDocuments({
         isBotBlocked: false,
         blockedAt: { $exists: false },
-      }).lean();
+      });
 
-      this.logger.log(`Found ${unregisteredUsers.length} unregistered users for engagement`);
+      this.logger.log(`Found ${totalUsers} unregistered users for engagement`);
 
       let sent = 0;
       let failed = 0;
       let skipped = 0;
+      const BATCH_SIZE = 100;
+      let lastId: any = null;
 
-      for (const user of unregisteredUsers) {
-        try {
-          if (user.totalEngagementSent >= this.MAX_ENGAGEMENT_MESSAGES) {
-            this.logger.debug(`User ${user.telegramChatId} received max messages (${this.MAX_ENGAGEMENT_MESSAGES})`);
-            skipped++;
-            continue;
-          }
+      // SCALABILITY FIX: Cursor-based batch processing
+      while (true) {
+        const query: any = {
+          isBotBlocked: false,
+          blockedAt: { $exists: false },
+        };
 
-          const lastSent = user.lastEngagementSentAt || user.createdAt;
-          const hoursSinceLastMessage = (now.getTime() - new Date(lastSent).getTime()) / (1000 * 60 * 60);
+        if (lastId) {
+          query._id = { $gt: lastId };
+        }
 
-          if (hoursSinceLastMessage < 6) {
-            this.logger.debug(`User ${user.telegramChatId} received message ${hoursSinceLastMessage.toFixed(1)} hours ago, skipping`);
-            skipped++;
-            continue;
-          }
+        const userBatch = await this.unregisteredUserModel
+          .find(query)
+          .sort({ _id: 1 })
+          .limit(BATCH_SIZE)
+          .lean();
 
-          const messageIndex = user.lastEngagementMessageIndex ?? 0;
-          const message = getRandomNonRegisteredMessage(user.language || 'uz');
+        if (userBatch.length === 0) break;
 
-          const bot = this.telegramService.getBot();
-          if (bot) {
-            try {
-              await bot.api.sendMessage(user.telegramChatId, message, {
-                parse_mode: 'HTML',
-              });
+        this.logger.log(`Processing unregistered batch: ${userBatch.length} users (${sent + failed + skipped}/${totalUsers})`);
 
-              await this.unregisteredUserModel.updateOne(
-                { _id: user._id },
-                {
-                  $set: {
-                    lastEngagementSentAt: now,
-                    lastEngagementMessageIndex: messageIndex + 1,
-                    totalEngagementSent: user.totalEngagementSent + 1,
+        for (const user of userBatch) {
+          try {
+            if (user.totalEngagementSent >= this.MAX_ENGAGEMENT_MESSAGES) {
+              skipped++;
+              continue;
+            }
+
+            const lastSent = user.lastEngagementSentAt || user.createdAt;
+            const hoursSinceLastMessage = (now.getTime() - new Date(lastSent).getTime()) / (1000 * 60 * 60);
+
+            if (hoursSinceLastMessage < 6) {
+              skipped++;
+              continue;
+            }
+
+            const messageIndex = user.lastEngagementMessageIndex ?? 0;
+            const message = getRandomNonRegisteredMessage(user.language || 'uz');
+
+            const bot = this.telegramService.getBot();
+            if (bot) {
+              try {
+                await bot.api.sendMessage(user.telegramChatId, message, {
+                  parse_mode: 'HTML',
+                });
+
+                await this.unregisteredUserModel.updateOne(
+                  { _id: user._id },
+                  {
+                    $set: {
+                      lastEngagementSentAt: now,
+                      lastEngagementMessageIndex: messageIndex + 1,
+                      totalEngagementSent: user.totalEngagementSent + 1,
+                    },
                   },
-                },
-              );
+                );
 
-              sent++;
-              this.logger.debug(`Sent engagement message to ${user.telegramChatId}`);
-            } catch (sendError: any) {
-              const errorCode = sendError.error_code;
-              const errorDescription = sendError.description || '';
+                sent++;
+              } catch (sendError: any) {
+                const errorCode = sendError.error_code;
+                const errorDescription = sendError.description || '';
 
-              if (
-                errorCode === 403 ||
-                errorDescription.includes('bot was blocked') ||
-                errorDescription.includes('user is deactivated') ||
-                errorDescription.includes('chat not found')
-              ) {
-                await this.markAsBlocked(user.telegramChatId);
-                this.logger.warn(`User ${user.telegramChatId} blocked bot`);
-              } else {
-                failed++;
-                this.logger.error(`Failed to send to ${user.telegramChatId}: ${errorDescription}`);
+                if (
+                  errorCode === 403 ||
+                  errorDescription.includes('bot was blocked') ||
+                  errorDescription.includes('user is deactivated') ||
+                  errorDescription.includes('chat not found')
+                ) {
+                  await this.markAsBlocked(user.telegramChatId);
+                } else {
+                  failed++;
+                }
               }
             }
-          }
 
-          await this.delay(200);
-        } catch (userError: any) {
-          this.logger.error(`Failed to process user ${user.telegramChatId}: ${userError.message}`);
-          failed++;
+            await this.delay(200);
+          } catch (userError: any) {
+            this.logger.error(`Failed to process user ${user.telegramChatId}: ${userError.message}`);
+            failed++;
+          }
         }
+
+        lastId = userBatch[userBatch.length - 1]._id;
       }
 
       this.logger.log(`Unregistered user engagement: sent=${sent}, failed=${failed}, skipped=${skipped}`);

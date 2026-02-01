@@ -53,7 +53,12 @@ export class FailedNotificationRetryService {
     }
   }
 
-  @Cron('0 */1 * * *', {
+  /**
+   * Process retry queue every 15 minutes (SCALABILITY FIX)
+   * Old: 100 notifications/hour = very slow for large queues
+   * New: 500 notifications/15min = 2000/hour = much faster
+   */
+  @Cron('*/15 * * * *', {
     name: 'retry-failed-notifications',
     timeZone: 'Asia/Tashkent',
   })
@@ -61,20 +66,37 @@ export class FailedNotificationRetryService {
     try {
       const now = new Date();
 
+      // SCALABILITY FIX: Count total first to monitor queue size
+      const totalFailed = await this.failedNotificationModel.countDocuments({
+        isPermanentlyFailed: false,
+        nextRetryAt: { $lte: now },
+        retryCount: { $lt: this.MAX_RETRY_ATTEMPTS },
+      });
+
+      if (totalFailed === 0) {
+        return;
+      }
+
+      this.logger.log(`Retrying failed notifications: ${totalFailed} total in queue`);
+
+      // SCALABILITY FIX: Increase batch size from 100 to 500
+      // Process up to 500 notifications per hour = ~8.3 per minute (manageable)
+      const BATCH_SIZE = 500;
+
       const failedNotifications = await this.failedNotificationModel
         .find({
           isPermanentlyFailed: false,
           nextRetryAt: { $lte: now },
           retryCount: { $lt: this.MAX_RETRY_ATTEMPTS },
         })
-        .sort({ createdAt: 1 })
-        .limit(100);
+        .sort({ createdAt: 1 }) // Oldest first (FIFO)
+        .limit(BATCH_SIZE);
 
       if (failedNotifications.length === 0) {
         return;
       }
 
-      this.logger.log(`Retrying ${failedNotifications.length} failed notifications`);
+      this.logger.log(`Processing ${failedNotifications.length} failed notifications (${totalFailed} remaining)`);
 
       let success = 0;
       let failed = 0;
@@ -162,7 +184,8 @@ export class FailedNotificationRetryService {
           }
         }
 
-        await this.delay(200);
+        // SCALABILITY FIX: Reduce delay from 200ms to 50ms (20 msg/sec)
+        await this.delay(50);
       }
 
       this.logger.log(`Retry queue processed: success=${success}, failed=${failed}, permanentlyFailed=${permanentlyFailed}`);

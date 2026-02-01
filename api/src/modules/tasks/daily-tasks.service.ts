@@ -42,6 +42,11 @@ export class DailyTasksService {
    * Deliver daily tasks at 9 AM Tashkent time (UTC+5)
    * 9 AM Tashkent = 4 AM UTC
    * Cron: 0 4 * * * (every day at 4 AM UTC)
+   * 
+   * SCALABILITY FIX: Batch processing for 1M+ users
+   * - Process users in batches of 100
+   * - Cursor-based pagination to avoid memory overflow
+   * - Progress tracking in Redis
    */
   @Cron('0 4 * * *', {
     name: 'deliver_daily_tasks',
@@ -51,7 +56,7 @@ export class DailyTasksService {
     // CRITICAL FIX: Distributed lock to prevent duplicate task delivery
     // in multi-instance deployments (horizontal scaling)
     const lockKey = 'cron:daily-tasks:delivery';
-    const lockTTL = 600; // 10 minutes max execution time
+    const lockTTL = 3600; // 1 hour max execution time (for 1M+ users)
     
     try {
       // Acquire lock (NX = only set if not exists)
@@ -67,117 +72,167 @@ export class DailyTasksService {
       // CRITICAL FIX: Get ONLY PAID users with active subscription
       // Daily tasks are ONLY for paid plans (starter, pro, elite)
       const now = new Date();
+      const today = this.getTashkentMidnight();
       
-      const users = await this.userModel
-        .find({
-          // Must have active subscription
-          'subscription.status': 'active',
-          // Must be on paid plan (NOT free_trial)
-          'subscription.plan': { $in: ['starter', 'pro', 'elite'] },
-          // Subscription must not be expired
-          $or: [
-            { 'subscription.endDate': { $exists: false } }, // No end date
-            { 'subscription.endDate': null }, // No end date
-            { 'subscription.endDate': { $gt: now } }, // Not expired yet
-          ],
-          // User not blocked
-          isBlocked: false,
-          // Bot not blocked
-          'engagement.isBotBlocked': { $ne: true },
-        })
-        .select('_id telegramId profile subscription')
-        .lean();
+      // SCALABILITY FIX: Count total users first
+      const totalUsers = await this.userModel.countDocuments({
+        'subscription.status': 'active',
+        'subscription.plan': { $in: ['starter', 'pro', 'elite'] },
+        $or: [
+          { 'subscription.endDate': { $exists: false } },
+          { 'subscription.endDate': null },
+          { 'subscription.endDate': { $gt: now } },
+        ],
+        isBlocked: false,
+        'engagement.isBotBlocked': { $ne: true },
+      });
 
-      this.logger.log(`Found ${users.length} eligible PAID users for daily tasks`);
+      this.logger.log(`Found ${totalUsers} eligible PAID users for daily tasks`);
 
       let successCount = 0;
       let errorCount = 0;
+      let skippedCount = 0;
+      const BATCH_SIZE = 100;
+      let lastId: any = null;
 
-      for (const user of users) {
-        try {
-          // CRITICAL FIX: Use UTC midnight for Tashkent timezone
-          // Tashkent is UTC+5, so today 00:00 Tashkent = yesterday 19:00 UTC
-          const today = this.getTashkentMidnight();
+      // SCALABILITY FIX: Cursor-based batch processing
+      while (true) {
+        const query: any = {
+          'subscription.status': 'active',
+          'subscription.plan': { $in: ['starter', 'pro', 'elite'] },
+          $or: [
+            { 'subscription.endDate': { $exists: false } },
+            { 'subscription.endDate': null },
+            { 'subscription.endDate': { $gt: now } },
+          ],
+          isBlocked: false,
+          'engagement.isBotBlocked': { $ne: true },
+        };
 
-          // Check if tasks already delivered today
-          const existingTask = await this.dailyTaskModel.findOne({
-            userId: user._id,
-            date: today,
-          });
-
-          if (existingTask) {
-            this.logger.debug(`Tasks already delivered for user ${user._id}`);
-            continue;
-          }
-
-          // Generate 3 questions for the day
-          const position = user.profile?.position || 'junior';
-          const tasks = [
-            {
-              question: this.generateQuestion(position, 'technical'),
-              completed: false,
-            },
-            {
-              question: this.generateQuestion(position, 'behavioral'),
-              completed: false,
-            },
-            {
-              question: this.generateQuestion(position, 'system_design'),
-              completed: false,
-            },
-          ];
-
-          // Create daily task document
-          await this.dailyTaskModel.create({
-            userId: user._id,
-            date: today,
-            tasks,
-            status: 'pending',
-          });
-
-          // Send Telegram notification
-          try {
-            const bot = this.telegramService.getBot();
-            if (bot && user.telegramId) {
-              await bot.api.sendMessage(
-                user.telegramId,
-                '🎯 Your daily tasks are ready! Use /tasks to see them.',
-              );
-            }
-          } catch (sendError: any) {
-            const errorMessage = sendError.description || sendError.message;
-            const isBlockedError =
-              errorMessage?.includes('bot was blocked') ||
-              errorMessage?.includes('user is deactivated') ||
-              errorMessage?.includes('chat not found');
-
-            this.logger.warn(
-              `Failed to send notification to user ${user._id}: ${errorMessage}`,
-            );
-
-            if (!isBlockedError) {
-              await this.retryService.trackFailedNotification(
-                user._id.toString(),
-                user.telegramId,
-                'daily_task_delivery',
-                errorMessage,
-                sendError.error_code,
-              );
-            }
-          }
-
-          successCount++;
-        } catch (userError: any) {
-          this.logger.error(
-            `Failed to deliver tasks for user ${user._id}: ${userError.message}`,
-            userError.stack,
-          );
-          errorCount++;
+        // Cursor: start from last processed user ID
+        if (lastId) {
+          query._id = { $gt: lastId };
         }
+
+        const userBatch = await this.userModel
+          .find(query)
+          .sort({ _id: 1 }) // Important: consistent ordering
+          .limit(BATCH_SIZE)
+          .select('_id telegramId profile subscription')
+          .lean();
+
+        if (userBatch.length === 0) {
+          break; // No more users to process
+        }
+
+        this.logger.log(
+          `Processing batch: ${userBatch.length} users (progress: ${successCount + errorCount + skippedCount}/${totalUsers})`
+        );
+
+        for (const user of userBatch) {
+          try {
+            // Check if tasks already delivered today
+            const existingTask = await this.dailyTaskModel.findOne({
+              userId: user._id,
+              date: today,
+            });
+
+            if (existingTask) {
+              this.logger.debug(`Tasks already delivered for user ${user._id}`);
+              skippedCount++;
+              continue;
+            }
+
+            // Generate 3 questions for the day
+            const position = user.profile?.position || 'junior';
+            const tasks = [
+              {
+                question: this.generateQuestion(position, 'technical'),
+                completed: false,
+              },
+              {
+                question: this.generateQuestion(position, 'behavioral'),
+                completed: false,
+              },
+              {
+                question: this.generateQuestion(position, 'system_design'),
+                completed: false,
+              },
+            ];
+
+            // Create daily task document
+            await this.dailyTaskModel.create({
+              userId: user._id,
+              date: today,
+              tasks,
+              status: 'pending',
+            });
+
+            // Send Telegram notification
+            try {
+              const bot = this.telegramService.getBot();
+              if (bot && user.telegramId) {
+                await bot.api.sendMessage(
+                  user.telegramId,
+                  '🎯 Your daily tasks are ready! Use /tasks to see them.',
+                );
+              }
+            } catch (sendError: any) {
+              const errorMessage = sendError.description || sendError.message;
+              const isBlockedError =
+                errorMessage?.includes('bot was blocked') ||
+                errorMessage?.includes('user is deactivated') ||
+                errorMessage?.includes('chat not found');
+
+              this.logger.warn(
+                `Failed to send notification to user ${user._id}: ${errorMessage}`,
+              );
+
+              if (!isBlockedError) {
+                await this.retryService.trackFailedNotification(
+                  user._id.toString(),
+                  user.telegramId,
+                  'daily_task_delivery',
+                  errorMessage,
+                  sendError.error_code,
+                );
+              }
+            }
+
+            successCount++;
+            
+            // Rate limiting: 200ms between messages
+            await this.delay(200);
+          } catch (userError: any) {
+            this.logger.error(
+              `Failed to deliver tasks for user ${user._id}: ${userError.message}`,
+              userError.stack,
+            );
+            errorCount++;
+          }
+        }
+
+        // Update cursor to last processed user ID
+        lastId = userBatch[userBatch.length - 1]._id;
+
+        // Store progress in Redis for monitoring
+        await this.redis.set(
+          'cron:daily-tasks:progress',
+          JSON.stringify({
+            total: totalUsers,
+            success: successCount,
+            error: errorCount,
+            skipped: skippedCount,
+            lastId: lastId ? lastId.toString() : null,
+            timestamp: new Date().toISOString(),
+          }),
+          'EX',
+          3600,
+        );
       }
 
       this.logger.log(
-        `Daily tasks delivery completed. Success: ${successCount}, Errors: ${errorCount}`,
+        `Daily tasks delivery completed. Total: ${totalUsers}, Success: ${successCount}, Errors: ${errorCount}, Skipped: ${skippedCount}`,
       );
     } catch (error: any) {
       this.logger.error(
@@ -188,12 +243,20 @@ export class DailyTasksService {
       // CRITICAL: Always release lock, even if job fails
       try {
         await this.redis.del(lockKey);
+        await this.redis.del('cron:daily-tasks:progress');
         this.logger.debug('Daily tasks lock released');
       } catch (lockError: any) {
         this.logger.error(`Failed to release daily tasks lock: ${lockError.message}`);
-        // Lock will auto-expire after 10 minutes
+        // Lock will auto-expire after 1 hour
       }
     }
+  }
+
+  /**
+   * Helper: delay execution
+   */
+  private delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   /**
@@ -546,6 +609,135 @@ Provide your response in JSON format:
     } catch (error: any) {
       this.logger.error(`AI-powered scoring failed: ${error.message}`);
       return this.scoreAnswerAdvanced(question, answer);
+    }
+  }
+
+  /**
+   * Verify and fix missed task deliveries (SCALABILITY FIX)
+   * Runs 2 hours after delivery (11:00 Tashkent time)
+   * Checks if all paid users received tasks and creates missing ones
+   */
+  @Cron('0 6 * * *', {
+    name: 'verify_daily_tasks_delivery',
+    timeZone: 'Asia/Tashkent',
+  })
+  async verifyAndFixMissedDeliveries() {
+    const lockKey = 'cron:daily-tasks:verification';
+    const lockTTL = 1800; // 30 minutes max
+    
+    try {
+      const lockAcquired = await this.redis.set(lockKey, Date.now().toString(), 'EX', lockTTL, 'NX');
+      
+      if (!lockAcquired) {
+        this.logger.warn('Task verification already running, skipping');
+        return;
+      }
+
+      this.logger.log('Starting daily tasks verification...');
+
+      const now = new Date();
+      const today = this.getTashkentMidnight();
+
+      // Find all paid users who should have tasks
+      const paidUsers = await this.userModel
+        .find({
+          'subscription.status': 'active',
+          'subscription.plan': { $in: ['starter', 'pro', 'elite'] },
+          $or: [
+            { 'subscription.endDate': { $exists: false } },
+            { 'subscription.endDate': null },
+            { 'subscription.endDate': { $gt: now } },
+          ],
+          isBlocked: false,
+          'engagement.isBotBlocked': { $ne: true },
+        })
+        .select('_id')
+        .lean();
+
+      const paidUserIds = paidUsers.map(u => u._id);
+
+      // Find users who already have tasks today
+      const usersWithTasks = await this.dailyTaskModel
+        .find({
+          userId: { $in: paidUserIds },
+          date: today,
+        })
+        .distinct('userId');
+
+      // Find users WITHOUT tasks (missed deliveries)
+      const missedUserIds = paidUserIds.filter(
+        id => !usersWithTasks.some(taskUserId => taskUserId.toString() === id.toString())
+      );
+
+      this.logger.log(
+        `Verification: ${paidUserIds.length} total, ${usersWithTasks.length} delivered, ${missedUserIds.length} missed`
+      );
+
+      if (missedUserIds.length === 0) {
+        this.logger.log('No missed deliveries found');
+        return;
+      }
+
+      // Process missed users in batches
+      let fixed = 0;
+      let failed = 0;
+      const BATCH_SIZE = 50;
+
+      for (let i = 0; i < missedUserIds.length; i += BATCH_SIZE) {
+        const batch = missedUserIds.slice(i, i + BATCH_SIZE);
+        
+        const missedUsers = await this.userModel
+          .find({ _id: { $in: batch } })
+          .select('_id telegramId profile')
+          .lean();
+
+        for (const user of missedUsers) {
+          try {
+            const position = user.profile?.position || 'junior';
+            const tasks = [
+              { question: this.generateQuestion(position, 'technical'), completed: false },
+              { question: this.generateQuestion(position, 'behavioral'), completed: false },
+              { question: this.generateQuestion(position, 'system_design'), completed: false },
+            ];
+
+            await this.dailyTaskModel.create({
+              userId: user._id,
+              date: today,
+              tasks,
+              status: 'pending',
+            });
+
+            // Send notification
+            try {
+              const bot = this.telegramService.getBot();
+              if (bot && user.telegramId) {
+                await bot.api.sendMessage(
+                  user.telegramId,
+                  '🎯 Your daily tasks are ready! Use /tasks to see them.',
+                );
+              }
+            } catch (sendError: any) {
+              this.logger.warn(`Failed to notify user ${user._id} during verification`);
+            }
+
+            fixed++;
+            await this.delay(200);
+          } catch (error: any) {
+            this.logger.error(`Failed to fix missed delivery for user ${user._id}: ${error.message}`);
+            failed++;
+          }
+        }
+      }
+
+      this.logger.log(`Verification completed: ${fixed} fixed, ${failed} failed`);
+    } catch (error: any) {
+      this.logger.error(`Verification job failed: ${error.message}`);
+    } finally {
+      try {
+        await this.redis.del(lockKey);
+      } catch (lockError: any) {
+        this.logger.error(`Failed to release verification lock: ${lockError.message}`);
+      }
     }
   }
 
