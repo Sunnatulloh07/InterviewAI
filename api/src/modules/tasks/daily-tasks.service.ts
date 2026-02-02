@@ -264,22 +264,49 @@ export class DailyTasksService {
   }
 
   /**
+   * PUBLIC METHOD: Get Tashkent midnight
+   * Exposed for other services to use consistent timezone handling
+   * 
+   * SENIOR PATTERN: Centralize timezone logic in one place
+   */
+  public getTashkentMidnightPublic(): Date {
+    return this.getTashkentMidnight();
+  }
+
+  /**
    * Get today's tasks for a user
+   * 
+   * CRITICAL FIX: Remove broken date conversion logic
+   * Expect caller to provide proper Tashkent midnight date
    */
   async getTodayTasks(userId: string, date?: Date): Promise<DailyTaskDocument | null> {
-    // CRITICAL FIX: Use Tashkent midnight
-    const today = date ? new Date(date) : this.getTashkentMidnight();
+    // Use provided date or get Tashkent midnight
+    const today = date || this.getTashkentMidnight();
 
-    // If date provided, normalize to midnight
-    if (date) {
-      today.setUTCHours(0, 0, 0, 0);
-      today.setUTCHours(today.getUTCHours() - 5); // Convert to Tashkent
-    }
+    this.logger.debug(
+      `getTodayTasks - userId: ${userId}, date: ${today.toISOString()}, UTC: ${today.toUTCString()}`,
+    );
 
-    return this.dailyTaskModel.findOne({
-      userId,
+    // CRITICAL FIX: Convert string userId to ObjectId for MongoDB
+    const mongoose = require('mongoose');
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+
+    const result = await this.dailyTaskModel.findOne({
+      userId: userObjectId, // ✅ ObjectId matching
       date: today,
     });
+
+    if (!result) {
+      this.logger.warn(
+        `No tasks found for user ${userId} on date ${today.toISOString()} (Tashkent midnight)`,
+      );
+    } else {
+      this.logger.debug(
+        `Found tasks for user ${userId}: ${result.tasks.length} tasks, ${result.tasks.filter((t) => !t.completed).length} incomplete`,
+      );
+    }
+
+    return result;
   }
 
   /**

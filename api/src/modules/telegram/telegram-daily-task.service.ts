@@ -296,19 +296,27 @@ Get full access with the Starter plan.
   /**
    * Start daily task session for user
    * Called when user clicks /tasks or receives daily tasks
+   * 
+   * CRITICAL FIX: Use Tashkent timezone midnight for date consistency
+   * SENIOR PATTERN: Centralized timezone handling via DailyTasksService
    */
   async startDailyTaskSession(ctx: BotContext, userId: string): Promise<void> {
     try {
-      this.logger.debug(`Starting daily task session for userId: ${userId}`);
+      this.logger.log(`Starting daily task session for userId: ${userId}`);
 
-      // Get today's tasks
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      // CRITICAL FIX: Use Tashkent midnight from DailyTasksService
+      const today = this.dailyTasksService.getTashkentMidnightPublic();
+      
+      this.logger.debug(
+        `Using Tashkent midnight: ${today.toISOString()} (UTC: ${today.toUTCString()})`,
+      );
 
       const dailyTask = await this.dailyTasksService.getTodayTasks(userId, today);
 
       if (!dailyTask) {
-        this.logger.warn(`No tasks found for userId: ${userId} on ${today.toISOString()}`);
+        this.logger.warn(
+          `No tasks found for userId: ${userId} on ${today.toISOString()} (Tashkent midnight)`,
+        );
         const noTasksText = {
           uz: '❌ Bugun uchun vazifalar topilmadi.\n\nErtalab 09:00 da yangi vazifalar yuboriladi.',
           ru: '❌ Задачи на сегодня не найдены.\n\nНовые задачи будут отправлены в 09:00 утра.',
@@ -364,11 +372,29 @@ Get full access with the Starter plan.
       }
 
       // Show current task
+      this.logger.log(`Showing tasks overview for userId: ${userId}, taskCount: ${dailyTask.tasks.length}`);
       await this.showCurrentTask(ctx, dailyTask, currentTaskIndex);
       this.logger.log(`Successfully started daily task session for userId: ${userId}`);
     } catch (error: any) {
-      this.logger.error(`Failed to start daily task session: ${error.message}`, error.stack);
-      await ctx.reply("❌ Xatolik yuz berdi. Iltimos, qayta urinib ko'ring.");
+      this.logger.error(
+        `CRITICAL: Failed to start daily task session for user ${userId}: ${error.message}`,
+        error.stack,
+      );
+      
+      // SENIOR PATTERN: Send user-friendly error with fallback
+      const errorText = {
+        uz: "❌ Xatolik yuz berdi. Iltimos, qayta urinib ko'ring yoki /help dan yordam oling.",
+        ru: '❌ Произошла ошибка. Попробуйте снова или обратитесь за помощью /help.',
+        en: '❌ Error occurred. Please try again or get help via /help.',
+      };
+      
+      const lang = ctx.session?.language || 'uz';
+      
+      try {
+        await ctx.reply(errorText[lang] || errorText.uz);
+      } catch (replyError: any) {
+        this.logger.error(`CRITICAL: Failed to send error message: ${replyError.message}`);
+      }
     }
   }
 

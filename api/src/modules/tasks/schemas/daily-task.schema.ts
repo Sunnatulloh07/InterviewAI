@@ -3,17 +3,60 @@ import { Document, Schema as MongooseSchema } from 'mongoose';
 
 export type DailyTaskDocument = DailyTask & Document;
 
+/**
+ * DailyTask Schema - Embedded Array Approach
+ * 
+ * DESIGN DECISION: Use embedded array for tasks instead of separate documents
+ * 
+ * RATIONALE:
+ * 1. Performance: 1 query gets all tasks (vs 3-10 queries for separate docs)
+ * 2. Atomicity: MongoDB atomic updates with array operators
+ * 3. Consistency: All tasks for a day in 1 document = no race conditions
+ * 4. Storage: Less overhead (1 doc vs 3-10 docs)
+ * 5. Scalability: Bounded size (max 10 tasks/day = ~4KB doc)
+ * 6. MongoDB Best Practice: Embedded docs for 1-to-few relationships
+ * 
+ * SCHEMA STRUCTURE:
+ * - 1 document per user per day
+ * - Unique index on (userId, date)
+ * - Tasks stored as embedded array (max 10 items)
+ * - Status tracking: pending → completed/expired
+ * - Reminder tracking for engagement
+ * 
+ * @see https://www.mongodb.com/docs/manual/core/data-model-design/
+ */
 @Schema({ timestamps: true })
 export class DailyTask {
-  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', required: true })
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', required: true, index: true })
   userId: MongooseSchema.Types.ObjectId;
 
   @Prop({ required: true, index: true })
-  date: Date;
+  date: Date; // Tashkent midnight (UTC+5)
 
   @Prop({
-    type: [Object],
+    type: [
+      {
+        question: { type: String, required: true },
+        answer: { type: String }, // Text answer or transcript
+        answerType: { type: String, enum: ['text', 'voice', 'image'] }, // ✅ NO VIDEO - Too expensive
+        audioUrl: { type: String }, // Voice audio URL
+        imageUrl: { type: String }, // Image URL
+        transcript: { type: String }, // STT transcript for voice
+        completed: { type: Boolean, required: true, default: false },
+        score: { type: Number, min: 0, max: 10 }, // Score validation
+        feedback: { type: String }, // AI feedback stored
+        completedAt: { type: Date },
+      },
+    ],
     default: [],
+    validate: {
+      validator: function (tasks: any[]) {
+        // SENIOR VALIDATION: Max tasks per day based on plan
+        // Elite: 10, Pro: 5, Starter: 3, Free: 3
+        return tasks.length <= 10; // Max for Elite plan
+      },
+      message: 'Maximum 10 tasks allowed per day',
+    },
   })
   tasks: {
     question: string;
@@ -23,7 +66,7 @@ export class DailyTask {
     imageUrl?: string; // Image URL
     transcript?: string; // STT transcript for voice
     completed: boolean;
-    score?: number;
+    score?: number; // 0-10 range
     feedback?: string; // AI feedback stored
     completedAt?: Date;
   }[];
