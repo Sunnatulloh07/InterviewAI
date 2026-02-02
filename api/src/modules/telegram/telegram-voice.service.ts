@@ -763,6 +763,52 @@ export class TelegramVoiceService {
       return;
     }
 
+    // CRITICAL FIX: Deduct quota BEFORE sending response (revenue protection)
+    // STT fallback must deduct quota BEFORE user sees the response
+    const durationSeconds = voice.duration || 30; // Default 30s if unknown
+
+    try {
+      // Deduct from realVoice quota for live interviews (throws if insufficient)
+      await this.voiceQuotaService.checkAndUseVoice(
+        userId,
+        'real', // Use 'real' type for live interviews
+        durationSeconds,
+        undefined, // No session ID for live interviews
+        transcribedText.substring(0, 500), // Log transcription for tracking
+      );
+      this.logger.log(
+        `Real voice quota deducted for live session (STT path): user=${userId}, duration=${durationSeconds}s`,
+      );
+    } catch (error: any) {
+      // CRITICAL: Quota deduction failed - DON'T send response
+      this.logger.error(
+        `CRITICAL: Failed to deduct real voice quota (STT path) for user ${userId}: ${error.message}. ` +
+          `Response NOT sent to prevent revenue loss. Duration: ${durationSeconds}s`,
+        error.stack,
+      );
+
+      // Inform user that service is unavailable due to quota
+      const quotaErrorText: Record<string, string> = {
+        uz:
+          `❌ <b>Javob yuborilmadi</b>\n\n` +
+          `Hisobingizda yetarli daqiqalar yo'q.\n` +
+          `Iltimos, /upgrade buyrug'i orqali tarifni yangilang.`,
+        ru:
+          `❌ <b>Ответ не отправлен</b>\n\n` +
+          `Недостаточно минут на вашем счете.\n` +
+          `Пожалуйста, обновите тариф через /upgrade.`,
+        en:
+          `❌ <b>Response not sent</b>\n\n` +
+          `Not enough minutes on your account.\n` +
+          `Please upgrade via /upgrade.`,
+      };
+      await ctx.reply(quotaErrorText[lang] || quotaErrorText['en'], {
+        parse_mode: 'HTML',
+      });
+      return; // Exit without sending response - protects revenue
+    }
+
+    // Quota deducted successfully - now send response
     const responseText: Record<string, string> = {
       uz:
         `📝 <b>Transkripsiya:</b> ${transcribedText}\n\n` +
@@ -787,32 +833,6 @@ export class TelegramVoiceService {
     await ctx.reply(responseText[lang] || responseText['en'], {
       parse_mode: 'HTML',
     });
-
-    // CRITICAL FIX: Deduct from realVoice quota for STT fallback path
-    // This method is only called from STT path (not Gemini), so always deduct
-    const durationSeconds = voice.duration || 30; // Default 30s if unknown
-
-    try {
-      // Deduct from realVoice quota for live interviews
-      await this.voiceQuotaService.checkAndUseVoice(
-        userId,
-        'real', // Use 'real' type for live interviews
-        durationSeconds,
-        undefined, // No session ID for live interviews
-        transcribedText, // Log transcription for tracking
-      );
-      this.logger.log(
-        `Real voice quota deducted for live session (STT path): user=${userId}, duration=${durationSeconds}s`,
-      );
-    } catch (error: any) {
-      // CRITICAL: Log as ERROR for quota deduction failures
-      this.logger.error(
-        `CRITICAL: Failed to deduct real voice quota (STT path) for user ${userId}: ${error.message}. ` +
-          `User may have bypassed quota check! Duration: ${durationSeconds}s`,
-        error.stack,
-      );
-      // Continue - already processed the answer, can't rollback
-    }
 
     // Update live session
     await liveSessionModel.findOneAndUpdate(

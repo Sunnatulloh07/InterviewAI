@@ -710,7 +710,7 @@ Remaining: ${remaining}
           features: [
             '✓ Cheksiz mock intervyu',
             `✓ ${COMPLETE_PLAN_LIMITS.elite.voice.mockVoice} daq mock + ${COMPLETE_PLAN_LIMITS.elite.voice.realVoice} daq live ovoz`,
-            `✓ ${COMPLETE_PLAN_LIMITS.elite.cvAnalysis.perMonth} ta CV tahlili`,
+            '✓ Cheksiz CV tahlili',
             '✓ Premium AI modellari',
             '✓ Priority Support',
             '✓ Barcha xususiyatlar',
@@ -750,7 +750,7 @@ Remaining: ${remaining}
           features: [
             '✓ Безлимит mock-интервью',
             `✓ ${COMPLETE_PLAN_LIMITS.elite.voice.mockVoice} мин mock + ${COMPLETE_PLAN_LIMITS.elite.voice.realVoice} мин live голос`,
-            `✓ ${COMPLETE_PLAN_LIMITS.elite.cvAnalysis.perMonth} анализов CV`,
+            '✓ Безлимит анализов CV',
             '✓ Premium AI модели',
             '✓ Приоритетная поддержка',
             '✓ Все функции',
@@ -790,7 +790,7 @@ Remaining: ${remaining}
           features: [
             '✓ Unlimited mock interviews',
             `✓ ${COMPLETE_PLAN_LIMITS.elite.voice.mockVoice} min mock + ${COMPLETE_PLAN_LIMITS.elite.voice.realVoice} min live voice`,
-            `✓ ${COMPLETE_PLAN_LIMITS.elite.cvAnalysis.perMonth} CV analyses`,
+            '✓ Unlimited CV analyses',
             '✓ Premium AI models',
             '✓ Priority Support',
             '✓ All features',

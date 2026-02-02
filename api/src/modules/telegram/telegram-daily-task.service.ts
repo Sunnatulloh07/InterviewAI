@@ -10,6 +10,7 @@ import { InputFile, InlineKeyboard } from 'grammy';
 import { DailyTasksService } from '../tasks/daily-tasks.service';
 import { UsersService } from '../users/users.service';
 import { VoiceQuotaService } from '../voice/voice-quota.service';
+import { VoiceQuotaGuardService } from '../voice/voice-quota-guard.service';
 import { AiSttService } from '../ai/ai-stt.service';
 import { TelegramSession, TelegramSessionDocument } from './schemas/telegram-session.schema';
 import { COMPLETE_PLAN_LIMITS } from '../../common/constants/plan-limits.constant';
@@ -35,6 +36,7 @@ export class TelegramDailyTaskService {
     private readonly dailyTasksService: DailyTasksService,
     private readonly usersService: UsersService,
     private readonly voiceQuotaService: VoiceQuotaService,
+    private readonly voiceQuotaGuardService: VoiceQuotaGuardService,
     private readonly sttService: AiSttService,
     private readonly configService: ConfigService,
     private readonly ocrService: AiOcrService,
@@ -606,8 +608,21 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
 
   /**
    * Handle voice answer for daily task
+   * 
+   * ✅ UPDATED: Now uses VoiceQuotaGuard for transaction safety
+   * 
+   * Flow:
+   * 1. Check plan permission
+   * 2. PRE-FLIGHT CHECK (before download)
+   * 3. RESERVE quota
+   * 4. Download + transcribe
+   * 5. Complete task
+   * 6. COMMIT quota (only if task completion succeeds)
+   * 7. ROLLBACK if any step fails
    */
   async handleVoiceAnswer(ctx: BotContext, voice: any): Promise<void> {
+    let reservationId: string | null = null;
+
     try {
       const chatId = ctx.chat?.id;
       if (!chatId) return;
@@ -626,37 +641,74 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
       const plan = user?.subscription?.plan || 'free_trial';
       const lang = ctx.session?.language || 'uz';
 
-      // Check if plan allows voice answers
+      // ═══════════════════════════════════════════════════════════════════
+      // STEP 1: Check plan permission
+      // ═══════════════════════════════════════════════════════════════════
       if (!this.canUseDailyTaskVoiceAnswer(plan)) {
         const noVoiceText = {
-          uz: '❌ Ovozli javob faqat Starter va yuqori tariflarda!\n\nMatn shaklida javob yuboring.',
-          ru: '❌ Голосовые ответы только в Starter и выше!\n\nОтправьте текстовый ответ.',
-          en: '❌ Voice answers only in Starter and higher plans!\n\nPlease send a text answer.',
+          uz: '❌ Ovozli javob faqat Starter va yuqori tariflarda!\\n\\nMatn shaklida javob yuboring.',
+          ru: '❌ Голосовые ответы только в Starter и выше!\\n\\nОтправьте текстовый ответ.',
+          en: '❌ Voice answers only in Starter and higher plans!\\n\\nPlease send a text answer.',
         };
         await ctx.reply(noVoiceText[lang as keyof typeof noVoiceText] || noVoiceText.uz);
         return;
       }
 
-      // Check voice quota before processing
-      const estimatedMinutes = Math.ceil((voice.duration || 30) / 60);
-      const hasQuota = await this.voiceQuotaService.hasEnoughQuota(
+      // ═══════════════════════════════════════════════════════════════════
+      // STEP 2: PRE-FLIGHT CHECK (before downloading audio)
+      // Saves bandwidth if user has no quota
+      // ═══════════════════════════════════════════════════════════════════
+      const preflight = await this.voiceQuotaGuardService.preFlightCheck(
         userId,
-        'mock',
-        estimatedMinutes,
+        'mock', // Daily tasks use mock quota
+        voice.duration || 30,
       );
 
-      if (!hasQuota) {
-        const quota = await this.voiceQuotaService.getQuota(userId);
+      if (!preflight.allowed) {
         const noQuotaText = {
-          uz: `❌ Ovozli javob uchun yetarli daqiqa yo'q!\n\nMavjud: ${quota.mockVoice.remaining} daqiqa\nMatn shaklida javob yuboring.`,
-          ru: `❌ Недостаточно минут для голосового ответа!\n\nДоступно: ${quota.mockVoice.remaining} мин\nПродолжите текстом.`,
-          en: `❌ Not enough voice minutes!\n\nAvailable: ${quota.mockVoice.remaining} min\nContinue with text.`,
+          uz:
+            `❌ Ovozli javob uchun yetarli daqiqa yo'q!\\n\\n` +
+            `Kerak: ${preflight.estimatedMinutes} daq\\n` +
+            `Mavjud: ${preflight.quotaInfo.remaining} daq\\n\\n` +
+            `Matn shaklida javob yuboring yoki /upgrade orqali tarifni yangilang.`,
+          ru:
+            `❌ Недостаточно минут для голосового ответа!\\n\\n` +
+            `Нужно: ${preflight.estimatedMinutes} мин\\n` +
+            `Доступно: ${preflight.quotaInfo.remaining} мин\\n\\n` +
+            `Продолжите текстом или обновите тариф через /upgrade.`,
+          en:
+            `❌ Not enough voice minutes!\\n\\n` +
+            `Need: ${preflight.estimatedMinutes} min\\n` +
+            `Available: ${preflight.quotaInfo.remaining} min\\n\\n` +
+            `Continue with text or upgrade via /upgrade.`,
         };
         await ctx.reply(noQuotaText[lang] || noQuotaText.uz);
         return;
       }
 
-      // Show processing message
+      // ═══════════════════════════════════════════════════════════════════
+      // STEP 3: RESERVE QUOTA
+      // Prevents race conditions and ensures we can rollback if needed
+      // ═══════════════════════════════════════════════════════════════════
+      reservationId = await this.voiceQuotaGuardService.reserveQuota(
+        userId,
+        'mock',
+        preflight.estimatedMinutes,
+        {
+          flow: 'daily_task',
+          sessionId: session.dailyTaskSession.dailyTaskId,
+          estimatedDurationSeconds: voice.duration || 30,
+        },
+      );
+
+      this.logger.log(
+        `Voice quota reserved for daily task: user=${userId}, ` +
+          `resId=${reservationId}, minutes=${preflight.estimatedMinutes}`,
+      );
+
+      // ═══════════════════════════════════════════════════════════════════
+      // STEP 4: Download + Transcribe (quota already reserved)
+      // ═══════════════════════════════════════════════════════════════════
       const processingText = {
         uz: '🎤 Ovozli xabar qayta ishlanmoqda...',
         ru: '🎤 Обрабатывается голосовое сообщение...',
@@ -664,7 +716,6 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
       };
       const processingMsg = await ctx.reply(processingText[lang] || processingText.uz);
 
-      // Download and transcribe voice
       const file = await ctx.api.getFile(voice.file_id);
       const fileUrl = `https://api.telegram.org/file/bot${this.configService.get<string>('TELEGRAM_BOT_TOKEN')}/${file.file_path}`;
 
@@ -686,7 +737,10 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
         // Message might already be deleted or expired - safe to ignore
       }
 
-      // Submit transcribed answer
+      // ═══════════════════════════════════════════════════════════════════
+      // STEP 5: Complete task (BEFORE committing quota)
+      // If this fails, we rollback the reservation
+      // ═══════════════════════════════════════════════════════════════════
       const { dailyTaskId, currentTaskIndex, date } = session.dailyTaskSession;
 
       const result = await this.dailyTasksService.completeTask(userId, date, currentTaskIndex, {
@@ -695,14 +749,18 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
         transcript: transcription.text,
       });
 
-      // Deduct voice quota after successful processing
-      await this.voiceQuotaService.checkAndUseVoice(
-        userId,
-        'mock',
-        voice.duration || 30,
-        undefined,
-        transcription.text.substring(0, 500),
+      // ═══════════════════════════════════════════════════════════════════
+      // STEP 6: COMMIT QUOTA (only after task completion succeeds)
+      // This is the revenue protection point
+      // ═══════════════════════════════════════════════════════════════════
+      await this.voiceQuotaGuardService.commitReservation(reservationId);
+
+      this.logger.log(
+        `Voice quota committed for daily task: user=${userId}, resId=${reservationId}`,
       );
+
+      // Clear reservation ID (already committed)
+      reservationId = null;
 
       // Show result
       await this.showTaskResult(ctx, result, currentTaskIndex);
@@ -714,10 +772,35 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
         await this.endDailyTaskSession(ctx, session, result);
       }
     } catch (error: any) {
-      this.logger.error(`Failed to handle voice answer: ${error.message}`);
-      await ctx.reply(
-        "❌ Ovozli xabarni qayta ishlashda xatolik. Iltimos, matn bilan urinib ko'ring.",
-      );
+      this.logger.error(`Failed to handle voice answer: ${error.message}`, error.stack);
+
+      // ═══════════════════════════════════════════════════════════════════
+      // CRITICAL: ROLLBACK quota if any error occurred
+      // This prevents charging users for failed services
+      // ═══════════════════════════════════════════════════════════════════
+      if (reservationId) {
+        try {
+          await this.voiceQuotaGuardService.rollbackReservation(reservationId, 'ai_failed');
+          this.logger.log(
+            `Voice quota rolled back due to error: resId=${reservationId}, ` +
+              `error=${error.message}`,
+          );
+        } catch (rollbackError: any) {
+          this.logger.error(
+            `CRITICAL: Failed to rollback reservation ${reservationId}: ${rollbackError.message}`,
+            rollbackError.stack,
+          );
+        }
+      }
+
+      const errorText = {
+        uz: "❌ Ovozli xabarni qayta ishlashda xatolik. Iltimos, matn bilan urinib ko'ring.",
+        ru: '❌ Ошибка обработки голосового сообщения. Попробуйте отправить текст.',
+        en: '❌ Error processing voice message. Please try with text.',
+      };
+
+      const lang = ctx.session?.language || 'uz';
+      await ctx.reply(errorText[lang as keyof typeof errorText] || errorText.uz);
     }
   }
 

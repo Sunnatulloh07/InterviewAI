@@ -63,11 +63,11 @@ export class FailedNotificationRetryService {
   }
 
   /**
-   * Process retry queue every 15 minutes (SCALABILITY FIX)
-   * Old: 100 notifications/hour = very slow for large queues
-   * New: 500 notifications/15min = 2000/hour = much faster
+   * Process retry queue every 15 minutes DURING BUSINESS HOURS ONLY
+   * CRITICAL FIX: Don't send notifications at night (00:00-08:00)
+   * Runs from 9 AM to 9 PM Tashkent time only (not 24/7 like before)
    */
-  @Cron('*/15 * * * *', {
+  @Cron('*/15 9-21 * * *', {
     name: 'retry-failed-notifications',
     timeZone: 'Asia/Tashkent',
   })

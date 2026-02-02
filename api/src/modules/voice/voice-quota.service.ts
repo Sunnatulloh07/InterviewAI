@@ -175,6 +175,26 @@ export class VoiceQuotaService {
   }
 
   /**
+   * Log voice usage to history (for VoiceQuotaGuardService)
+   * 
+   * This is a public method to avoid private property access anti-pattern
+   * Called by VoiceQuotaGuardService after committing a reservation
+   */
+  async logUsage(data: {
+    userId: any; // Can be ObjectId or string
+    type: 'mock' | 'real';
+    durationSeconds: number;
+    durationMinutes: number;
+    interviewSessionId?: string;
+    transcriptionText?: string;
+  }): Promise<any> {
+    return await this.voiceUsageModel.create({
+      ...data,
+      usedAt: new Date(),
+    });
+  }
+
+  /**
    * CRITICAL CRON JOB: Reset voice quotas on 1st of each month
    * Runs at 00:01 on the 1st of every month
    * BUSINESS RULE: Reset used=0, remaining=total based on user's plan

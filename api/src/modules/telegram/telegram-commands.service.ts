@@ -374,21 +374,36 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
       const limits =
         COMPLETE_PLAN_LIMITS[plan as keyof typeof COMPLETE_PLAN_LIMITS] ||
         COMPLETE_PLAN_LIMITS.free_trial;
-      const mockLimit = limits.mockInterviews.perMonth;
-      const liveLimit = limits.voice.realVoice;
-      const cvLimit = limits.cvAnalysis.perMonth;
+
+      // Interview counts (not minutes!)
+      const mockInterviewLimit = limits.mockInterviews.perMonth;
+      const cvAnalysisLimit = limits.cvAnalysis.perMonth;
+
+      // Voice quotas (minutes)
+      const mockVoiceTotal = limits.voice.mockVoice;
+      const realVoiceTotal = limits.voice.realVoice;
+
+      // Daily tasks features
+      const dailyTasksEnabled = limits.dailyTasks.enabled;
+      const dailyTasksVoiceAllowed = limits.dailyTasks.voiceAnswer;
+      const dailyTasksImageAllowed = limits.dailyTasks.imageAnswer;
+      const dailyTasksVideoAllowed = limits.dailyTasks.videoAnswer;
 
       // Get current usage
-      const mockUsed = user.usage?.mockInterviewsThisMonth || 0;
-      const liveUsed = user.usage?.liveInterviewMinutesThisMonth || 0;
-      const cvUsed = user.usage?.cvAnalysesThisMonth || 0;
+      const mockInterviewsUsed = user.usage?.mockInterviewsThisMonth || 0;
+      const cvAnalysesUsed = user.usage?.cvAnalysesThisMonth || 0;
+
+      // Get voice quota usage
+      const mockVoiceUsed = user.voiceQuota?.mockVoice?.used || 0;
       const mockVoiceRemaining = user.voiceQuota?.mockVoice?.remaining || 0;
-      const liveVoiceRemaining = user.voiceQuota?.realVoice?.remaining || 0;
+      const realVoiceUsed = user.voiceQuota?.realVoice?.used || 0;
+      const realVoiceRemaining = user.voiceQuota?.realVoice?.remaining || 0;
 
       // Format limits display
-      const mockLimitText = mockLimit === -1 ? '∞' : mockLimit;
-      const liveLimitText = liveLimit === -1 ? '∞' : liveLimit;
-      const cvLimitText = cvLimit === -1 ? '∞' : cvLimit;
+      const mockInterviewLimitText = mockInterviewLimit === -1 ? '∞' : mockInterviewLimit;
+      const cvAnalysisLimitText = cvAnalysisLimit === -1 ? '∞' : cvAnalysisLimit;
+      const mockVoiceLimitText = mockVoiceTotal === -1 ? '∞' : mockVoiceTotal;
+      const realVoiceLimitText = realVoiceTotal === -1 ? '∞' : realVoiceTotal;
 
       const profileText = {
         uz:
@@ -399,14 +414,19 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
           `━━━━━━━━━━━━━━━━━━\n` +
           `💳 <b>Tarif: ${planName}</b>\n\n` +
           `📊 <b>Bu oylik limitlar:</b>\n` +
-          `• Mock intervyu: ${mockUsed}/${mockLimitText}\n` +
-          `• Live intervyu: ${liveUsed}/${liveLimitText} daq\n` +
-          `• CV tahlili: ${cvUsed}/${cvLimitText}\n\n` +
-          `🎤 <b>Ovozli:</b>\n` +
-          `• Mock: ${mockVoiceRemaining} daq\n` +
-          `• Live: ${liveVoiceRemaining} daq\n\n` +
-          `━━━━━━━━━━━━━━━━━━\n` +
-          `🔥 Streak: ${user.dailyTasks?.currentStreak || 0} kun`,
+          `• Mock intervyular: ${mockInterviewsUsed}/${mockInterviewLimitText} ta\n` +
+          `• CV tahlillari: ${cvAnalysesUsed}/${cvAnalysisLimitText} ta\n\n` +
+          `🎤 <b>Ovozli daqiqalar:</b>\n` +
+          `• Mock practice: ${mockVoiceUsed}/${mockVoiceLimitText} daq (${mockVoiceRemaining} qoldi)\n` +
+          `  └ Mock intervyu + Vazifa javoblari\n` +
+          `• Live yordam: ${realVoiceUsed}/${realVoiceLimitText} daq (${realVoiceRemaining} qoldi)\n` +
+          `  └ Haqiqiy intervyu yordami\n\n` +
+          `📝 <b>Kunlik vazifalar:</b>\n` +
+          `• Streak: ${user.dailyTasks?.currentStreak || 0} kun 🔥\n` +
+          `• Ovozli javob: ${dailyTasksVoiceAllowed ? '✅ Ruxsat berilgan' : '❌ Faqat yuqori planlarda'}\n` +
+          `• Rasm javob: ${dailyTasksImageAllowed ? '✅ Ruxsat berilgan' : '❌ Faqat yuqori planlarda'}\n` +
+          `• Video javob: ${dailyTasksVideoAllowed ? '✅ Ruxsat berilgan' : '❌ Pro+ planlarda'}\n\n` +
+          `━━━━━━━━━━━━━━━━━━`,
         ru:
           `👤 <b>Профиль</b>\n\n` +
           `Имя: ${user.firstName} ${user.lastName}\n` +
@@ -415,14 +435,19 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
           `━━━━━━━━━━━━━━━━━━\n` +
           `💳 <b>Тариф: ${planName}</b>\n\n` +
           `📊 <b>Лимиты за месяц:</b>\n` +
-          `• Mock-интервью: ${mockUsed}/${mockLimitText}\n` +
-          `• Live-интервью: ${liveUsed}/${liveLimitText} мин\n` +
-          `• Анализ CV: ${cvUsed}/${cvLimitText}\n\n` +
-          `🎤 <b>Голосовые:</b>\n` +
-          `• Mock: ${mockVoiceRemaining} мин\n` +
-          `• Live: ${liveVoiceRemaining} мин\n\n` +
-          `━━━━━━━━━━━━━━━━━━\n` +
-          `🔥 Серия: ${user.dailyTasks?.currentStreak || 0} дней`,
+          `• Mock-интервью: ${mockInterviewsUsed}/${mockInterviewLimitText} шт\n` +
+          `• Анализы CV: ${cvAnalysesUsed}/${cvAnalysisLimitText} шт\n\n` +
+          `🎤 <b>Голосовые минуты:</b>\n` +
+          `• Mock practice: ${mockVoiceUsed}/${mockVoiceLimitText} мин (${mockVoiceRemaining} осталось)\n` +
+          `  └ Mock-интервью + Ответы на задачи\n` +
+          `• Live помощь: ${realVoiceUsed}/${realVoiceLimitText} мин (${realVoiceRemaining} осталось)\n` +
+          `  └ Помощь в реальном интервью\n\n` +
+          `📝 <b>Ежедневные задачи:</b>\n` +
+          `• Серия: ${user.dailyTasks?.currentStreak || 0} дней 🔥\n` +
+          `• Голосовой ответ: ${dailyTasksVoiceAllowed ? '✅ Разрешено' : '❌ Только в высших планах'}\n` +
+          `• Ответ картинкой: ${dailyTasksImageAllowed ? '✅ Разрешено' : '❌ Только в высших планах'}\n` +
+          `• Видео ответ: ${dailyTasksVideoAllowed ? '✅ Разрешено' : '❌ В планах Pro+'}\n\n` +
+          `━━━━━━━━━━━━━━━━━━`,
         en:
           `👤 <b>Profile</b>\n\n` +
           `Name: ${user.firstName} ${user.lastName}\n` +
@@ -431,14 +456,19 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
           `━━━━━━━━━━━━━━━━━━\n` +
           `💳 <b>Plan: ${planName}</b>\n\n` +
           `📊 <b>Monthly Limits:</b>\n` +
-          `• Mock interviews: ${mockUsed}/${mockLimitText}\n` +
-          `• Live interviews: ${liveUsed}/${liveLimitText} min\n` +
-          `• CV analyses: ${cvUsed}/${cvLimitText}\n\n` +
-          `🎤 <b>Voice:</b>\n` +
-          `• Mock: ${mockVoiceRemaining} min\n` +
-          `• Live: ${liveVoiceRemaining} min\n\n` +
-          `━━━━━━━━━━━━━━━━━━\n` +
-          `🔥 Streak: ${user.dailyTasks?.currentStreak || 0} days`,
+          `• Mock interviews: ${mockInterviewsUsed}/${mockInterviewLimitText} count\n` +
+          `• CV analyses: ${cvAnalysesUsed}/${cvAnalysisLimitText} count\n\n` +
+          `🎤 <b>Voice Minutes:</b>\n` +
+          `• Mock practice: ${mockVoiceUsed}/${mockVoiceLimitText} min (${mockVoiceRemaining} left)\n` +
+          `  └ Mock interviews + Task answers\n` +
+          `• Live assistance: ${realVoiceUsed}/${realVoiceLimitText} min (${realVoiceRemaining} left)\n` +
+          `  └ Real interview help\n\n` +
+          `📝 <b>Daily Tasks:</b>\n` +
+          `• Streak: ${user.dailyTasks?.currentStreak || 0} days 🔥\n` +
+          `• Voice answer: ${dailyTasksVoiceAllowed ? '✅ Allowed' : '❌ Higher plans only'}\n` +
+          `• Image answer: ${dailyTasksImageAllowed ? '✅ Allowed' : '❌ Higher plans only'}\n` +
+          `• Video answer: ${dailyTasksVideoAllowed ? '✅ Allowed' : '❌ Pro+ plans'}\n\n` +
+          `━━━━━━━━━━━━━━━━━━`,
       };
 
       await ctx.reply(profileText[lang as keyof typeof profileText] || profileText['en'], {
