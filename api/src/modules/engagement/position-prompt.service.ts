@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { User, UserDocument } from '../users/schemas/user.schema';
@@ -7,10 +7,10 @@ import { InlineKeyboard } from 'grammy';
 
 /**
  * Position Prompt Service
- * 
+ *
  * Prompts users 4-4.5 hours after registration to confirm their position
  * if they still have the default 'junior' position and haven't manually changed it.
- * 
+ *
  * This ensures users get personalized interview questions and daily tasks
  * appropriate for their actual skill level.
  */
@@ -21,6 +21,7 @@ export class PositionPromptService {
   constructor(
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
+    @Inject(forwardRef(() => TelegramService))
     private readonly telegramService: TelegramService,
   ) {}
 
@@ -47,26 +48,18 @@ export class PositionPromptService {
         .text(messages.senior, 'confirm_position_senior')
         .text(messages.lead, 'confirm_position_lead');
 
-      await bot.api.sendMessage(
-        telegramId,
-        messages.prompt,
-        {
-          reply_markup: keyboard,
-          parse_mode: 'HTML',
-        },
-      );
+      await bot.api.sendMessage(telegramId, messages.prompt, {
+        reply_markup: keyboard,
+        parse_mode: 'HTML',
+      });
 
-      this.logger.log(
-        `Position prompt sent to user ${userId} (telegram: ${telegramId})`,
-      );
+      this.logger.log(`Position prompt sent to user ${userId} (telegram: ${telegramId})`);
 
       return { success: true };
     } catch (error: any) {
       // Handle bot blocked / user deactivated errors
       if (error.error_code === 403 || error.description?.includes('bot was blocked')) {
-        this.logger.warn(
-          `User ${userId} has blocked the bot - marking as blocked`,
-        );
+        this.logger.warn(`User ${userId} has blocked the bot - marking as blocked`);
 
         await this.userModel.findByIdAndUpdate(userId, {
           $set: {
@@ -82,9 +75,7 @@ export class PositionPromptService {
       }
 
       if (error.error_code === 400 && error.description?.includes('chat not found')) {
-        this.logger.warn(
-          `User ${userId} deactivated their Telegram account`,
-        );
+        this.logger.warn(`User ${userId} deactivated their Telegram account`);
 
         await this.userModel.findByIdAndUpdate(userId, {
           $set: { isActive: false },
@@ -126,9 +117,7 @@ export class PositionPromptService {
         },
       });
 
-      this.logger.log(
-        `User ${userId} confirmed position: ${position}`,
-      );
+      this.logger.log(`User ${userId} confirmed position: ${position}`);
     } catch (error: any) {
       this.logger.error(
         `Failed to update position for user ${userId}: ${error.message}`,
@@ -154,13 +143,13 @@ export class PositionPromptService {
         prompt:
           '👋 Assalomu alaykum!\n\n' +
           '📊 Sizning mahorat darajangizni aniqlash uchun yordam bering.\n\n' +
-          '<b>Hozirgi yoki oldingi ishingizda (yoki o\'rgangan joyingizda) qaysi lavozimda edingiz?</b>\n\n' +
+          "<b>Hozirgi yoki oldingi ishingizda (yoki o'rgangan joyingizda) qaysi lavozimda edingiz?</b>\n\n" +
           'Bu savollarga mos javoblar olishingiz uchun muhim.',
         junior: '🌱 Junior (0-2 yil tajriba)',
         middle: '💼 Middle (2-5 yil tajriba)',
         senior: '🎯 Senior (5+ yil tajriba)',
         lead: '👑 Lead/Architect (Team lead)',
-        thanks: '✅ Rahmat! Lavozimingiz saqlandi. Endi sizga mos savollar jo\'natiladi.',
+        thanks: "✅ Rahmat! Lavozimingiz saqlandi. Endi sizga mos savollar jo'natiladi.",
       },
       ru: {
         prompt:
@@ -184,7 +173,8 @@ export class PositionPromptService {
         middle: '💼 Middle (2-5 years experience)',
         senior: '🎯 Senior (5+ years experience)',
         lead: '👑 Lead/Architect (Team lead)',
-        thanks: '✅ Thank you! Your position has been saved. You will now receive appropriate questions.',
+        thanks:
+          '✅ Thank you! Your position has been saved. You will now receive appropriate questions.',
       },
     };
 
@@ -194,10 +184,7 @@ export class PositionPromptService {
   /**
    * Get confirmation message after position is set
    */
-  getPositionConfirmationMessage(
-    position: string,
-    language: string = 'uz',
-  ): string {
+  getPositionConfirmationMessage(position: string, language: string = 'uz'): string {
     const messages = this.getPositionPromptMessages(language);
     return messages.thanks;
   }

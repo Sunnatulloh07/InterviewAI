@@ -325,10 +325,10 @@ UserSchema.index({ 'engagement.lastActiveAt': 1 });
 UserSchema.index({ 'engagement.scheduledSurveyAt': 1, 'engagement.surveyCompletedAt': 1 });
 
 // Position prompt scheduling index (for cron job queries)
-UserSchema.index({ 
-  'engagement.scheduledPositionPromptAt': 1, 
+UserSchema.index({
+  'engagement.scheduledPositionPromptAt': 1,
   'engagement.positionConfirmed': 1,
-  'profile.position': 1
+  'profile.position': 1,
 });
 
 // Job seeker engagement index
@@ -529,23 +529,23 @@ UserSchema.pre('save', function (next) {
         user.engagement = {} as any;
       }
       user.engagement.scheduledSurveyAt = scheduledTime;
-      
+
       // 🔧 FIX: Also schedule position prompt for 4h after registration
       // This will prompt user to confirm their real position if still default 'junior'
       const positionPromptDelayHours = 4 + Math.random() * 0.5; // 4-4.5 hours
       const positionPromptTime = new Date(Date.now() + positionPromptDelayHours * 60 * 60 * 1000);
-      
+
       // Ensure position prompt is also within allowed hours
       const positionUtcPlus5Hours = positionPromptTime.getUTCHours() + 5;
       const positionLocalHour = positionUtcPlus5Hours % 24;
-      
+
       if (positionLocalHour < 9) {
         positionPromptTime.setUTCHours(4, 0, 0, 0);
       } else if (positionLocalHour >= 21) {
         positionPromptTime.setDate(positionPromptTime.getDate() + 1);
         positionPromptTime.setUTCHours(4, 0, 0, 0);
       }
-      
+
       user.engagement.scheduledPositionPromptAt = positionPromptTime;
       user.engagement.positionConfirmed = false; // Default position needs confirmation
     }

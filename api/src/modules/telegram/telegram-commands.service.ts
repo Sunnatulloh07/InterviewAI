@@ -62,28 +62,28 @@ export class TelegramCommandsService {
   private getUserLanguage(ctx: BotContext, user: any): string {
     // Priority 1: User preferences language (most reliable)
     let lang = user?.preferences?.language;
-    
+
     // Priority 2: User language field
     if (!lang && user?.language) {
       lang = user.language;
     }
-    
+
     // Priority 3: Session language (fallback)
     if (!lang && ctx.session?.language) {
       lang = ctx.session.language;
     }
-    
+
     // Priority 4: Default to Uzbek
     if (!lang) {
       lang = 'uz';
     }
-    
+
     // CRITICAL: Always sync user's language to session
     // This ensures menu and messages are always in correct language
     if (ctx.session) {
       ctx.session.language = lang;
     }
-    
+
     return lang;
   }
 
@@ -261,7 +261,7 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
     try {
       const telegramId = ctx.from?.id as number;
       this.logger.debug(`/tasks command received from telegramId: ${telegramId}`);
-      
+
       const user = await this.usersService.findByTelegramId(telegramId);
 
       if (!user) {
@@ -1989,7 +1989,11 @@ Which domain would you like to practice?
     // 🔧 FIX: POSITION CONFIRMATION (from automated position prompt)
     // ============================================================
     if (callbackData.startsWith('confirm_position_')) {
-      const position = callbackData.replace('confirm_position_', '') as 'junior' | 'middle' | 'senior' | 'lead';
+      const position = callbackData.replace('confirm_position_', '') as
+        | 'junior'
+        | 'middle'
+        | 'senior'
+        | 'lead';
       const telegramId = ctx.from?.id as number;
       const user = await this.usersService.findByTelegramId(telegramId);
 
@@ -2000,15 +2004,12 @@ Which domain would you like to practice?
 
       try {
         // Update user profile with confirmed position
-        await this.usersRepository.updateRaw(
-          (user as any).id || (user as any)._id?.toString(),
-          {
-            $set: {
-              'profile.position': position,
-              'engagement.positionConfirmed': true,
-            },
+        await this.usersRepository.updateRaw((user as any).id || (user as any)._id?.toString(), {
+          $set: {
+            'profile.position': position,
+            'engagement.positionConfirmed': true,
           },
-        );
+        });
 
         const confirmText: Record<string, string> = {
           uz: `✅ Rahmat! Lavozimingiz saqlandi: <b>${position}</b>\n\nEndi sizga mos savollar jo'natiladi.`,

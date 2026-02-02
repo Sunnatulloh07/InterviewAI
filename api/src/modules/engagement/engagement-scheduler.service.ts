@@ -225,10 +225,10 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
                 'engagement.jobSeekingStatus': 'NOT_SET',
                 $or: [
                   { 'engagement.lastNotificationSentAt': { $exists: false } },
-                  { 
-                    'engagement.lastNotificationSentAt': { 
-                      $lte: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) 
-                    } 
+                  {
+                    'engagement.lastNotificationSentAt': {
+                      $lte: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000),
+                    },
                   },
                 ],
               },
@@ -408,7 +408,7 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
 
       this.logger.log(
         `Found ${allUsers.length} users needing position prompts ` +
-        `(${scheduledUsers.length} scheduled, ${backfillUsers.length} backfill)`,
+          `(${scheduledUsers.length} scheduled, ${backfillUsers.length} backfill)`,
       );
 
       let sent = 0;
@@ -426,7 +426,7 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
 
           if (result.success) {
             sent++;
-            
+
             // Clear scheduled time after sending (prevent re-sending)
             await this.userModel.findByIdAndUpdate(user._id, {
               $set: { 'engagement.scheduledPositionPromptAt': null },
@@ -438,9 +438,7 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
           // Rate limiting delay
           await this.delay(200);
         } catch (error) {
-          this.logger.error(
-            `Failed to send position prompt to user ${user._id}: ${error.message}`,
-          );
+          this.logger.error(`Failed to send position prompt to user ${user._id}: ${error.message}`);
           failed++;
         }
       }

@@ -186,7 +186,7 @@ export class FailedNotificationRetryService {
                 failed++;
                 continue;
               }
-            // 🔧 NEW: Handle employment survey retry  
+            // 🔧 NEW: Handle employment survey retry
             case 'employment_survey':
               try {
                 this.logger.debug(`Retrying employment survey for user ${notification.userId}`);

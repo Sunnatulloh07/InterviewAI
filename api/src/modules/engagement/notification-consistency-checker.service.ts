@@ -35,14 +35,16 @@ export class NotificationConsistencyChecker {
     try {
       const now = new Date();
       const currentHour = now.getHours();
-      
+
       // Don't run if it's past 22:00 (21:30-21:59 is last run)
       if (currentHour >= 22) {
         this.logger.debug('Skipping missed notification check after 22:00');
         return;
       }
 
-      this.logger.log(`Running missed notification check at ${currentHour}:${now.getMinutes().toString().padStart(2, '0')}`);
+      this.logger.log(
+        `Running missed notification check at ${currentHour}:${now.getMinutes().toString().padStart(2, '0')}`,
+      );
 
       const results = await Promise.all([
         this.checkMissedPositionPrompts(),
@@ -511,7 +513,7 @@ export class NotificationConsistencyChecker {
             'position_prompt',
             'Position prompt not delivered (position unknown)',
             undefined,
-            { 
+            {
               userLanguage: user.language,
               currentPosition: user.profile?.position || 'UNKNOWN',
             },
@@ -577,10 +579,10 @@ export class NotificationConsistencyChecker {
               $or: [
                 { 'engagement.lastNotificationSentAt': { $exists: false } },
                 { 'engagement.lastNotificationSentAt': null },
-                { 
-                  'engagement.lastNotificationSentAt': { 
-                    $lte: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) // 7 days ago
-                  } 
+                {
+                  'engagement.lastNotificationSentAt': {
+                    $lte: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000), // 7 days ago
+                  },
                 },
               ],
             },
@@ -613,16 +615,14 @@ export class NotificationConsistencyChecker {
             'employment_survey',
             'Employment survey not delivered (status unknown)',
             undefined,
-            { 
+            {
               userLanguage: user.language,
               currentStatus: user.engagement?.jobSeekingStatus || 'UNKNOWN',
             },
           );
           fixed++;
         } catch (error: any) {
-          this.logger.error(
-            `Failed to track missed survey for user ${user._id}: ${error.message}`,
-          );
+          this.logger.error(`Failed to track missed survey for user ${user._id}: ${error.message}`);
           failed++;
         }
       }

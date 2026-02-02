@@ -58,7 +58,7 @@ export class TelegramDailyTaskService {
   async startDailyTaskSession(ctx: BotContext, userId: string): Promise<void> {
     try {
       this.logger.debug(`Starting daily task session for userId: ${userId}`);
-      
+
       // Get today's tasks
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -77,7 +77,9 @@ export class TelegramDailyTaskService {
         return;
       }
 
-      this.logger.debug(`Found daily task for userId: ${userId}, tasks count: ${dailyTask.tasks.length}`);
+      this.logger.debug(
+        `Found daily task for userId: ${userId}, tasks count: ${dailyTask.tasks.length}`,
+      );
 
       // Find first incomplete task
       const currentTaskIndex = dailyTask.tasks.findIndex((t) => !t.completed);
