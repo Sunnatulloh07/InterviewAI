@@ -27,6 +27,7 @@ describe('AdminController (e2e)', () => {
 
     await app.init();
 
+
     adminToken = jwtService.sign({
       sub: 'admin-id',
       role: 'admin',
