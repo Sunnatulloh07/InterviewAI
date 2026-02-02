@@ -17,7 +17,11 @@ export class SecurityService {
   /**
    * Validate file before processing
    */
-  async validateFile(file: Express.Multer.File | { buffer: Buffer; size: number; mimetype: string; originalname: string }): Promise<boolean> {
+  async validateFile(
+    file:
+      | Express.Multer.File
+      | { buffer: Buffer; size: number; mimetype: string; originalname: string },
+  ): Promise<boolean> {
     // 1. Check file size
     if (file.size > this.MAX_FILE_SIZE) {
       throw new BadRequestException(`File too large. Maximum size is 5MB.`);
@@ -31,17 +35,25 @@ export class SecurityService {
     // 3. Magic Byte Validation (Deep check)
     const isSafe = this.validateMagicBytes(file.buffer, file.mimetype);
     if (!isSafe) {
-      this.logger.warn(`Magic byte validation failed for file: ${file.originalname} (${file.mimetype})`);
+      this.logger.warn(
+        `Magic byte validation failed for file: ${file.originalname} (${file.mimetype})`,
+      );
       throw new BadRequestException('File integrity check failed. Please return a valid file.');
     }
 
     // 4. Scan for malicious content (basic text scan)
-    if (file.mimetype === 'text/plain' || file.mimetype.includes('xml') || file.mimetype.includes('html')) {
-        const content = file.buffer.toString('utf8');
-        if (this.hasMaliciousContent(content)) {
-            this.logger.warn(`Malicious content detected in file: ${file.originalname}`);
-            throw new BadRequestException('Security check failed: Potentially unsafe content detected.');
-        }
+    if (
+      file.mimetype === 'text/plain' ||
+      file.mimetype.includes('xml') ||
+      file.mimetype.includes('html')
+    ) {
+      const content = file.buffer.toString('utf8');
+      if (this.hasMaliciousContent(content)) {
+        this.logger.warn(`Malicious content detected in file: ${file.originalname}`);
+        throw new BadRequestException(
+          'Security check failed: Potentially unsafe content detected.',
+        );
+      }
     }
 
     return true;
@@ -72,12 +84,12 @@ export class SecurityService {
 
     // TXT: No magic bytes, but check for null bytes which might indicate binary
     if (mimetype === 'text/plain') {
-        // Simple heuristic: Text files shouldn't have too many null bytes at start
-        // Accessing buffer directly
-        for(let i=0; i<Math.min(buffer.length, 50); i++) {
-            if(buffer[i] === 0x00) return false; // Binary file masquerading as text
-        }
-        return true;
+      // Simple heuristic: Text files shouldn't have too many null bytes at start
+      // Accessing buffer directly
+      for (let i = 0; i < Math.min(buffer.length, 50); i++) {
+        if (buffer[i] === 0x00) return false; // Binary file masquerading as text
+      }
+      return true;
     }
 
     return false;
@@ -88,19 +100,19 @@ export class SecurityService {
    */
   private hasMaliciousContent(content: string): boolean {
     const dangerousPatterns = [
-      /<script\b[^>]*>([\s\S]*?)<\/script>/gmi,
-      /javascript:/gmi,
-      /vbscript:/gmi,
-      /onload\s*=/gmi,
-      /onerror\s*=/gmi,
-      /onclick\s*=/gmi,
-      /eval\s*\(/gmi,
-      /exec\s*\(/gmi,
-      /system\s*\(/gmi,
-      /passthru\s*\(/gmi,
-      /shell_exec\s*\(/gmi,
+      /<script\b[^>]*>([\s\S]*?)<\/script>/gim,
+      /javascript:/gim,
+      /vbscript:/gim,
+      /onload\s*=/gim,
+      /onerror\s*=/gim,
+      /onclick\s*=/gim,
+      /eval\s*\(/gim,
+      /exec\s*\(/gim,
+      /system\s*\(/gim,
+      /passthru\s*\(/gim,
+      /shell_exec\s*\(/gim,
     ];
 
-    return dangerousPatterns.some(pattern => pattern.test(content));
+    return dangerousPatterns.some((pattern) => pattern.test(content));
   }
 }

@@ -2,7 +2,10 @@ import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Cron } from '@nestjs/schedule';
-import { UnregisteredUser, UnregisteredUserDocument } from '../telegram/schemas/unregistered-user.schema';
+import {
+  UnregisteredUser,
+  UnregisteredUserDocument,
+} from '../telegram/schemas/unregistered-user.schema';
 import { TelegramService } from '../telegram/telegram.service';
 import { getRandomNonRegisteredMessage } from './constants/engagement-messages';
 
@@ -18,7 +21,13 @@ export class UnregisteredUserService {
     private readonly telegramService: TelegramService,
   ) {}
 
-  async trackUserStart(telegramChatId: number, firstName?: string, lastName?: string, username?: string, language = 'uz'): Promise<void> {
+  async trackUserStart(
+    telegramChatId: number,
+    firstName?: string,
+    lastName?: string,
+    username?: string,
+    language = 'uz',
+  ): Promise<void> {
     try {
       await this.unregisteredUserModel.findOneAndUpdate(
         { telegramChatId },
@@ -37,7 +46,10 @@ export class UnregisteredUserService {
     }
   }
 
-  async updateRegistrationStatus(telegramChatId: number, status: 'not_started' | 'phone_entered' | 'otp_sent' | 'otp_failed'): Promise<void> {
+  async updateRegistrationStatus(
+    telegramChatId: number,
+    status: 'not_started' | 'phone_entered' | 'otp_sent' | 'otp_failed',
+  ): Promise<void> {
     try {
       await this.unregisteredUserModel.findOneAndUpdate(
         { telegramChatId },
@@ -81,7 +93,7 @@ export class UnregisteredUserService {
   async engageNonRegisteredUsers(): Promise<void> {
     try {
       const now = new Date();
-      
+
       // SCALABILITY FIX: Count total users first
       const totalUsers = await this.unregisteredUserModel.countDocuments({
         isBotBlocked: false,
@@ -115,7 +127,9 @@ export class UnregisteredUserService {
 
         if (userBatch.length === 0) break;
 
-        this.logger.log(`Processing unregistered batch: ${userBatch.length} users (${sent + failed + skipped}/${totalUsers})`);
+        this.logger.log(
+          `Processing unregistered batch: ${userBatch.length} users (${sent + failed + skipped}/${totalUsers})`,
+        );
 
         for (const user of userBatch) {
           try {
@@ -125,7 +139,8 @@ export class UnregisteredUserService {
             }
 
             const lastSent = user.lastEngagementSentAt || user.createdAt;
-            const hoursSinceLastMessage = (now.getTime() - new Date(lastSent).getTime()) / (1000 * 60 * 60);
+            const hoursSinceLastMessage =
+              (now.getTime() - new Date(lastSent).getTime()) / (1000 * 60 * 60);
 
             if (hoursSinceLastMessage < 6) {
               skipped++;
@@ -173,7 +188,9 @@ export class UnregisteredUserService {
 
             await this.delay(200);
           } catch (userError: any) {
-            this.logger.error(`Failed to process user ${user.telegramChatId}: ${userError.message}`);
+            this.logger.error(
+              `Failed to process user ${user.telegramChatId}: ${userError.message}`,
+            );
             failed++;
           }
         }
@@ -181,7 +198,9 @@ export class UnregisteredUserService {
         lastId = userBatch[userBatch.length - 1]._id;
       }
 
-      this.logger.log(`Unregistered user engagement: sent=${sent}, failed=${failed}, skipped=${skipped}`);
+      this.logger.log(
+        `Unregistered user engagement: sent=${sent}, failed=${failed}, skipped=${skipped}`,
+      );
     } catch (error: any) {
       this.logger.error(`Non-registered user engagement failed: ${error.message}`);
     }

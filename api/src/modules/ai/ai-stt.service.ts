@@ -59,9 +59,9 @@ export class AiSttService {
    * Attempt to transcribe using Aisha STT. Returns null if disabled or fails.
    */
   private async tryAishaTranscription(
-    audioBuffer: Buffer, 
-    dto: TranscribeDto, 
-    startTime: number
+    audioBuffer: Buffer,
+    dto: TranscribeDto,
+    startTime: number,
   ): Promise<TranscriptionResponseDto | null> {
     const aishaEnabled = this.configService.get<string>('AISHA_STT_ENABLED') === 'true';
     const aishaApiKey = this.configService.get<string>('AISHA_API_KEY');
@@ -75,10 +75,7 @@ export class AiSttService {
       this.logger.log(`Routing to Aisha STT (Language: ${dto.language})`);
       return await this.transcribeWithAisha(audioBuffer, dto, startTime);
     } catch (error: any) {
-      this.logger.warn(
-        `Aisha STT failed: ${error.message}`,
-        error.stack,
-      );
+      this.logger.warn(`Aisha STT failed: ${error.message}`, error.stack);
       return null;
     }
   }
@@ -87,9 +84,9 @@ export class AiSttService {
    * Fallback logic for OpenAI (Whisper / OpenRouter)
    */
   private async fallbackToOpenAI(
-    audioBuffer: Buffer, 
-    dto: TranscribeDto, 
-    startTime: number
+    audioBuffer: Buffer,
+    dto: TranscribeDto,
+    startTime: number,
   ): Promise<TranscriptionResponseDto> {
     if (!this.openai) {
       throw new BadRequestException(
@@ -113,10 +110,10 @@ export class AiSttService {
         const hasDirectOpenAIKey = !apiKey?.startsWith('sk-or-v1-');
 
         if (isPaymentError && hasDirectOpenAIKey) {
-           this.logger.warn('OpenRouter payment required. Falling back to direct OpenAI Whisper...');
-           // Fall through to direct OpenAI
+          this.logger.warn('OpenRouter payment required. Falling back to direct OpenAI Whisper...');
+          // Fall through to direct OpenAI
         } else {
-           throw error; // Re-throw if it's not a recoverable error
+          throw error; // Re-throw if it's not a recoverable error
         }
       }
     }

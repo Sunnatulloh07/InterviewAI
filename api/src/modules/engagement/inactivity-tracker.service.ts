@@ -7,13 +7,13 @@ import { TelegramService } from '../telegram/telegram.service';
 
 /**
  * InactivityTrackerService
- * 
+ *
  * Tracks inactive users and sends targeted engagement notifications:
  * - Never active users (lastActiveAt = createdAt)
  * - 7 days inactive users
  * - 30 days inactive users
  * - 90 days inactive users
- * 
+ *
  * Features:
  * - Free trial tracking (30 days limit)
  * - Limit usage tracking for free users
@@ -52,12 +52,12 @@ export class InactivityTrackerService {
       };
 
       const batchSize = 1000;
-      
+
       for (let batch = 0; batch < 10; batch++) {
         const offset = batch * batchSize;
-        
+
         const batchResults = await this.processBatch(offset, batchSize, now);
-        
+
         results.neverActive += batchResults.neverActive;
         results.sevenDaysInactive += batchResults.sevenDaysInactive;
         results.thirtyDaysInactive += batchResults.thirtyDaysInactive;
@@ -74,11 +74,11 @@ export class InactivityTrackerService {
 
       this.logger.log(
         `Inactivity reminders completed: ` +
-        `neverActive=${results.neverActive}, ` +
-        `7days=${results.sevenDaysInactive}, ` +
-        `30days=${results.thirtyDaysInactive}, ` +
-        `90days=${results.ninetyDaysInactive}, ` +
-        `failed=${results.failed}`
+          `neverActive=${results.neverActive}, ` +
+          `7days=${results.sevenDaysInactive}, ` +
+          `30days=${results.thirtyDaysInactive}, ` +
+          `90days=${results.ninetyDaysInactive}, ` +
+          `failed=${results.failed}`,
       );
     } catch (error: any) {
       this.logger.error(`Inactivity reminders failed: ${error.message}`, error.stack);
@@ -148,8 +148,14 @@ export class InactivityTrackerService {
 
       try {
         await this.processUserForInactivity(user, now, sevenDaysAgo, thirtyDaysAgo, ninetyDaysAgo);
-        
-        const inactiveLevel = this.determineInactiveLevel(user, now, sevenDaysAgo, thirtyDaysAgo, ninetyDaysAgo);
+
+        const inactiveLevel = this.determineInactiveLevel(
+          user,
+          now,
+          sevenDaysAgo,
+          thirtyDaysAgo,
+          ninetyDaysAgo,
+        );
 
         switch (inactiveLevel) {
           case 'never_active':
@@ -190,7 +196,13 @@ export class InactivityTrackerService {
     thirtyDaysAgo: Date,
     ninetyDaysAgo: Date,
   ): Promise<void> {
-    const inactiveLevel = this.determineInactiveLevel(user, now, sevenDaysAgo, thirtyDaysAgo, ninetyDaysAgo);
+    const inactiveLevel = this.determineInactiveLevel(
+      user,
+      now,
+      sevenDaysAgo,
+      thirtyDaysAgo,
+      ninetyDaysAgo,
+    );
 
     if (inactiveLevel === 'never_active') {
       await this.processNeverActiveUser(user);
@@ -212,7 +224,12 @@ export class InactivityTrackerService {
     sevenDaysAgo: Date,
     thirtyDaysAgo: Date,
     ninetyDaysAgo: Date,
-  ): 'never_active' | 'seven_days_inactive' | 'thirty_days_inactive' | 'ninety_days_inactive' | 'active' {
+  ):
+    | 'never_active'
+    | 'seven_days_inactive'
+    | 'thirty_days_inactive'
+    | 'ninety_days_inactive'
+    | 'active' {
     const lastActiveAt = user.engagement?.lastActiveAt || user.createdAt;
     const daysSinceActive = this.getDaysSince(lastActiveAt, now);
 
@@ -222,7 +239,10 @@ export class InactivityTrackerService {
       return 'thirty_days_inactive';
     } else if (daysSinceActive >= 7) {
       return 'seven_days_inactive';
-    } else if (user.engagement?.lastActiveAt === undefined || user.engagement?.lastActiveAt === null) {
+    } else if (
+      user.engagement?.lastActiveAt === undefined ||
+      user.engagement?.lastActiveAt === null
+    ) {
       return 'never_active';
     }
 
@@ -314,11 +334,15 @@ export class InactivityTrackerService {
 
       this.logger.debug(`Sent inactivity reminder to user ${user._id}`);
     } catch (sendError: any) {
-      this.logger.error(`Failed to send inactivity reminder to user ${user._id}: ${sendError.message}`);
+      this.logger.error(
+        `Failed to send inactivity reminder to user ${user._id}: ${sendError.message}`,
+      );
 
-      if (sendError.description?.includes('bot was blocked') || 
-          sendError.description?.includes('user is deactivated') ||
-          sendError.description?.includes('chat not found')) {
+      if (
+        sendError.description?.includes('bot was blocked') ||
+        sendError.description?.includes('user is deactivated') ||
+        sendError.description?.includes('chat not found')
+      ) {
         await this.markUserAsBlocked(user._id.toString());
       }
     }

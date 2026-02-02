@@ -17,14 +17,14 @@ export class DailyTask {
   })
   tasks: {
     question: string;
-    answer?: string;                          // Text answer or transcript
-    answerType?: 'text' | 'voice' | 'image';  // ✅ NO VIDEO - Too expensive
-    audioUrl?: string;                        // Voice audio URL
-    imageUrl?: string;                        // Image URL
-    transcript?: string;                      // STT transcript for voice
+    answer?: string; // Text answer or transcript
+    answerType?: 'text' | 'voice' | 'image'; // ✅ NO VIDEO - Too expensive
+    audioUrl?: string; // Voice audio URL
+    imageUrl?: string; // Image URL
+    transcript?: string; // STT transcript for voice
     completed: boolean;
     score?: number;
-    feedback?: string;                        // AI feedback stored
+    feedback?: string; // AI feedback stored
     completedAt?: Date;
   }[];
 
@@ -41,9 +41,9 @@ export class DailyTask {
     }),
   })
   reminders: {
-    firstReminderSentAt: Date | null;  // 30 min after task delivery
+    firstReminderSentAt: Date | null; // 30 min after task delivery
     secondReminderSentAt: Date | null; // 13:30
-    thirdReminderSentAt: Date | null;  // 18:00
+    thirdReminderSentAt: Date | null; // 18:00
   };
 
   // Timestamps (automatically added by timestamps: true)
@@ -59,21 +59,21 @@ DailyTaskSchema.index({ status: 1, date: 1 });
 
 // CRITICAL: Indexes for reminder queries (performance optimization)
 // For first reminder query (createdAt + reminders.firstReminderSentAt)
-DailyTaskSchema.index({ 
-  status: 1, 
-  createdAt: 1, 
-  'reminders.firstReminderSentAt': 1 
+DailyTaskSchema.index({
+  status: 1,
+  createdAt: 1,
+  'reminders.firstReminderSentAt': 1,
 });
 
 // For second/third reminder queries (date + status + reminder sent flags)
-DailyTaskSchema.index({ 
-  date: 1, 
-  status: 1, 
-  'reminders.secondReminderSentAt': 1 
+DailyTaskSchema.index({
+  date: 1,
+  status: 1,
+  'reminders.secondReminderSentAt': 1,
 });
 
-DailyTaskSchema.index({ 
-  date: 1, 
-  status: 1, 
-  'reminders.thirdReminderSentAt': 1 
+DailyTaskSchema.index({
+  date: 1,
+  status: 1,
+  'reminders.thirdReminderSentAt': 1,
 });

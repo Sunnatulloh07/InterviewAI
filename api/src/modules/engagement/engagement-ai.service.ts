@@ -117,11 +117,11 @@ RULES:
 
 /**
  * EngagementAiService
- * 
+ *
  * Generates personalized engagement messages using Z-AI (GLM-4.5-Flash)
  * through OpenRouter API. This model is FREE, making it cost-effective
  * for high-volume notification generation.
- * 
+ *
  * Key features:
  * - Timeout protection (10s max)
  * - Retry with exponential backoff (2 retries)
@@ -138,10 +138,8 @@ export class EngagementAiService {
   constructor(private readonly configService: ConfigService) {
     const apiKey = this.configService.get<string>('OPENAI_API_KEY');
     const isOpenRouter = apiKey?.startsWith('sk-or-');
-    
-    const baseURL = isOpenRouter
-      ? 'https://openrouter.ai/api/v1'
-      : 'https://api.openai.com/v1';
+
+    const baseURL = isOpenRouter ? 'https://openrouter.ai/api/v1' : 'https://api.openai.com/v1';
 
     this.openai = new OpenAI({
       apiKey,
@@ -161,7 +159,7 @@ export class EngagementAiService {
 
   /**
    * Generate a personalized engagement message with retry logic
-   * 
+   *
    * @param trigger - What triggered this notification
    * @param context - User context for personalization
    * @returns Generated message with metadata
@@ -184,8 +182,10 @@ export class EngagementAiService {
         return await this.callAI(trigger, context);
       } catch (error) {
         lastError = error;
-        this.logger.warn(`AI call failed (attempt ${attempt + 1}/${AI_CONFIG.MAX_RETRIES + 1}): ${error.message}`);
-        
+        this.logger.warn(
+          `AI call failed (attempt ${attempt + 1}/${AI_CONFIG.MAX_RETRIES + 1}): ${error.message}`,
+        );
+
         // Don't retry on certain errors
         if (this.isNonRetryableError(error)) {
           break;
@@ -253,7 +253,8 @@ export class EngagementAiService {
    * Build user prompt with trigger-specific instructions and context
    */
   private buildUserPrompt(trigger: NotificationTrigger, context: EngagementUserContext): string {
-    let triggerPrompt = TRIGGER_PROMPTS[trigger] || TRIGGER_PROMPTS[NotificationTrigger.LONG_ABSENCE];
+    let triggerPrompt =
+      TRIGGER_PROMPTS[trigger] || TRIGGER_PROMPTS[NotificationTrigger.LONG_ABSENCE];
 
     // Replace all placeholders with actual context values
     triggerPrompt = triggerPrompt
@@ -265,7 +266,7 @@ export class EngagementAiService {
       .replace(/{completedInterviews}/g, String(context.completedInterviews))
       .replace(/{subscriptionPlan}/g, context.subscriptionPlan)
       .replace(/{trialDaysRemaining}/g, String(context.trialDaysRemaining || 0))
-      .replace(/{recentScores}/g, context.recentScores?.join(', ') || 'ma\'lumot yo\'q')
+      .replace(/{recentScores}/g, context.recentScores?.join(', ') || "ma'lumot yo'q")
       .replace(/{achievementType}/g, context.achievementType || 'yangi yutuq')
       .replace(/{weeklyInterviews}/g, String(context.weeklyInterviews || 0))
       .replace(/{strengths}/g, context.strengths?.join(', ') || 'yaxshi')
@@ -292,13 +293,16 @@ Shaxsiylashtirilgan, qisqa (2-3 jumla) xabar yoz:`;
    * Sleep helper for retry delays
    */
   private sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   /**
    * Get fallback template message when AI fails
    */
-  private getFallbackMessage(trigger: NotificationTrigger, context: EngagementUserContext): GeneratedMessage {
+  private getFallbackMessage(
+    trigger: NotificationTrigger,
+    context: EngagementUserContext,
+  ): GeneratedMessage {
     const templates: Record<string, Record<NotificationTrigger, string>> = {
       uz: {
         [NotificationTrigger.INCOMPLETE_INTERVIEW]: `Salom, ${context.firstName}! 👋 Intervyungiz hali tugallanmagan. Davom ettirishni xohlaysizmi?`,

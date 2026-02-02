@@ -11,13 +11,13 @@ export class HttpCacheInterceptor implements NestInterceptor {
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
     const request = context.switchToHttp().getRequest();
     const method = request.method;
-    
+
     if (method !== 'GET') {
       return next.handle();
     }
 
     const key = this.getCacheKey(context);
-    
+
     return new Observable((observer) => {
       this.cacheManager.get(key).then((cachedValue) => {
         if (cachedValue !== undefined && cachedValue !== null) {
@@ -26,18 +26,21 @@ export class HttpCacheInterceptor implements NestInterceptor {
           return;
         }
 
-        return next.handle().pipe(
-          tap((response) => {
-            const ttl = this.getCacheTTL(context);
-            this.cacheManager.set(key, response, ttl).catch((err) => {
-              console.error('Cache set error:', err);
-            });
-          })
-        ).subscribe({
-          next: (value) => observer.next(value),
-          error: (err) => observer.error(err),
-          complete: () => observer.complete(),
-        });
+        return next
+          .handle()
+          .pipe(
+            tap((response) => {
+              const ttl = this.getCacheTTL(context);
+              this.cacheManager.set(key, response, ttl).catch((err) => {
+                console.error('Cache set error:', err);
+              });
+            }),
+          )
+          .subscribe({
+            next: (value) => observer.next(value),
+            error: (err) => observer.error(err),
+            complete: () => observer.complete(),
+          });
       });
     });
   }
@@ -47,11 +50,9 @@ export class HttpCacheInterceptor implements NestInterceptor {
     const url = request.url;
     const query = request.query;
     const userId = request.user?.id || 'anonymous';
-    
-    const queryString = Object.keys(query).length > 0
-      ? JSON.stringify(query)
-      : '';
-    
+
+    const queryString = Object.keys(query).length > 0 ? JSON.stringify(query) : '';
+
     return `http:${userId}:${url}:${queryString}`;
   }
 

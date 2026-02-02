@@ -50,7 +50,11 @@ export class NotificationConsistencyChecker {
     }
   }
 
-  private async checkDailyTaskDelivery(): Promise<{ missed: number; fixed: number; failed: number }> {
+  private async checkDailyTaskDelivery(): Promise<{
+    missed: number;
+    fixed: number;
+    failed: number;
+  }> {
     const now = new Date();
     const today = new Date(now);
     today.setUTCHours(0, 0, 0, 0);
@@ -85,7 +89,9 @@ export class NotificationConsistencyChecker {
 
       const usersWithTasksSet = new Set(usersWithTasks.map((t) => t.userId.toString()));
 
-      const missedUsers = paidUsersWithTasks.filter((u) => !usersWithTasksSet.has(u._id.toString()));
+      const missedUsers = paidUsersWithTasks.filter(
+        (u) => !usersWithTasksSet.has(u._id.toString()),
+      );
 
       if (missedUsers.length === 0) {
         return { missed: 0, fixed: 0, failed: 0 };
@@ -327,7 +333,11 @@ export class NotificationConsistencyChecker {
     }
   }
 
-  private async checkEngagementNotifications(): Promise<{ missed: number; fixed: number; failed: number }> {
+  private async checkEngagementNotifications(): Promise<{
+    missed: number;
+    fixed: number;
+    failed: number;
+  }> {
     try {
       const now = new Date();
       const startOfToday = new Date(now);

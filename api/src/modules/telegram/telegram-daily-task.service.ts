@@ -16,11 +16,11 @@ import { COMPLETE_PLAN_LIMITS } from '../../common/constants/plan-limits.constan
 
 /**
  * Telegram Daily Task Handler Service
- * 
+ *
  * Handles daily task answer submissions via Telegram
  * Supports: text, voice, image answers
  * Validates plan permissions before processing
- * 
+ *
  * UPDATED: Now includes OCR integration with OpenRouter Vision API (Gemini 2.5 Flash)
  */
 @Injectable()
@@ -42,9 +42,10 @@ export class TelegramDailyTaskService {
     @InjectModel(TelegramSession.name)
     private readonly sessionModel: Model<TelegramSessionDocument>,
   ) {
-    this.openrouterBaseUrl = this.configService.get<string>('OPENROUTER_BASE_URL') || 'https://openrouter.ai/api/v1';
+    this.openrouterBaseUrl =
+      this.configService.get<string>('OPENROUTER_BASE_URL') || 'https://openrouter.ai/api/v1';
     this.openrouterApiKey = this.configService.get<string>('OPENROUTER_API_KEY') || '';
-    
+
     if (!this.openrouterApiKey) {
       this.logger.warn('OPENROUTER_API_KEY not configured. Image OCR will be unavailable.');
     }
@@ -59,9 +60,9 @@ export class TelegramDailyTaskService {
       // Get today's tasks
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      
+
       const dailyTask = await this.dailyTasksService.getTodayTasks(userId, today);
-      
+
       if (!dailyTask) {
         const noTasksText = {
           uz: '❌ Bugun uchun vazifalar topilmadi.\n\nErtalab 09:00 da yangi vazifalar yuboriladi.',
@@ -72,10 +73,10 @@ export class TelegramDailyTaskService {
         await ctx.reply(noTasksText[lang as keyof typeof noTasksText] || noTasksText.uz);
         return;
       }
-      
+
       // Find first incomplete task
-      const currentTaskIndex = dailyTask.tasks.findIndex(t => !t.completed);
-      
+      const currentTaskIndex = dailyTask.tasks.findIndex((t) => !t.completed);
+
       if (currentTaskIndex === -1) {
         // All tasks completed
         const completedText = {
@@ -87,7 +88,7 @@ export class TelegramDailyTaskService {
         await ctx.reply(completedText[lang as keyof typeof completedText] || completedText.uz);
         return;
       }
-      
+
       // Update session
       const chatId = ctx.chat?.id;
       if (chatId) {
@@ -108,64 +109,93 @@ export class TelegramDailyTaskService {
           { upsert: true },
         );
       }
-      
+
       // Show current task
       await this.showCurrentTask(ctx, dailyTask, currentTaskIndex);
-      
     } catch (error: any) {
       this.logger.error(`Failed to start daily task session: ${error.message}`);
-      await ctx.reply('❌ Xatolik yuz berdi. Iltimos, qayta urinib ko\'ring.');
+      await ctx.reply("❌ Xatolik yuz berdi. Iltimos, qayta urinib ko'ring.");
     }
   }
 
   /**
-   * Show current task to user
+   * Show ALL TASKS to user (senior PM approach)
+   * User can answer any task they want
    */
   private async showCurrentTask(
     ctx: BotContext,
     dailyTask: any,
-    taskIndex: number,
+    currentTaskIndex: number,
   ): Promise<void> {
-    const task = dailyTask.tasks[taskIndex];
     const lang = ctx.session?.language || 'uz';
-    
-    // Get user plan to show allowed answer types
+
+    // Get user info
     const userId = ctx.session?.userId || '';
     if (!userId) return;
     const user = await this.usersService.findById(userId);
     const plan = user?.subscription?.plan || 'free_trial';
     const planLimits = this.getPlanLimits(plan);
-    
+    const position = user.profile?.position || 'junior';
+
+    // Build ALL tasks overview
+    let tasksOverview = '';
+    dailyTask.tasks.forEach((task, index) => {
+      const status = task.completed ? '✅' : '🔄';
+      const currentMarker = index === currentTaskIndex ? ' 👉' : '   ';
+
+      if (lang === 'uz') {
+        tasksOverview += `${status}${currentMarker} ${index + 1}. ${task.question}\n`;
+      } else if (lang === 'ru') {
+        tasksOverview += `${status}${currentMarker} ${index + 1}. ${task.question}\n`;
+      } else {
+        tasksOverview += `${status}${currentMarker} ${index + 1}. ${task.question}\n`;
+      }
+    });
+
     // Build answer type instructions based on plan
     let answerInstructions = '';
     if (planLimits.dailyTasks.textAnswer) {
-      answerInstructions += '✍️ Matn yozing';
+      answerInstructions += '✍️ Text yozing';
     }
     if (planLimits.dailyTasks.voiceAnswer) {
-      answerInstructions += answerInstructions ? ', ' : '';
-      answerInstructions += '🎙️ Ovozli xabar';
+      answerInstructions += answerInstructions ? ' | ' : '';
+      answerInstructions += '🎙️ Voice';
     }
     if (planLimits.dailyTasks.imageAnswer) {
-      answerInstructions += answerInstructions ? ', ' : '';
-      answerInstructions += '📸 Rasm javob';
+      answerInstructions += answerInstructions ? ' | ' : '';
+      answerInstructions += '📸 Image';
     }
 
-    const taskText = {
-      uz: `📚 <b>Kunlik vazifa ${taskIndex + 1}/${dailyTask.tasks.length}</b>\n\n` +
-          `❓ <b>Savol:</b>\n${task.question}\n\n` +
-          `✏️ <b>Javob yuboring:</b>\n${answerInstructions}\n\n` +
-          `💡 <b>Eslatma:</b> Video javoblar qo'llab-quvvatlanmaydi. Matn, ovoz yoki rasm javob yuboring.`,
-      ru: `📚 <b>Ежедневное задание ${taskIndex + 1}/${dailyTask.tasks.length}</b>\n\n` +
-          `❓ <b>Вопрос:</b>\n${task.question}\n\n` +
-          `✏️ <b>Отправьте ответ:</b>\n${answerInstructions}\n\n` +
-          `💡 <b>Примечание:</b> Видео ответы не поддерживаются. Отправляйте текст, голос или фото.`,
-      en: `📚 <b>Daily Task ${taskIndex + 1}/${dailyTask.tasks.length}</b>\n\n` +
-          `❓ <b>Question:</b>\n${task.question}\n\n` +
-          `✏️ <b>Send answer:</b>\n${answerInstructions}\n\n` +
-          `💡 <b>Note:</b> Video answers are not supported. Send text, voice, or photo.`,
+    // Create professional PM message
+    const headerText = {
+      uz: `📚 <b>Bugungi vazifalar</b>\n\n${dailyTask.tasks.length} ta vazifa, ${dailyTask.tasks.filter((t) => !t.completed).length} ta qoldi\n\n💡 Foydalanuvchi ${position} darajasiga moslashtirilgan`,
+      ru: `📚 <b>Ежедневные задания</b>\n\n${dailyTask.tasks.length} заданий, ${dailyTask.tasks.filter((t) => !t.completed).length} осталось\n\n💡 Адаптировано под уровень ${position}`,
+      en: `📚 <b>Daily Tasks</b>\n\n${dailyTask.tasks.length} tasks, ${dailyTask.tasks.filter((t) => !t.completed).length} remaining\n\n💡 Adapted for ${position} level`,
     };
 
-    await ctx.reply(taskText[lang as keyof typeof taskText] || taskText.uz, {
+    const overviewText = {
+      uz: `━━━━━━━━━━━━━━━━\n<b>Vazifalar ro'yxati:</b>\n${tasksOverview}`,
+      ru: `━━━━━━━━━━━━━━━━\n<b>Список задач:</b>\n${tasksOverview}`,
+      en: `━━━━━━━━━━━━━━━━\n<b>Task List:</b>\n${tasksOverview}`,
+    };
+
+    const instructionsText = {
+      uz: `\n━━━━━━━━━━━━━━━━\n📝 <b>Javob turlari:</b> ${answerInstructions}\n\n💡 <b>Eslatma:</b> Video javoblar qo'llab-quvvatlanmaydi`,
+      ru: `\n━━━━━━━━━━━━━━━━\n📝 <b>Типы ответов:</b> ${answerInstructions}\n\n💡 <b>Примечание:</b> Видео ответы не поддерживаются`,
+      en: `\n━━━━━━━━━━━━━━━━\n📝 <b>Answer Types:</b> ${answerInstructions}\n\n💡 <b>Note:</b> Video answers not supported`,
+    };
+
+    const currentTaskText = {
+      uz: `\n👉 <b>Joriy vazifa:</b>\n${currentTaskIndex + 1}. ${dailyTask.tasks[currentTaskIndex].question}`,
+      ru: `\n👉 <b>Текущая задача:</b>\n${currentTaskIndex + 1}. ${dailyTask.tasks[currentTaskIndex].question}`,
+      en: `\n👉 <b>Current Task:</b>\n${currentTaskIndex + 1}. ${dailyTask.tasks[currentTaskIndex].question}`,
+    };
+
+    // Combine all parts
+    const fullMessage =
+      headerText[lang] + overviewText[lang] + currentTaskText[lang] + instructionsText[lang];
+
+    await ctx.reply(fullMessage, {
       parse_mode: 'HTML',
     });
   }
@@ -177,7 +207,7 @@ export class TelegramDailyTaskService {
     try {
       const chatId = ctx.chat?.id;
       if (!chatId) return;
-      
+
       const session = await this.sessionModel.findOne({
         telegramChatId: chatId,
         status: 'daily_task',
@@ -207,10 +237,9 @@ export class TelegramDailyTaskService {
       } else {
         await this.endDailyTaskSession(ctx, session, result);
       }
-      
     } catch (error: any) {
       this.logger.error(`Failed to handle text answer: ${error.message}`);
-      await ctx.reply('❌ Javobni qayta ishlashda xatolik. Iltimos, qayta urinib ko\'ring.');
+      await ctx.reply("❌ Javobni qayta ishlashda xatolik. Iltimos, qayta urinib ko'ring.");
     }
   }
 
@@ -221,7 +250,7 @@ export class TelegramDailyTaskService {
     try {
       const chatId = ctx.chat?.id;
       if (!chatId) return;
-      
+
       const session = await this.sessionModel.findOne({
         telegramChatId: chatId,
         status: 'daily_task',
@@ -235,7 +264,7 @@ export class TelegramDailyTaskService {
       const user = await this.usersService.findById(userId);
       const plan = user?.subscription?.plan || 'free_trial';
       const lang = ctx.session?.language || 'uz';
-      
+
       // Check if plan allows voice answers
       if (!this.canUseDailyTaskVoiceAnswer(plan)) {
         const noVoiceText = {
@@ -249,8 +278,12 @@ export class TelegramDailyTaskService {
 
       // Check voice quota before processing
       const estimatedMinutes = Math.ceil((voice.duration || 30) / 60);
-      const hasQuota = await this.voiceQuotaService.hasEnoughQuota(userId, 'mock', estimatedMinutes);
-      
+      const hasQuota = await this.voiceQuotaService.hasEnoughQuota(
+        userId,
+        'mock',
+        estimatedMinutes,
+      );
+
       if (!hasQuota) {
         const quota = await this.voiceQuotaService.getQuota(userId);
         const noQuotaText = {
@@ -273,7 +306,7 @@ export class TelegramDailyTaskService {
       // Download and transcribe voice
       const file = await ctx.api.getFile(voice.file_id);
       const fileUrl = `https://api.telegram.org/file/bot${this.configService.get<string>('TELEGRAM_BOT_TOKEN')}/${file.file_path}`;
-      
+
       const response = await fetch(fileUrl);
       const arrayBuffer = await response.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
@@ -292,17 +325,12 @@ export class TelegramDailyTaskService {
 
       // Submit transcribed answer
       const { dailyTaskId, currentTaskIndex, date } = session.dailyTaskSession;
-      
-      const result = await this.dailyTasksService.completeTask(
-        userId,
-        date,
-        currentTaskIndex,
-        {
-          type: 'voice',
-          content: transcription.text,
-          transcript: transcription.text,
-        },
-      );
+
+      const result = await this.dailyTasksService.completeTask(userId, date, currentTaskIndex, {
+        type: 'voice',
+        content: transcription.text,
+        transcript: transcription.text,
+      });
 
       // Deduct voice quota after successful processing
       await this.voiceQuotaService.checkAndUseVoice(
@@ -322,10 +350,11 @@ export class TelegramDailyTaskService {
       } else {
         await this.endDailyTaskSession(ctx, session, result);
       }
-      
     } catch (error: any) {
       this.logger.error(`Failed to handle voice answer: ${error.message}`);
-      await ctx.reply('❌ Ovozli xabarni qayta ishlashda xatolik. Iltimos, matn bilan urinib ko\'ring.');
+      await ctx.reply(
+        "❌ Ovozli xabarni qayta ishlashda xatolik. Iltimos, matn bilan urinib ko'ring.",
+      );
     }
   }
 
@@ -337,7 +366,7 @@ export class TelegramDailyTaskService {
     try {
       const chatId = ctx.chat?.id;
       if (!chatId) return;
-      
+
       const session = await this.sessionModel.findOne({
         telegramChatId: chatId,
         status: 'daily_task',
@@ -351,7 +380,7 @@ export class TelegramDailyTaskService {
       const user = await this.usersService.findById(userId);
       const plan = user?.subscription?.plan || 'free_trial';
       const lang = ctx.session?.language || 'uz';
-      
+
       // Check if plan allows image answers
       if (!this.canUseDailyTaskImageAnswer(plan)) {
         const noImageText = {
@@ -369,7 +398,9 @@ export class TelegramDailyTaskService {
         ru: '📸 Изображение анализируется...',
         en: '📸 Processing image...',
       };
-      const processingMsg = await ctx.reply(processingText[lang as keyof typeof processingText] || processingText.uz);
+      const processingMsg = await ctx.reply(
+        processingText[lang as keyof typeof processingText] || processingText.uz,
+      );
 
       // Get highest resolution photo
       const largestPhoto = photo[photo.length - 1];
@@ -385,7 +416,7 @@ export class TelegramDailyTaskService {
       const planLimits = COMPLETE_PLAN_LIMITS[plan];
       const maxSizeMB = planLimits.fileUploads.maxSize;
       const maxSizeBytes = maxSizeMB * 1024 * 1024;
-      
+
       if (imageBuffer.length > maxSizeBytes) {
         const sizeInMB = (imageBuffer.length / (1024 * 1024)).toFixed(2);
         const tooLargeText = {
@@ -393,7 +424,7 @@ export class TelegramDailyTaskService {
           ru: `❌ Изображение слишком велико! Макс: ${maxSizeMB}МБ. У вас: ${sizeInMB}МБ`,
           en: `❌ Image too large! Max: ${maxSizeMB}MB. Yours: ${sizeInMB}MB`,
         };
-        
+
         try {
           await ctx.api.deleteMessage(chatId, processingMsg.message_id);
         } catch (deleteError) {}
@@ -408,7 +439,7 @@ export class TelegramDailyTaskService {
       // Extract text using OpenRouter Vision API
       let extractedText: string;
       let confidence = 0;
-      
+
       try {
         const ocrResult = await this.ocrService.recognize(imageBuffer, mimeType, lang);
         extractedText = ocrResult.text;
@@ -437,17 +468,12 @@ export class TelegramDailyTaskService {
 
       // Submit extracted text as answer
       const { dailyTaskId, currentTaskIndex, date } = session.dailyTaskSession;
-      
-      const result = await this.dailyTasksService.completeTask(
-        userId,
-        date,
-        currentTaskIndex,
-        {
-          type: 'image',
-          content: extractedText,
-          imageUrl: fileUrl,
-        },
-      );
+
+      const result = await this.dailyTasksService.completeTask(userId, date, currentTaskIndex, {
+        type: 'image',
+        content: extractedText,
+        imageUrl: fileUrl,
+      });
 
       // Show result
       await this.showTaskResult(ctx, result, currentTaskIndex);
@@ -458,10 +484,9 @@ export class TelegramDailyTaskService {
       } else {
         await this.endDailyTaskSession(ctx, session, result);
       }
-      
     } catch (error: any) {
       this.logger.error(`Failed to handle image answer: ${error.message}`);
-      await ctx.reply('❌ Rasmni qayta ishlashda xatolik. Iltimos, matn bilan urinib ko\'ring.');
+      await ctx.reply("❌ Rasmni qayta ishlashda xatolik. Iltimos, matn bilan urinib ko'ring.");
     }
   }
 
@@ -474,7 +499,7 @@ export class TelegramDailyTaskService {
     taskIndex: number,
   ): Promise<void> {
     const lang = ctx.session?.language || 'uz';
-    
+
     let emoji = '⚪';
     if (result.score >= 8) emoji = '🟢';
     else if (result.score >= 5) emoji = '🟡';
@@ -551,16 +576,16 @@ export class TelegramDailyTaskService {
       // Get daily task
       const dailyTask = await this.dailyTasksService.getTodayTasks(
         session.userId.toString(),
-        session.dailyTaskSession?.date
+        session.dailyTaskSession?.date,
       );
-      
+
       if (!dailyTask || nextTaskIndex >= dailyTask.tasks.length) {
         return;
       }
 
       // Show next task
       await this.showCurrentTask(ctx, dailyTask, nextTaskIndex);
-      
+
       // Update session
       await this.sessionModel.findByIdAndUpdate(session._id, {
         $set: {
@@ -569,7 +594,6 @@ export class TelegramDailyTaskService {
           lastActivityAt: new Date(),
         },
       });
-      
     } catch (error: any) {
       this.logger.error(`Failed to move to next task: ${error.message}`);
     }
@@ -584,7 +608,7 @@ export class TelegramDailyTaskService {
     result: { score: number; feedback: string; allCompleted: boolean },
   ): Promise<void> {
     const lang = ctx.session?.language || 'uz';
-    
+
     // Get user streak info
     const user = await this.usersService.findById(session.userId.toString());
     const streak = user?.dailyTasks?.currentStreak || 0;

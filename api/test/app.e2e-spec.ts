@@ -12,7 +12,7 @@ describe('AppController (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    
+
     // Apply same pipes as main.ts
     app.useGlobalPipes(
       new ValidationPipe({

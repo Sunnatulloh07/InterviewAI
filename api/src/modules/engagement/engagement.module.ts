@@ -23,7 +23,10 @@ import { TelegramModule } from '../telegram/telegram.module';
 import { AiModule } from '../ai/ai.module';
 import { User, UserSchema } from '../users/schemas/user.schema';
 import { DailyTask, DailyTaskSchema } from '../tasks/schemas/daily-task.schema';
-import { UnregisteredUser, UnregisteredUserSchema } from '../telegram/schemas/unregistered-user.schema';
+import {
+  UnregisteredUser,
+  UnregisteredUserSchema,
+} from '../telegram/schemas/unregistered-user.schema';
 
 /**
  * ...
@@ -75,4 +78,3 @@ import { UnregisteredUser, UnregisteredUserSchema } from '../telegram/schemas/un
   ],
 })
 export class EngagementModule {}
-

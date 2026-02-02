@@ -37,11 +37,13 @@ export class DailyTasksService {
   ) {
     // Initialize OpenAI/OpenRouter client
     this.openai = createOpenAIClient(this.configService);
-    
+
     if (this.openai) {
       this.logger.log('OpenAI/OpenRouter client initialized for daily tasks');
     } else {
-      this.logger.warn('No OpenAI/OpenRouter API key found. Daily task scoring will use basic scoring only.');
+      this.logger.warn(
+        'No OpenAI/OpenRouter API key found. Daily task scoring will use basic scoring only.',
+      );
     }
   }
 
@@ -49,38 +51,45 @@ export class DailyTasksService {
    * Deliver daily tasks at 9 AM Tashkent time (UTC+5)
    * 9 AM Tashkent = 4 AM UTC
    * Cron: 0 4 * * * (every day at 4 AM UTC)
-   * 
+   * 🛡 FIX #10: Remove timeZone to use UTC correctly
+   *
    * SCALABILITY FIX: Batch processing for 1M+ users
    * - Process users in batches of 100
    * - Cursor-based pagination to avoid memory overflow
    * - Progress tracking in Redis
    */
   @Cron('0 4 * * *', {
+    // 4 AM UTC = 9 AM Tashkent
     name: 'deliver_daily_tasks',
-    timeZone: 'Asia/Tashkent',
   })
   async deliverDailyTasks() {
     // CRITICAL FIX: Distributed lock to prevent duplicate task delivery
     // in multi-instance deployments (horizontal scaling)
     const lockKey = 'cron:daily-tasks:delivery';
     const lockTTL = 3600; // 1 hour max execution time (for 1M+ users)
-    
+
     try {
       // Acquire lock (NX = only set if not exists)
-      const lockAcquired = await this.redis.set(lockKey, Date.now().toString(), 'EX', lockTTL, 'NX');
-      
+      const lockAcquired = await this.redis.set(
+        lockKey,
+        Date.now().toString(),
+        'EX',
+        lockTTL,
+        'NX',
+      );
+
       if (!lockAcquired) {
         this.logger.warn('Daily tasks cron already running on another instance, skipping');
         return;
       }
-      
+
       this.logger.log('Starting daily tasks delivery...');
 
       // CRITICAL FIX: Get ONLY PAID users with active subscription
       // Daily tasks are ONLY for paid plans (starter, pro, elite)
       const now = new Date();
       const today = this.getTashkentMidnight();
-      
+
       // SCALABILITY FIX: Count total users first
       const totalUsers = await this.userModel.countDocuments({
         'subscription.status': 'active',
@@ -133,7 +142,7 @@ export class DailyTasksService {
         }
 
         this.logger.log(
-          `Processing batch: ${userBatch.length} users (progress: ${successCount + errorCount + skippedCount}/${totalUsers})`
+          `Processing batch: ${userBatch.length} users (progress: ${successCount + errorCount + skippedCount}/${totalUsers})`,
         );
 
         for (const user of userBatch) {
@@ -191,9 +200,7 @@ export class DailyTasksService {
                 errorMessage?.includes('user is deactivated') ||
                 errorMessage?.includes('chat not found');
 
-              this.logger.warn(
-                `Failed to send notification to user ${user._id}: ${errorMessage}`,
-              );
+              this.logger.warn(`Failed to send notification to user ${user._id}: ${errorMessage}`);
 
               if (!isBlockedError) {
                 await this.retryService.trackFailedNotification(
@@ -207,7 +214,7 @@ export class DailyTasksService {
             }
 
             successCount++;
-            
+
             // Rate limiting: 200ms between messages
             await this.delay(200);
           } catch (userError: any) {
@@ -242,10 +249,7 @@ export class DailyTasksService {
         `Daily tasks delivery completed. Total: ${totalUsers}, Success: ${successCount}, Errors: ${errorCount}, Skipped: ${skippedCount}`,
       );
     } catch (error: any) {
-      this.logger.error(
-        `Failed to deliver daily tasks: ${error.message}`,
-        error.stack,
-      );
+      this.logger.error(`Failed to deliver daily tasks: ${error.message}`, error.stack);
     } finally {
       // CRITICAL: Always release lock, even if job fails
       try {
@@ -260,19 +264,12 @@ export class DailyTasksService {
   }
 
   /**
-   * Helper: delay execution
-   */
-  private delay(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
-  /**
    * Get today's tasks for a user
    */
   async getTodayTasks(userId: string, date?: Date): Promise<DailyTaskDocument | null> {
     // CRITICAL FIX: Use Tashkent midnight
     const today = date ? new Date(date) : this.getTashkentMidnight();
-    
+
     // If date provided, normalize to midnight
     if (date) {
       today.setUTCHours(0, 0, 0, 0);
@@ -289,92 +286,109 @@ export class DailyTasksService {
    * Complete a task with AI scoring
    * ✅ Supports multimodal answers (voice/image) with plan enforcement
    * ❌ VIDEO NOT SUPPORTED - Too expensive for AI processing
+   * 🛡 FIXED: TRUE atomic completion with versioning to prevent race conditions
    */
   async completeTask(
     userId: string,
     taskDate: Date,
     taskIndex: number,
-    answer: string | {
-      type: 'text' | 'voice' | 'image';  // ❌ NO VIDEO
-      content: string;           // Text content or transcript
-      audioUrl?: string;         // For voice
-      imageUrl?: string;         // For image
-      transcript?: string;       // STT result for voice
-    },
+    answer:
+      | string
+      | {
+          type: 'text' | 'voice' | 'image'; // ❌ NO VIDEO
+          content: string; // Text content or transcript
+          audioUrl?: string; // For voice
+          imageUrl?: string; // For image
+          transcript?: string; // STT result for voice
+        },
   ): Promise<{ score: number; feedback: string; allCompleted: boolean }> {
+    // 🛡 FIX #11: Use UTC timezone for consistency
     const today = new Date(taskDate);
-    today.setHours(0, 0, 0, 0);
+    today.setUTCHours(0, 0, 0, 0);
 
-    const dailyTask = await this.dailyTaskModel.findOne({
-      userId,
-      date: today,
-    });
+    // 🛡 FIX #15: Validate answer input (Security - prevent DOS attacks)
+    const MAX_ANSWER_LENGTH = 10000;
 
-    if (!dailyTask) {
-      throw new Error('Daily task not found');
-    }
-
-    if (taskIndex < 0 || taskIndex >= dailyTask.tasks.length) {
-      throw new Error('Invalid task index');
-    }
-
-    const task = dailyTask.tasks[taskIndex];
-    
     // ✅ Handle both string (legacy) and object (multimodal) answer formats
     let answerText: string;
-    let answerType: 'text' | 'voice' | 'image' = 'text';  // ❌ NO VIDEO
+    let answerType: 'text' | 'voice' | 'image' = 'text'; // ❌ NO VIDEO
     let audioUrl: string | undefined;
     let imageUrl: string | undefined;
     let transcript: string | undefined;
-    let userPlan: string = 'free_trial';  // For plan-aware scoring
-    
+
+    // 🛡 FIX #14: Fetch user once (avoid duplicate queries)
+    const user = await this.userModel.findById(userId).select('subscription');
+    const userPlan: string = user?.subscription?.plan || 'free_trial';
+
     if (typeof answer === 'string') {
       // Legacy format: plain text
-      answerText = answer;
-      answerType = 'text';
-      // Fetch user plan for scoring
-      const user = await this.userModel.findById(userId).select('subscription');
-      userPlan = user?.subscription?.plan || 'free_trial';
+      answerText = answer.trim();
     } else {
       // New multimodal format
       answerType = answer.type;
-      answerText = answer.content || answer.transcript || '';
+      answerText = (answer.content || answer.transcript || '').trim();
       audioUrl = answer.audioUrl;
       imageUrl = answer.imageUrl;
       transcript = answer.transcript;
-      
-      // ✅ CRITICAL: Check plan permissions for non-text answers
-      const user = await this.userModel.findById(userId).select('subscription');
-      userPlan = user?.subscription?.plan || 'free_trial';
-      
+
       // ❌ VIDEO IS NEVER ALLOWED - Reject if user tries to send video via any means
       if ((answer as any).videoUrl || (answer as any).type === 'video') {
         throw new ForbiddenException(
           `Video answers are not supported. ` +
-          `AI video processing is too expensive. ` +
-          `Please use text, voice, or image answers instead.`
+            `AI video processing is too expensive. ` +
+            `Please use text, voice, or image answers instead.`,
         );
       }
-      
+
       if (answerType === 'voice' && !canUseDailyTaskVoiceAnswer(userPlan)) {
         throw new ForbiddenException(
           `Voice answers for daily tasks require Starter plan or higher. ` +
-          `Current plan: ${userPlan}. Upgrade to use voice answers.`
+            `Current plan: ${userPlan}. Upgrade to use voice answers.`,
         );
       }
-      
+
       if (answerType === 'image' && !canUseDailyTaskImageAnswer(userPlan)) {
         throw new ForbiddenException(
           `Image answers for daily tasks require Starter plan or higher. ` +
-          `Current plan: ${userPlan}. Upgrade to use image answers.`
+            `Current plan: ${userPlan}. Upgrade to use image answers.`,
         );
       }
-      
+
       this.logger.log(
-        `Processing ${answerType} answer for task ${taskIndex}, user ${userId}, plan ${userPlan}`
+        `Processing ${answerType} answer for task ${taskIndex}, user ${userId}, plan ${userPlan}`,
       );
     }
-    
+
+    // 🛡 FIX #15: Validate answer length
+    if (!answerText || answerText.length === 0) {
+      throw new Error('Answer cannot be empty');
+    }
+    if (answerText.length > MAX_ANSWER_LENGTH) {
+      throw new Error(`Answer too long. Maximum ${MAX_ANSWER_LENGTH} characters allowed.`);
+    }
+    if (answerText.length < 10) {
+      throw new Error(
+        'Answer too short. Please provide a meaningful response (at least 10 characters).',
+      );
+    }
+
+    // 🛡 FIX #1: ATOMIC operation - fetch task to get question for scoring
+    const taskDoc = await this.dailyTaskModel.findOne({
+      userId,
+      date: today,
+      [`tasks.${taskIndex}.completed`]: false, // Only if not completed
+    });
+
+    if (!taskDoc) {
+      throw new Error('Daily task not found or already completed');
+    }
+
+    if (taskIndex < 0 || taskIndex >= taskDoc.tasks.length) {
+      throw new Error('Invalid task index');
+    }
+
+    const task = taskDoc.tasks[taskIndex];
+
     let score = 0;
     let feedback = 'Answer recorded.';
 
@@ -388,46 +402,67 @@ export class DailyTasksService {
       feedback = 'Answer received but scoring unavailable. Keep practicing!';
     }
 
-    // ✅ Mark task as completed with multimodal fields
-    dailyTask.tasks[taskIndex].completed = true;
-    dailyTask.tasks[taskIndex].answer = answerText;
-    dailyTask.tasks[taskIndex].answerType = answerType;
-    dailyTask.tasks[taskIndex].score = score;
-    dailyTask.tasks[taskIndex].feedback = feedback;
-    dailyTask.tasks[taskIndex].completedAt = new Date();
-    
-    // Store media URLs if provided (NO VIDEO)
-    if (audioUrl) dailyTask.tasks[taskIndex].audioUrl = audioUrl;
-    if (imageUrl) dailyTask.tasks[taskIndex].imageUrl = imageUrl;
-    if (transcript) dailyTask.tasks[taskIndex].transcript = transcript;
+    // 🛡 FIX #1: TRUE ATOMIC UPDATE using findOneAndUpdate
+    const updateFields: any = {
+      [`tasks.${taskIndex}.completed`]: true,
+      [`tasks.${taskIndex}.answer`]: answerText,
+      [`tasks.${taskIndex}.answerType`]: answerType,
+      [`tasks.${taskIndex}.score`]: score,
+      [`tasks.${taskIndex}.feedback`]: feedback,
+      [`tasks.${taskIndex}.completedAt`]: new Date(),
+    };
 
-    // Check if all tasks completed
-    const allCompleted = dailyTask.tasks.every((t) => t.completed);
-    if (allCompleted) {
-      dailyTask.status = 'completed';
+    if (audioUrl) updateFields[`tasks.${taskIndex}.audioUrl`] = audioUrl;
+    if (imageUrl) updateFields[`tasks.${taskIndex}.imageUrl`] = imageUrl;
+    if (transcript) updateFields[`tasks.${taskIndex}.transcript`] = transcript;
 
-      // Update user streak
-      const user = await this.userModel.findById(userId);
-      if (user) {
-        const newStreak = (user.dailyTasks?.currentStreak || 0) + 1;
-        const longestStreak = Math.max(
-          user.dailyTasks?.longestStreak || 0,
-          newStreak,
-        );
+    const updatedTask = await this.dailyTaskModel.findOneAndUpdate(
+      {
+        userId,
+        date: today,
+        [`tasks.${taskIndex}.completed`]: false, // 🛡 Only update if not completed
+      },
+      {
+        $set: updateFields,
+      },
+      { new: true },
+    );
 
-        await this.userModel.findByIdAndUpdate(userId, {
-          $set: {
-            'dailyTasks.currentStreak': newStreak,
-            'dailyTasks.longestStreak': longestStreak,
-          },
-          $inc: {
-            'dailyTasks.totalCompleted': 1,
-          },
-        });
-      }
+    if (!updatedTask) {
+      throw new Error('Task was already completed by another request');
     }
 
-    await dailyTask.save();
+    // Check if all tasks completed
+    const allCompleted = updatedTask.tasks.every((t) => t.completed);
+
+    if (allCompleted) {
+      // Mark as completed
+      await this.dailyTaskModel.findOneAndUpdate(
+        { _id: updatedTask._id },
+        { $set: { status: 'completed' } },
+      );
+
+      // 🛡 FIX #2: ATOMIC streak update using $inc
+      await this.userModel.findByIdAndUpdate(userId, {
+        $inc: {
+          'dailyTasks.currentStreak': 1,
+          'dailyTasks.totalCompleted': 1,
+        },
+      });
+
+      // Update longest streak separately (need to read current value)
+      const updatedUser = await this.userModel.findById(userId).select('dailyTasks');
+      if (updatedUser) {
+        const currentStreak = updatedUser.dailyTasks?.currentStreak || 0;
+        const currentLongest = updatedUser.dailyTasks?.longestStreak || 0;
+
+        if (currentStreak > currentLongest) {
+          await this.userModel.findByIdAndUpdate(userId, {
+            $set: { 'dailyTasks.longestStreak': currentStreak },
+          });
+        }
+      }
+    }
 
     return { score, feedback, allCompleted };
   }
@@ -446,9 +481,9 @@ export class DailyTasksService {
   ): Promise<{ score: number; feedback: string }> {
     const planLimits = getPlanLimits(plan);
     const scoringLevel = planLimits.aiFeatures.taskCompletionCheck;
-    
+
     this.logger.debug(`Scoring answer with level: ${scoringLevel} for plan: ${plan}`);
-    
+
     switch (scoringLevel) {
       case 'basic':
         return this.scoreAnswerBasic(question, answer);
@@ -465,26 +500,23 @@ export class DailyTasksService {
    * Basic scoring (FREE plan) - keyword matching, no AI
    * Fast and cost-free, but less accurate
    */
-  private scoreAnswerBasic(
-    question: string,
-    answer: string,
-  ): { score: number; feedback: string } {
+  private scoreAnswerBasic(question: string, answer: string): { score: number; feedback: string } {
     const answerLower = answer.toLowerCase();
     const questionLower = question.toLowerCase();
-    
+
     // Extract key terms from question (simple approach)
     const keywords = this.extractKeywords(questionLower);
-    const matchedKeywords = keywords.filter(kw => answerLower.includes(kw));
+    const matchedKeywords = keywords.filter((kw) => answerLower.includes(kw));
     const keywordRatio = keywords.length > 0 ? matchedKeywords.length / keywords.length : 0;
-    
+
     // Length check
     const wordCount = answer.split(/\s+/).length;
     const lengthScore = Math.min(1, wordCount / 50); // Good answer ~50+ words
-    
+
     // Calculate score (0-10)
     const rawScore = (keywordRatio * 0.6 + lengthScore * 0.4) * 10;
     const score = Math.round(Math.min(10, Math.max(0, rawScore)));
-    
+
     // Generate feedback
     let feedback = '';
     if (score >= 7) {
@@ -494,9 +526,10 @@ export class DailyTasksService {
     } else if (score >= 3) {
       feedback = 'More detail needed. Consider elaborating on your answer.';
     } else {
-      feedback = 'Answer needs improvement. Review the question and provide a more complete response.';
+      feedback =
+        'Answer needs improvement. Review the question and provide a more complete response.';
     }
-    
+
     return { score, feedback };
   }
 
@@ -504,10 +537,44 @@ export class DailyTasksService {
    * Extract simple keywords from a question
    */
   private extractKeywords(text: string): string[] {
-    const stopWords = ['what', 'is', 'the', 'a', 'an', 'how', 'do', 'you', 'are', 'can', 'could', 'would', 'should', 'when', 'why', 'where', 'which', 'tell', 'me', 'about', 'and', 'or', 'to', 'in', 'of', 'for', 'with', 'on', 'at', 'by', 'your', 'that', 'this'];
+    const stopWords = [
+      'what',
+      'is',
+      'the',
+      'a',
+      'an',
+      'how',
+      'do',
+      'you',
+      'are',
+      'can',
+      'could',
+      'would',
+      'should',
+      'when',
+      'why',
+      'where',
+      'which',
+      'tell',
+      'me',
+      'about',
+      'and',
+      'or',
+      'to',
+      'in',
+      'of',
+      'for',
+      'with',
+      'on',
+      'at',
+      'by',
+      'your',
+      'that',
+      'this',
+    ];
     return text
       .split(/\s+/)
-      .filter(word => word.length > 3 && !stopWords.includes(word))
+      .filter((word) => word.length > 3 && !stopWords.includes(word))
       .slice(0, 10); // Max 10 keywords
   }
 
@@ -532,18 +599,22 @@ JSON response: {"score": <0-10>, "feedback": "<brief feedback>"}`;
       const response = await this.openai.chat.completions.create({
         model: OPENROUTER_MODELS['gemini-2.5-flash-lite'],
         messages: [
-          { role: 'system', content: 'You are an expert interview coach. Always respond with valid JSON.' },
+          {
+            role: 'system',
+            content: 'You are an expert interview coach. Always respond with valid JSON.',
+          },
           { role: 'user', content: prompt },
         ],
         temperature: 0.5,
         max_tokens: 150,
       });
 
-      const responseText = response.choices[0]?.message?.content || '{"score": 5, "feedback": "Reviewed."}';
+      const responseText =
+        response.choices[0]?.message?.content || '{"score": 5, "feedback": "Reviewed."}';
       // Extract JSON from response (handle markdown code blocks)
       const jsonMatch = responseText.match(/\{[^}]+\}/);
       const result = JSON.parse(jsonMatch ? jsonMatch[0] : '{"score": 5, "feedback": "Reviewed."}');
-      
+
       return {
         score: Math.min(10, Math.max(0, result.score || 5)),
         feedback: result.feedback || 'Keep practicing!',
@@ -590,7 +661,10 @@ Provide your response in JSON format:
       const response = await this.openai.chat.completions.create({
         model: OPENROUTER_MODELS['gemini-2.5-flash'],
         messages: [
-          { role: 'system', content: 'You are an expert interview coach. Always respond with valid JSON.' },
+          {
+            role: 'system',
+            content: 'You are an expert interview coach. Always respond with valid JSON.',
+          },
           { role: 'user', content: prompt },
         ],
         temperature: 0.7,
@@ -601,7 +675,7 @@ Provide your response in JSON format:
       // Extract JSON from response (handle markdown code blocks)
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
       const result = JSON.parse(jsonMatch ? jsonMatch[0] : '{}');
-      
+
       // Build enhanced feedback
       let feedback = result.feedback || 'Good effort!';
       if (result.strengths?.length) {
@@ -633,10 +707,16 @@ Provide your response in JSON format:
   async verifyAndFixMissedDeliveries() {
     const lockKey = 'cron:daily-tasks:verification';
     const lockTTL = 1800; // 30 minutes max
-    
+
     try {
-      const lockAcquired = await this.redis.set(lockKey, Date.now().toString(), 'EX', lockTTL, 'NX');
-      
+      const lockAcquired = await this.redis.set(
+        lockKey,
+        Date.now().toString(),
+        'EX',
+        lockTTL,
+        'NX',
+      );
+
       if (!lockAcquired) {
         this.logger.warn('Task verification already running, skipping');
         return;
@@ -663,7 +743,7 @@ Provide your response in JSON format:
         .select('_id')
         .lean();
 
-      const paidUserIds = paidUsers.map(u => u._id);
+      const paidUserIds = paidUsers.map((u) => u._id);
 
       // Find users who already have tasks today
       const usersWithTasks = await this.dailyTaskModel
@@ -673,13 +753,12 @@ Provide your response in JSON format:
         })
         .distinct('userId');
 
-      // Find users WITHOUT tasks (missed deliveries)
-      const missedUserIds = paidUserIds.filter(
-        id => !usersWithTasks.some(taskUserId => taskUserId.toString() === id.toString())
-      );
+      // 🛡 FIX #8: Optimize O(n*m) to O(n) using Set for O(1) lookup
+      const usersWithTasksSet = new Set(usersWithTasks.map((id) => id.toString()));
+      const missedUserIds = paidUserIds.filter((id) => !usersWithTasksSet.has(id.toString()));
 
       this.logger.log(
-        `Verification: ${paidUserIds.length} total, ${usersWithTasks.length} delivered, ${missedUserIds.length} missed`
+        `Verification: ${paidUserIds.length} total, ${usersWithTasks.length} delivered, ${missedUserIds.length} missed`,
       );
 
       if (missedUserIds.length === 0) {
@@ -694,7 +773,7 @@ Provide your response in JSON format:
 
       for (let i = 0; i < missedUserIds.length; i += BATCH_SIZE) {
         const batch = missedUserIds.slice(i, i + BATCH_SIZE);
-        
+
         const missedUsers = await this.userModel
           .find({ _id: { $in: batch } })
           .select('_id telegramId profile')
@@ -732,7 +811,9 @@ Provide your response in JSON format:
             fixed++;
             await this.delay(200);
           } catch (error: any) {
-            this.logger.error(`Failed to fix missed delivery for user ${user._id}: ${error.message}`);
+            this.logger.error(
+              `Failed to fix missed delivery for user ${user._id}: ${error.message}`,
+            );
             failed++;
           }
         }
@@ -753,6 +834,8 @@ Provide your response in JSON format:
   /**
    * Mark expired tasks
    * Runs daily to mark tasks from previous days as expired
+   * 🛡 FIX #13: Optimized N+1 query with batch processing
+   * 🛡 FIX #17: Fixed date comparison logic ($lte instead of $lt)
    */
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT, {
     name: 'mark_expired_tasks',
@@ -762,11 +845,12 @@ Provide your response in JSON format:
     try {
       const yesterday = new Date();
       yesterday.setDate(yesterday.getDate() - 1);
-      yesterday.setHours(0, 0, 0, 0);
+      yesterday.setUTCHours(0, 0, 0, 0);
 
+      // 🛡 FIX #17: Use $lte to include yesterday's tasks
       const result = await this.dailyTaskModel.updateMany(
         {
-          date: { $lt: yesterday },
+          date: { $lte: yesterday },
           status: 'pending',
         },
         {
@@ -776,48 +860,65 @@ Provide your response in JSON format:
 
       this.logger.log(`Marked ${result.modifiedCount} tasks as expired`);
 
-      // Reset streak for users who missed yesterday's tasks
+      // 🛡 FIX #13: Optimized streak reset - batch query instead of N+1
       const users = await this.userModel
         .find({
           'dailyTasks.currentStreak': { $gt: 0 },
         })
         .select('_id dailyTasks');
 
-      for (const user of users) {
-        const yesterdayTask = await this.dailyTaskModel.findOne({
-          userId: user._id,
+      if (users.length === 0) {
+        this.logger.log('No users with active streaks to check');
+        return;
+      }
+
+      // Batch fetch all yesterday's completed tasks
+      const userIds = users.map((u) => u._id);
+      const completedTasks = await this.dailyTaskModel
+        .find({
+          userId: { $in: userIds },
           date: yesterday,
           status: 'completed',
-        });
+        })
+        .select('userId');
 
-        if (!yesterdayTask) {
-          // User missed yesterday's tasks - reset streak
-          await this.userModel.findByIdAndUpdate(user._id, {
-            $set: { 'dailyTasks.currentStreak': 0 },
-          });
-        }
+      // Create Set for O(1) lookup
+      const completedUserIds = new Set(completedTasks.map((t) => t.userId.toString()));
+
+      // Find users who missed yesterday
+      const usersToReset = users.filter((u: any) => !completedUserIds.has(u._id.toString()));
+
+      if (usersToReset.length > 0) {
+        // Batch reset streaks
+        await this.userModel.updateMany(
+          { _id: { $in: usersToReset.map((u) => u._id) } },
+          { $set: { 'dailyTasks.currentStreak': 0 } },
+        );
+
+        this.logger.log(
+          `Reset streaks for ${usersToReset.length} users who missed yesterday's tasks`,
+        );
       }
     } catch (error: any) {
-      this.logger.error(
-        `Failed to mark expired tasks: ${error.message}`,
-        error.stack,
-      );
+      this.logger.error(`Failed to mark expired tasks: ${error.message}`, error.stack);
     }
   }
 
   /**
    * Get midnight in Tashkent timezone as UTC date
    * Tashkent is UTC+5, so today 00:00 Tashkent = yesterday 19:00 UTC
-   * 
+   *
    * CRITICAL: This ensures date field matches across all services
+   * 🛡 FIX #12: Correct logic for Tashkent midnight calculation
    */
   private getTashkentMidnight(): Date {
     const now = new Date();
-    const midnight = new Date(now);
-    midnight.setUTCHours(0, 0, 0, 0);
-    // Subtract 5 hours to convert Tashkent midnight to UTC
-    midnight.setUTCHours(midnight.getUTCHours() - 5);
-    return midnight;
+    // Convert to Tashkent time (UTC+5)
+    const tashkentTime = new Date(now.getTime() + 5 * 60 * 60 * 1000);
+    // Set to midnight in Tashkent
+    tashkentTime.setUTCHours(0, 0, 0, 0);
+    // Convert back to UTC (subtract 5 hours)
+    return new Date(tashkentTime.getTime() - 5 * 60 * 60 * 1000);
   }
 
   /**
@@ -899,5 +1000,12 @@ Provide your response in JSON format:
 
     const positionQuestions = questions[type][position] || questions[type]['junior'];
     return positionQuestions[Math.floor(Math.random() * positionQuestions.length)];
+  }
+
+  /**
+   * Helper method to introduce a delay
+   */
+  private delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

@@ -34,9 +34,7 @@ export class SubscriptionGuard implements CanActivate {
     // Check if trial has expired
     if (subscription.plan === 'free_trial') {
       const now = new Date();
-      const trialEnd = subscription.trialEndsAt
-        ? new Date(subscription.trialEndsAt)
-        : null;
+      const trialEnd = subscription.trialEndsAt ? new Date(subscription.trialEndsAt) : null;
 
       if (trialEnd && now > trialEnd) {
         this.logger.warn(
@@ -45,7 +43,7 @@ export class SubscriptionGuard implements CanActivate {
         throw new ForbiddenException({
           code: 'TRIAL_EXPIRED',
           message: 'Your trial period has expired. Please upgrade to continue.',
-          messageUz: "Sinov muddatingiz tugadi. Davom etish uchun tarifni yangilang.",
+          messageUz: 'Sinov muddatingiz tugadi. Davom etish uchun tarifni yangilang.',
           messageRu: 'Ваш пробный период истек. Пожалуйста, обновите тариф.',
           trialEndsAt: trialEnd.toISOString(),
           suggestedPlan: 'starter',
@@ -58,7 +56,7 @@ export class SubscriptionGuard implements CanActivate {
       throw new ForbiddenException({
         code: 'SUBSCRIPTION_EXPIRED',
         message: 'Your subscription has expired. Please renew to continue.',
-        messageUz: "Obunangiz tugadi. Davom etish uchun yangilang.",
+        messageUz: 'Obunangiz tugadi. Davom etish uchun yangilang.',
         messageRu: 'Ваша подписка истекла. Пожалуйста, продлите.',
       });
     }
@@ -79,10 +77,7 @@ export class FeatureGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const requiredFeature = this.reflector.get<string>(
-      'requiredFeature',
-      context.getHandler(),
-    );
+    const requiredFeature = this.reflector.get<string>('requiredFeature', context.getHandler());
 
     if (!requiredFeature) {
       return true; // No feature requirement
@@ -104,7 +99,7 @@ export class FeatureGuard implements CanActivate {
         throw new ForbiddenException({
           code: 'TRIAL_EXPIRED',
           message: 'Your trial period has expired. Please upgrade to continue.',
-          messageUz: "Sinov muddatingiz tugadi. Davom etish uchun tarifni yangilang.",
+          messageUz: 'Sinov muddatingiz tugadi. Davom etish uchun tarifni yangilang.',
           messageRu: 'Ваш пробный период истек. Пожалуйста, обновите тариф.',
           suggestedPlan: 'starter',
         });
@@ -161,10 +156,7 @@ export class UsageLimitGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const usageType = this.reflector.get<string>(
-      'checkUsage',
-      context.getHandler(),
-    );
+    const usageType = this.reflector.get<string>('checkUsage', context.getHandler());
 
     if (!usageType) {
       return true;
@@ -186,7 +178,7 @@ export class UsageLimitGuard implements CanActivate {
         throw new ForbiddenException({
           code: 'TRIAL_EXPIRED',
           message: 'Your trial period has expired. Please upgrade to continue.',
-          messageUz: "Sinov muddatingiz tugadi. Davom etish uchun tarifni yangilang.",
+          messageUz: 'Sinov muddatingiz tugadi. Davom etish uchun tarifni yangilang.',
           messageRu: 'Ваш пробный период истек. Пожалуйста, обновите тариф.',
           suggestedPlan: 'starter',
         });

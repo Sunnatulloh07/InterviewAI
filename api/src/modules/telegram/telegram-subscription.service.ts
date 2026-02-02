@@ -14,9 +14,7 @@ import { InlineKeyboard } from 'grammy';
 export class TelegramSubscriptionService {
   private readonly logger = new Logger(TelegramSubscriptionService.name);
 
-  constructor(
-    @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
-  ) {}
+  constructor(@InjectModel(User.name) private readonly userModel: Model<UserDocument>) {}
 
   /**
    * Check user subscription and send appropriate warnings
@@ -36,7 +34,9 @@ export class TelegramSubscriptionService {
       const trialEnd = subscription.trialEndsAt ? new Date(subscription.trialEndsAt) : null;
 
       if (trialEnd) {
-        const daysRemaining = Math.ceil((trialEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+        const daysRemaining = Math.ceil(
+          (trialEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
+        );
 
         // Trial expired
         if (daysRemaining <= 0) {
@@ -169,10 +169,10 @@ Choose a plan to continue:
     };
 
     const langTexts = dayText[lang] || dayText['uz'];
-    const message = (langTexts[daysRemaining] || langTexts[3]) + (upgradeText[lang] || upgradeText['uz']);
+    const message =
+      (langTexts[daysRemaining] || langTexts[3]) + (upgradeText[lang] || upgradeText['uz']);
 
-    const keyboard = new InlineKeyboard()
-      .text('⬆️ Upgrade', 'show_plans');
+    const keyboard = new InlineKeyboard().text('⬆️ Upgrade', 'show_plans');
 
     await ctx.reply(message, {
       parse_mode: 'HTML',
@@ -231,7 +231,7 @@ Your subscription has expired. Please renew to continue.
     };
 
     const typeName = typeNames[lang]?.[usageType] || usageType;
-    
+
     // Handle edge cases
     let percentage = 0;
     if (limit > 0) {
@@ -248,19 +248,19 @@ Your subscription has expired. Please renew to continue.
 
 ${current}/${displayLimit} ishlatildi (${percentage}%)
 
-${isLimitReached ? '⛔️ Limit tugadi!' : (percentage >= 90 ? '⚠️ Limitga yaqinlashyapsiz!' : '')}
+${isLimitReached ? '⛔️ Limit tugadi!' : percentage >= 90 ? '⚠️ Limitga yaqinlashyapsiz!' : ''}
 💡 Yangilash uchun /upgrade yozing.`,
       ru: `📊 <b>Статус лимита:</b> ${typeName}
 
 ${current}/${displayLimit} использовано (${percentage}%)
 
-${isLimitReached ? '⛔️ Лимит исчерпан!' : (percentage >= 90 ? '⚠️ Приближаетесь к лимиту!' : '')}
+${isLimitReached ? '⛔️ Лимит исчерпан!' : percentage >= 90 ? '⚠️ Приближаетесь к лимиту!' : ''}
 💡 Введите /upgrade для обновления.`,
       en: `📊 <b>Limit Status:</b> ${typeName}
 
 ${current}/${displayLimit} used (${percentage}%)
 
-${isLimitReached ? '⛔️ Limit reached!' : (percentage >= 90 ? '⚠️ Approaching your limit!' : '')}
+${isLimitReached ? '⛔️ Limit reached!' : percentage >= 90 ? '⚠️ Approaching your limit!' : ''}
 💡 Type /upgrade to upgrade.`,
     };
 
@@ -272,14 +272,19 @@ ${isLimitReached ? '⛔️ Limit reached!' : (percentage >= 90 ? '⚠️ Approac
    * Returns false if limit is reached (blocks action)
    * @param notify If true, sends warning messages to user. If false, just checks limit.
    */
-  async checkCvAnalysisLimit(ctx: BotContext, user: any, lang: string, notify: boolean = true): Promise<boolean> {
+  async checkCvAnalysisLimit(
+    ctx: BotContext,
+    user: any,
+    lang: string,
+    notify: boolean = true,
+  ): Promise<boolean> {
     const plan = (user.subscription?.plan || 'free_trial') as SubscriptionPlan;
     const limits = USAGE_LIMITS[plan] || USAGE_LIMITS.free_trial;
     const usage = user.usage || {};
-    
+
     const current = usage.cvAnalysesThisMonth || 0;
     const limit = limits?.cvAnalyses ?? 1; // Default to 1 if undefined
-    
+
     // Limit reached
     if (current >= limit) {
       if (!notify) return false;
@@ -304,17 +309,16 @@ Upgrade your plan to continue.
 
 💡 /upgrade - View plans`,
       };
-      
-      const keyboard = new InlineKeyboard()
-        .text('⬆️ Upgrade', 'show_plans');
-      
+
+      const keyboard = new InlineKeyboard().text('⬆️ Upgrade', 'show_plans');
+
       await ctx.reply(messages[lang] || messages['en'], {
         parse_mode: 'HTML',
         reply_markup: keyboard,
       });
       return false;
     }
-    
+
     // Warning: 80% or more used
     const percentage = Math.round((current / limit) * 100);
     if (percentage >= 80) {
@@ -339,10 +343,10 @@ Remaining: ${remaining}
 
 💡 /upgrade for more`,
       };
-      
+
       await ctx.reply(messages[lang] || messages['en'], { parse_mode: 'HTML' });
     }
-    
+
     return true;
   }
 
@@ -354,10 +358,10 @@ Remaining: ${remaining}
     const plan = (user.subscription?.plan || 'free_trial') as SubscriptionPlan;
     const limits = USAGE_LIMITS[plan] || USAGE_LIMITS.free_trial;
     const usage = user.usage || {};
-    
+
     const current = usage.mockInterviewsThisMonth || 0;
     const limit = limits?.mockInterviews ?? 3; // Default to 3 if undefined
-    
+
     // Limit reached
     if (current >= limit) {
       const messages: Record<string, string> = {
@@ -380,17 +384,16 @@ Upgrade your plan to continue.
 
 💡 /upgrade - View plans`,
       };
-      
-      const keyboard = new InlineKeyboard()
-        .text('⬆️ Upgrade', 'show_plans');
-      
+
+      const keyboard = new InlineKeyboard().text('⬆️ Upgrade', 'show_plans');
+
       await ctx.reply(messages[lang] || messages['en'], {
         parse_mode: 'HTML',
         reply_markup: keyboard,
       });
       return false;
     }
-    
+
     // Warning: 80% or more used
     const percentage = Math.round((current / limit) * 100);
     if (percentage >= 80) {
@@ -415,10 +418,10 @@ Remaining: ${remaining}
 
 💡 /upgrade for more`,
       };
-      
+
       await ctx.reply(messages[lang] || messages['en'], { parse_mode: 'HTML' });
     }
-    
+
     return true;
   }
 
@@ -542,10 +545,7 @@ Remaining: ${remaining}
   /**
    * Get subscription status text for profile
    */
-  getSubscriptionStatusText(
-    user: any,
-    lang: string,
-  ): string {
+  getSubscriptionStatusText(user: any, lang: string): string {
     const subscription = user.subscription;
     const plan = subscription?.plan || 'free_trial';
     const status = subscription?.status || 'trialing';
@@ -602,11 +602,14 @@ Remaining: ${remaining}
       const trialEnd = new Date(subscription.trialEndsAt);
       const now = new Date();
       const daysRemaining = Math.ceil((trialEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-      
+
       if (daysRemaining > 0) {
-        const daysText = lang === 'uz' ? `(${daysRemaining} kun qoldi)` :
-                         lang === 'ru' ? `(осталось ${daysRemaining} дней)` :
-                         `(${daysRemaining} days left)`;
+        const daysText =
+          lang === 'uz'
+            ? `(${daysRemaining} kun qoldi)`
+            : lang === 'ru'
+              ? `(осталось ${daysRemaining} дней)`
+              : `(${daysRemaining} days left)`;
         result += `\n⏰ ${daysText}`;
       }
     }
@@ -641,7 +644,7 @@ Remaining: ${remaining}
     };
 
     const l = labels[lang] || labels['uz'];
-    const formatLimit = (current: number, limit: number) => 
+    const formatLimit = (current: number, limit: number) =>
       limit === -1 ? `${current}/∞` : `${current}/${limit}`;
 
     return `📊 <b>Ishlatilgan:</b>
@@ -669,8 +672,11 @@ Remaining: ${remaining}
     // Import COMPLETE_PLAN_LIMITS at runtime
     const { COMPLETE_PLAN_LIMITS } = require('@common/constants/plan-limits.constant');
     const planLimits = COMPLETE_PLAN_LIMITS[plan];
-    
-    const planDetails: Record<string, Record<string, { emoji: string; name: string; price: string; features: string[] }>> = {
+
+    const planDetails: Record<
+      string,
+      Record<string, { emoji: string; name: string; price: string; features: string[] }>
+    > = {
       uz: {
         starter: {
           emoji: '💼',
@@ -694,7 +700,7 @@ Remaining: ${remaining}
             `✓ ${COMPLETE_PLAN_LIMITS.pro.cvAnalysis.perMonth} ta CV tahlili`,
             '✓ Video javoblar',
             '✓ Chrome Extension',
-            '✓ Ilg\'or AI tahlil',
+            "✓ Ilg'or AI tahlil",
           ],
         },
         elite: {

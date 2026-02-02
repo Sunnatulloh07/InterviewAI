@@ -14,7 +14,6 @@ describe('AdminController (e2e)', () => {
       imports: [AppModule],
     }).compile();
 
-
     app = moduleFixture.createNestApplication();
     jwtService = moduleFixture.get<JwtService>(JwtService);
 
@@ -53,9 +52,7 @@ describe('AdminController (e2e)', () => {
     });
 
     it('GET - should require authentication', () => {
-      return request(app.getHttpServer())
-        .get('/admin/overview')
-        .expect(401);
+      return request(app.getHttpServer()).get('/admin/overview').expect(401);
     });
   });
 

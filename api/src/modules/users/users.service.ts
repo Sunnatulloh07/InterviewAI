@@ -437,7 +437,7 @@ export class UsersService {
   /**
    * Update user engagement fields
    * Used for survey responses, job-seeking status, bot blocked detection, etc.
-   * 
+   *
    * @param id - User MongoDB ID
    * @param engagementUpdate - Partial engagement object to merge
    */
@@ -453,7 +453,9 @@ export class UsersService {
       }
 
       await this.usersRepository.updateRaw(id, { $set: setObj });
-      this.logger.debug(`Engagement updated for user ${id}: ${Object.keys(engagementUpdate).join(', ')}`);
+      this.logger.debug(
+        `Engagement updated for user ${id}: ${Object.keys(engagementUpdate).join(', ')}`,
+      );
     } catch (error) {
       this.logger.error(
         `Failed to update engagement for user ${id}: ${error.message}`,

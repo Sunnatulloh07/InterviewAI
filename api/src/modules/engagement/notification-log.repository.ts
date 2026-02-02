@@ -51,7 +51,10 @@ export class NotificationLogRepository {
    */
   async markFailed(
     logId: string,
-    status: NotificationDeliveryStatus.FAILED | NotificationDeliveryStatus.BLOCKED | NotificationDeliveryStatus.DEACTIVATED,
+    status:
+      | NotificationDeliveryStatus.FAILED
+      | NotificationDeliveryStatus.BLOCKED
+      | NotificationDeliveryStatus.DEACTIVATED,
     error: string,
   ): Promise<void> {
     await this.notificationLogModel.updateOne(

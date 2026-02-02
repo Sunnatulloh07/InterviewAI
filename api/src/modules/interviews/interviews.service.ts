@@ -19,10 +19,10 @@ import { SubmitAnswerDto } from './dto/submit-answer.dto';
 import { InterviewSessionDocument } from './schemas/interview-session.schema';
 import { InterviewQuestionDocument } from './schemas/interview-question.schema';
 import { InterviewAnswerDocument } from './schemas/interview-answer.schema';
-import { 
-  USAGE_LIMITS, 
-  QUEUE_INTERVIEW_FEEDBACK, 
-  AI_MODELS, 
+import {
+  USAGE_LIMITS,
+  QUEUE_INTERVIEW_FEEDBACK,
+  AI_MODELS,
   INTERVIEW_QUESTION_COUNTS,
   COMPLETE_PLAN_LIMITS,
   getMockInterviewMonthlyLimit,
@@ -70,15 +70,14 @@ export class InterviewsService {
     try {
       // OPTIMIZATION: Get user once at the beginning
       const user = await this.usersService.findById(userId);
-      
+
       // Check usage limits
       await this.checkUsageLimits(userId);
 
       // Calculate question count from duration + difficulty (or use provided value)
-      const numQuestions = dto.numQuestions ?? this.getQuestionCount(
-        dto.interviewDuration || 'standard',
-        dto.difficulty,
-      );
+      const numQuestions =
+        dto.numQuestions ??
+        this.getQuestionCount(dto.interviewDuration || 'standard', dto.difficulty);
 
       // Set language from user preferences if not in DTO
       if (!dto.language) {
@@ -409,7 +408,7 @@ export class InterviewsService {
     try {
       const sessions = await this.repository.findSessionsByUserId(userId, 5, 0);
       // Find the most recent paused or in_progress session
-      return sessions.find(s => s.status === 'paused' || s.status === 'in_progress') || null;
+      return sessions.find((s) => s.status === 'paused' || s.status === 'in_progress') || null;
     } catch (error) {
       this.logger.error(`Failed to find paused session for user ${userId}: ${error.message}`);
       return null;
@@ -496,7 +495,11 @@ export class InterviewsService {
   /**
    * Generate interview questions using AI
    */
-  private async generateQuestionsWithAI(userId: string, dto: StartInterviewDto, count: number): Promise<string[]> {
+  private async generateQuestionsWithAI(
+    userId: string,
+    dto: StartInterviewDto,
+    count: number,
+  ): Promise<string[]> {
     if (!this.openai) {
       throw new Error('OpenAI client not initialized');
     }
@@ -549,30 +552,30 @@ export class InterviewsService {
     // 50-80%: Progressive/Standard
     // 80-100%: Advanced/Challenging
     const averageScore = historyContext.averageScore * 10; // Convert 0-10 to 0-100 scale for easier logic
-    
+
     prompt += `\n## ADAPTIVE DIFFICULTY INSTRUCTIONS (USER LEVEL: ${averageScore}%)\n`;
-    
+
     if (averageScore >= 80) {
-        // High performer - Challenge them
-        prompt += `\n🔥 **STRATEGY: ADVANCED CHALLENGE**\n`;
-        prompt += `The candidate has a high performance history (${averageScore}% avg). DO NOT ask basic questions.\n`;
-        prompt += `- Focus on **System Design, Architecture, Optimization, and Edge Cases**.\n`;
-        prompt += `- Ask "How would you design..." or "How to optimize..." style questions.\n`;
-        prompt += `- Test deep understanding of the core mechanics, not just syntax.\n`;
+      // High performer - Challenge them
+      prompt += `\n🔥 **STRATEGY: ADVANCED CHALLENGE**\n`;
+      prompt += `The candidate has a high performance history (${averageScore}% avg). DO NOT ask basic questions.\n`;
+      prompt += `- Focus on **System Design, Architecture, Optimization, and Edge Cases**.\n`;
+      prompt += `- Ask "How would you design..." or "How to optimize..." style questions.\n`;
+      prompt += `- Test deep understanding of the core mechanics, not just syntax.\n`;
     } else if (averageScore >= 50) {
-        // Average performer - Progressive growth
-        prompt += `\n📈 **STRATEGY: PROGRESSIVE GROWTH**\n`;
-        prompt += `The candidate is performing well (${averageScore}% avg). Challenge them to level up.\n`;
-        prompt += `- Mix 70% standard questions with 30% advanced concepts.\n`;
-        prompt += `- Push them slightly beyond standard "textbook" answers.\n`;
-        prompt += `- Focus on "Why" and "When" to use specific technologies.\n`;
+      // Average performer - Progressive growth
+      prompt += `\n📈 **STRATEGY: PROGRESSIVE GROWTH**\n`;
+      prompt += `The candidate is performing well (${averageScore}% avg). Challenge them to level up.\n`;
+      prompt += `- Mix 70% standard questions with 30% advanced concepts.\n`;
+      prompt += `- Push them slightly beyond standard "textbook" answers.\n`;
+      prompt += `- Focus on "Why" and "When" to use specific technologies.\n`;
     } else {
-        // Struggling or New - Foundational
-        prompt += `\n🌱 **STRATEGY: FOUNDATIONAL REINFORCEMENT**\n`;
-        prompt += `The candidate needs to build stronger basics (Avg: ${averageScore}%).\n`;
-        prompt += `- Focus on **Core Concepts, Basic Syntax, and Fundamental Principles**.\n`;
-        prompt += `- ensure questions are clear and about the most essential parts of the technology.\n`;
-        prompt += `- Avoid obscure edge cases or complex architecture questions for now.\n`;
+      // Struggling or New - Foundational
+      prompt += `\n🌱 **STRATEGY: FOUNDATIONAL REINFORCEMENT**\n`;
+      prompt += `The candidate needs to build stronger basics (Avg: ${averageScore}%).\n`;
+      prompt += `- Focus on **Core Concepts, Basic Syntax, and Fundamental Principles**.\n`;
+      prompt += `- ensure questions are clear and about the most essential parts of the technology.\n`;
+      prompt += `- Avoid obscure edge cases or complex architecture questions for now.\n`;
     }
 
     // Add CV Context if available (personalized questions based on candidate's CV)
@@ -594,14 +597,14 @@ export class InterviewsService {
     // Add History Context - Intelligent Question Generation
     if (allQuestions.length > 0) {
       prompt += `\n## PREVIOUS INTERVIEW HISTORY (INTELLIGENT GENERATION)\n`;
-      
+
       // 1. Avoid repetition - STRICT
       prompt += `### ⛔ DO NOT REPEAT THESE QUESTIONS:\n`;
       prompt += `The candidate has recently answered these. You MUST generate COMPLETELY NEW questions:\n`;
       // Limit to last 30 questions to save tokens, but enough to avoid recents
-      const recentQuestions = allQuestions.slice(0, 30); 
+      const recentQuestions = allQuestions.slice(0, 30);
       prompt += recentQuestions.map((q, i) => `${i + 1}. "${q}"`).join('\n') + '\n\n';
-      
+
       // 2. Focus on weak areas - TARGETED IMPROVEMENT
       if (incorrectQuestions.length > 0) {
         prompt += `### 🎯 TARGET AREAS FOR IMPROVEMENT:\n`;
@@ -756,10 +759,12 @@ Your response must be valid JSON that can be parsed directly. All questions must
 
       // Log raw response for debugging
       this.logger.debug(`AI response (first 500 chars): ${responseText.substring(0, 500)}`);
-      
+
       // CRITICAL: Warn if response was truncated due to token limit
       if (choice?.finish_reason === 'length') {
-        this.logger.warn(`⚠️ AI RESPONSE TRUNCATED! Model: ${completion.model}, Tokens: ${completion.usage?.total_tokens || 'unknown'}`);
+        this.logger.warn(
+          `⚠️ AI RESPONSE TRUNCATED! Model: ${completion.model}, Tokens: ${completion.usage?.total_tokens || 'unknown'}`,
+        );
         this.logger.warn(`Full truncated response: ${responseText}`);
       }
 
@@ -987,18 +992,18 @@ Your response must be valid JSON that can be parsed directly. All questions must
   /**
    * CRITICAL: Check mock interview usage limits based on plan
    * ✅ STEP 2 FIX: Now uses COMPLETE_PLAN_LIMITS for accurate enforcement
-   * 
+   *
    * NOTE: This method is now ONLY used for API/direct calls.
-   * Telegram bot uses TelegramSubscriptionService.checkMockInterviewLimit() 
+   * Telegram bot uses TelegramSubscriptionService.checkMockInterviewLimit()
    * for proper multilingual messages and user experience.
    */
   private async checkUsageLimits(userId: string): Promise<void> {
     const user = await this.usersService.findById(userId);
     const plan = user.subscription?.plan || 'free_trial';
-    
+
     // ✅ Use COMPLETE_PLAN_LIMITS (single source of truth)
     const monthlyLimit = getMockInterviewMonthlyLimit(plan);
-    
+
     // Check if limit reached (-1 means unlimited)
     if (monthlyLimit !== -1 && user.usage.mockInterviewsThisMonth >= monthlyLimit) {
       // Multi-language upgrade messages for better UX
@@ -1019,19 +1024,19 @@ Your response must be valid JSON that can be parsed directly. All questions must
           en: `Mock interview limit reached (${user.usage.mockInterviewsThisMonth}/${monthlyLimit}). Upgrade to Elite for unlimited interviews.`,
         },
       };
-      
+
       // Use user's language preference or default to English
       const userLang = user.preferences?.language || user.language || 'en';
       const planMessages = upgradeMessages[plan as keyof typeof upgradeMessages];
-      const message = planMessages 
+      const message = planMessages
         ? planMessages[userLang as keyof typeof planMessages] || planMessages.en
         : `Mock interview limit reached for ${plan} plan. Upgrade to practice more.`;
-      
+
       throw new ForbiddenException(message);
     }
-    
+
     this.logger.debug(
-      `Mock interview usage check passed: ${user.usage.mockInterviewsThisMonth}/${monthlyLimit === -1 ? 'unlimited' : monthlyLimit} for ${plan} plan`
+      `Mock interview usage check passed: ${user.usage.mockInterviewsThisMonth}/${monthlyLimit === -1 ? 'unlimited' : monthlyLimit} for ${plan} plan`,
     );
   }
 
@@ -1057,7 +1062,10 @@ Your response must be valid JSON that can be parsed directly. All questions must
    * Get user interview history for context
    * Analyzes previous sessions to identify correct/incorrect answers and avoid repetition
    */
-  async getUserInterviewContext(userId: string, limit = 5): Promise<{
+  async getUserInterviewContext(
+    userId: string,
+    limit = 5,
+  ): Promise<{
     correctQuestions: string[];
     incorrectQuestions: string[];
     allQuestions: string[]; // To avoid repetition
@@ -1067,11 +1075,11 @@ Your response must be valid JSON that can be parsed directly. All questions must
     try {
       // Get last N sessions
       const sessions = await this.repository.findSessionsByUserId(userId, limit);
-      
+
       const correctQuestions: string[] = [];
       const incorrectQuestions: string[] = [];
       const allQuestions: string[] = [];
-      
+
       let totalScore = 0;
       let scoredSessionsCount = 0;
       let lastScore: number | undefined;
@@ -1082,12 +1090,12 @@ Your response must be valid JSON that can be parsed directly. All questions must
       }
 
       // OPTIMIZATION: Batch fetch all answers for these sessions to avoid N+1 problem
-      const sessionIds = sessions.map(s => s.id);
+      const sessionIds = sessions.map((s) => s.id);
       const allAnswers = await this.repository.findAnswersBySessionIds(sessionIds);
 
       // Map answers to sessions for easier processing if needed, or process flat list
       // We need to process session scores separately from answers
-      
+
       for (const session of sessions) {
         // Calculate average score trend
         if (session.overallScore !== undefined) {
@@ -1101,7 +1109,7 @@ Your response must be valid JSON that can be parsed directly. All questions must
         // Safe access to question text (populated)
         const questionObj = answer.questionId as any;
         const questionText = questionObj?.question || '';
-        
+
         if (!questionText) continue;
 
         allQuestions.push(questionText);
@@ -1122,7 +1130,8 @@ Your response must be valid JSON that can be parsed directly. All questions must
         correctQuestions: [...new Set(correctQuestions)], // Unique
         incorrectQuestions: [...new Set(incorrectQuestions)], // Unique
         allQuestions: [...new Set(allQuestions)], // Unique
-        averageScore: scoredSessionsCount > 0 ? Number((totalScore / scoredSessionsCount).toFixed(1)) : 0,
+        averageScore:
+          scoredSessionsCount > 0 ? Number((totalScore / scoredSessionsCount).toFixed(1)) : 0,
         lastScore,
       };
     } catch (error) {

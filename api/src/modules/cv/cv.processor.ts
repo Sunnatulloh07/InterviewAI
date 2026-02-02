@@ -33,9 +33,9 @@ export class CvProcessor {
         jobDescription,
         language: userLanguage,
       });
-      
+
       this.logger.log(`CV analysis completed: ${cvId}`);
-      
+
       // Send notification to user via Telegram if they have telegramId
       if (telegramId && cv.analysis && cv.analysisStatus === 'completed') {
         await this.sendAnalysisResults(telegramId, cv, userLanguage);
@@ -45,30 +45,38 @@ export class CvProcessor {
       throw error;
     }
   }
-  
+
   /**
    * Send CV analysis results to user via Telegram
    */
-  private async sendAnalysisResults(
-    telegramId: number, 
-    cv: any, 
-    lang: string
-  ): Promise<void> {
+  private async sendAnalysisResults(telegramId: number, cv: any, lang: string): Promise<void> {
     try {
       const analysis = cv.analysis;
-      
+
       // Determine score emoji
       let scoreEmoji = '🔴';
       if (analysis.atsScore >= 80) scoreEmoji = '🟢';
       else if (analysis.atsScore >= 60) scoreEmoji = '🟡';
-      
+
       // Format strengths (first 3)
-      const strengths = analysis.strengths?.slice(0, 3).map((s: string) => `✅ ${s}`).join('\n') || '';
-      
+      const strengths =
+        analysis.strengths
+          ?.slice(0, 3)
+          .map((s: string) => `✅ ${s}`)
+          .join('\n') || '';
+
       // Format weaknesses (first 3)
-      const weaknesses = analysis.criticalWeaknesses?.slice(0, 3).map((w: string) => `⚠️ ${w}`).join('\n') || 
-                         analysis.weaknesses?.slice(0, 3).map((w: string) => `⚠️ ${w}`).join('\n') || '';
-      
+      const weaknesses =
+        analysis.criticalWeaknesses
+          ?.slice(0, 3)
+          .map((w: string) => `⚠️ ${w}`)
+          .join('\n') ||
+        analysis.weaknesses
+          ?.slice(0, 3)
+          .map((w: string) => `⚠️ ${w}`)
+          .join('\n') ||
+        '';
+
       const messages: Record<string, string> = {
         uz: `📄 <b>CV Tahlili Tayyor!</b>
 
@@ -82,7 +90,7 @@ ${strengths || 'No specific strengths mentioned'}
 ${weaknesses || 'No major weaknesses found'}
 
 📊 To'liq tahlilni ko'rish uchun quyidagi tugmani bosing:`,
-        
+
         ru: `📄 <b>Анализ CV Готов!</b>
 
 ${scoreEmoji} <b>ATS Оценка:</b> ${analysis.atsScore}/100
@@ -95,7 +103,7 @@ ${strengths || 'No specific strengths mentioned'}
 ${weaknesses || 'No major weaknesses found'}
 
 📊 Нажмите кнопку ниже для просмотра полного анализа:`,
-        
+
         en: `📄 <b>CV Analysis Ready!</b>
 
 ${scoreEmoji} <b>ATS Score:</b> ${analysis.atsScore}/100
@@ -109,16 +117,13 @@ ${weaknesses || 'No major weaknesses found'}
 
 📊 Click the button below to view the full analysis:`,
       };
-      
+
       const keyboard = new InlineKeyboard()
         .text('📊 View Full Analysis', `cv_full_${cv.id}`)
         .text('🔄 Re-analyze', `cv_reanalyze`);
-      
-      await this.telegramService.sendNotification(
-        telegramId,
-        messages[lang] || messages.en
-      );
-      
+
+      await this.telegramService.sendNotification(telegramId, messages[lang] || messages.en);
+
       this.logger.log(`Analysis results sent to Telegram user ${telegramId}`);
     } catch (error) {
       this.logger.error(`Failed to send analysis results to Telegram: ${error.message}`);

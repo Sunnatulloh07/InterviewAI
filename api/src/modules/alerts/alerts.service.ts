@@ -74,7 +74,11 @@ export class AlertsService {
   /**
    * Send critical alert (always sent, even in development)
    */
-  async sendCriticalAlert(title: string, message: string, metadata?: Record<string, any>): Promise<void> {
+  async sendCriticalAlert(
+    title: string,
+    message: string,
+    metadata?: Record<string, any>,
+  ): Promise<void> {
     await this.sendAlert({
       title,
       message,
@@ -86,7 +90,11 @@ export class AlertsService {
   /**
    * Send error alert
    */
-  async sendErrorAlert(title: string, message: string, metadata?: Record<string, any>): Promise<void> {
+  async sendErrorAlert(
+    title: string,
+    message: string,
+    metadata?: Record<string, any>,
+  ): Promise<void> {
     await this.sendAlert({
       title,
       message,
@@ -98,7 +106,11 @@ export class AlertsService {
   /**
    * Send warning alert
    */
-  async sendWarningAlert(title: string, message: string, metadata?: Record<string, any>): Promise<void> {
+  async sendWarningAlert(
+    title: string,
+    message: string,
+    metadata?: Record<string, any>,
+  ): Promise<void> {
     await this.sendAlert({
       title,
       message,
@@ -110,7 +122,11 @@ export class AlertsService {
   /**
    * Send info alert
    */
-  async sendInfoAlert(title: string, message: string, metadata?: Record<string, any>): Promise<void> {
+  async sendInfoAlert(
+    title: string,
+    message: string,
+    metadata?: Record<string, any>,
+  ): Promise<void> {
     await this.sendAlert({
       title,
       message,

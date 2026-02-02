@@ -91,7 +91,7 @@ export class TelegramLiveService {
     if (!hasMetadata) {
       // Clear conflicting session states (e.g. mock interview)
       ctx.session.interviewStep = undefined;
-      
+
       // Start metadata collection flow
       ctx.session.liveSessionMetadata = ctx.session.liveSessionMetadata || {};
       ctx.session.liveSessionStep = 'domain';
@@ -123,7 +123,7 @@ export class TelegramLiveService {
     // Metadata already collected - start live session
     // Clear conflicting session states
     ctx.session.interviewStep = undefined;
-    
+
     const sessionMetadata = ctx.session.liveSessionMetadata!;
     const startText: Record<string, string> = {
       uz:
@@ -365,10 +365,15 @@ What domain is the interview for?
         `✅ After selecting, press "✅ Done".`,
     };
 
-    await this.replyOrTransition(ctx, techText[lang] || techText['en'], {
-      reply_markup: techKeyboard,
-      parse_mode: 'HTML',
-    }, shouldEdit);
+    await this.replyOrTransition(
+      ctx,
+      techText[lang] || techText['en'],
+      {
+        reply_markup: techKeyboard,
+        parse_mode: 'HTML',
+      },
+      shouldEdit,
+    );
   }
 
   /**
@@ -1095,7 +1100,12 @@ Example: <code>Google</code>, <code>Microsoft</code>, <code>Amazon</code>`,
    * Transitions (navigation) should use delete+reply for animation.
    * Edits (toggles) should use editMessageText for instant update.
    */
-  private async replyOrTransition(ctx: BotContext, text: string, extra: any, isToggle: boolean = false) {
+  private async replyOrTransition(
+    ctx: BotContext,
+    text: string,
+    extra: any,
+    isToggle: boolean = false,
+  ) {
     // If it's a toggle action, try to edit in-place for speed
     if (isToggle && ctx.callbackQuery?.message) {
       try {
@@ -1112,7 +1122,7 @@ Example: <code>Google</code>, <code>Microsoft</code>, <code>Amazon</code>`,
     // 1. Answer callback
     if (ctx.callbackQuery) {
       await ctx.answerCallbackQuery().catch(() => {});
-      
+
       // 2. Delete old message (animation)
       await ctx.deleteMessage().catch(() => {});
     }

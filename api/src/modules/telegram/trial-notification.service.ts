@@ -82,34 +82,36 @@ export class TrialNotificationService {
     // Calculate date ranges for 1, 2, 3 days from now
     const oneDayLater = new Date(today);
     oneDayLater.setDate(oneDayLater.getDate() + 1);
-    
+
     const twoDaysLater = new Date(today);
     twoDaysLater.setDate(twoDaysLater.getDate() + 2);
-    
+
     const threeDaysLater = new Date(today);
     threeDaysLater.setDate(threeDaysLater.getDate() + 3);
-    
+
     const fourDaysLater = new Date(today);
     fourDaysLater.setDate(fourDaysLater.getDate() + 4);
 
     // CRITICAL: Find only properly registered users with ACTIVE trials
-    return this.userModel.find({
-      // Must have active trial (not expired, not cancelled)
-      'subscription.plan': 'free_trial',
-      'subscription.status': 'trialing', // ⭐ CRITICAL: Only active trials!
-      'subscription.trialEndsAt': {
-        $gte: oneDayLater,
-        $lt: fourDaysLater,
-      },
-      // Must be properly registered user
-      telegramId: { $exists: true, $ne: null },
-      firstName: { $exists: true, $ne: null }, // Has completed registration
-      phoneNumber: { $exists: true, $ne: null }, // Has phone number
-      phoneVerified: true, // Phone is verified
-      // Must not be deleted or blocked
-      isDeleted: { $ne: true },
-      'engagement.isBotBlocked': { $ne: true },
-    }).exec();
+    return this.userModel
+      .find({
+        // Must have active trial (not expired, not cancelled)
+        'subscription.plan': 'free_trial',
+        'subscription.status': 'trialing', // ⭐ CRITICAL: Only active trials!
+        'subscription.trialEndsAt': {
+          $gte: oneDayLater,
+          $lt: fourDaysLater,
+        },
+        // Must be properly registered user
+        telegramId: { $exists: true, $ne: null },
+        firstName: { $exists: true, $ne: null }, // Has completed registration
+        phoneNumber: { $exists: true, $ne: null }, // Has phone number
+        phoneVerified: true, // Phone is verified
+        // Must not be deleted or blocked
+        isDeleted: { $ne: true },
+        'engagement.isBotBlocked': { $ne: true },
+      })
+      .exec();
   }
 
   /**
@@ -137,22 +139,22 @@ export class TrialNotificationService {
       }
 
       const lang = user.language || user.preferences?.language || 'uz';
-      
+
       // Get user activity metrics for personalization
       const mockInterviews = user.usage?.mockInterviewsThisMonth || 0;
       const cvAnalyses = user.usage?.cvAnalysesThisMonth || 0;
       const hasActivity = mockInterviews > 0 || cvAnalyses > 0;
-      
+
       // Generate personalized message based on activity
       const message = this.getPersonalizedNotificationMessage(
-        lang, 
-        daysRemaining, 
+        lang,
+        daysRemaining,
         user.firstName || 'Foydalanuvchi',
         mockInterviews,
         cvAnalyses,
-        hasActivity
+        hasActivity,
       );
-      
+
       const keyboard = this.getUpgradeKeyboard(lang);
 
       await this.bot.api.sendMessage(user.telegramId, message, {
@@ -163,10 +165,12 @@ export class TrialNotificationService {
       // Update last notification date
       await this.userModel.updateOne(
         { _id: user._id },
-        { $set: { lastTrialNotificationDate: now } }
+        { $set: { lastTrialNotificationDate: now } },
       );
 
-      this.logger.log(`Sent trial notification to user ${user.telegramId} (${daysRemaining} days left, activity: ${hasActivity ? 'active' : 'inactive'})`);
+      this.logger.log(
+        `Sent trial notification to user ${user.telegramId} (${daysRemaining} days left, activity: ${hasActivity ? 'active' : 'inactive'})`,
+      );
     } catch (error: any) {
       // User may have blocked the bot or deleted account
       if (error?.error_code === 403 || error?.error_code === 400) {
@@ -279,18 +283,18 @@ Trial ends today. Don't forget to upgrade!
    * Professional marketing copy for different user segments
    */
   private getPersonalizedNotificationMessage(
-    lang: string, 
-    daysRemaining: number, 
+    lang: string,
+    daysRemaining: number,
     firstName: string,
     mockInterviews: number,
     cvAnalyses: number,
-    hasActivity: boolean
+    hasActivity: boolean,
   ): string {
     // ACTIVE USERS - Have used the platform
     if (hasActivity) {
       return this.getActiveUserMessage(lang, daysRemaining, firstName, mockInterviews, cvAnalyses);
     }
-    
+
     // INACTIVE USERS - Haven't used the platform
     return this.getInactiveUserMessage(lang, daysRemaining, firstName);
   }
@@ -299,15 +303,14 @@ Trial ends today. Don't forget to upgrade!
    * Message for ACTIVE users (used mock interviews or CV analysis)
    */
   private getActiveUserMessage(
-    lang: string, 
-    daysRemaining: number, 
+    lang: string,
+    daysRemaining: number,
     firstName: string,
     mockInterviews: number,
-    cvAnalyses: number
+    cvAnalyses: number,
   ): string {
-    const activityText = mockInterviews > 0 
-      ? `${mockInterviews} ta mock intervyu` 
-      : `${cvAnalyses} ta CV tahlili`;
+    const activityText =
+      mockInterviews > 0 ? `${mockInterviews} ta mock intervyu` : `${cvAnalyses} ta CV tahlili`;
 
     const messages: Record<string, Record<number, string>> = {
       uz: {
@@ -597,7 +600,7 @@ Try now — it could transform your career!
    */
   private getUpgradeKeyboard(lang: string): InlineKeyboard {
     const buttonTexts: Record<string, string> = {
-      uz: '⬆️ Tariflarni ko\'rish',
+      uz: "⬆️ Tariflarni ko'rish",
       ru: '⬆️ Посмотреть тарифы',
       en: '⬆️ View Plans',
     };

@@ -91,16 +91,12 @@ export class LoggingInterceptor implements NestInterceptor {
 
           // Log security event for unauthorized access
           if (statusCode === 401 || statusCode === 403) {
-            this.logger.security(
-              `Unauthorized access attempt: ${method} ${url}`,
-              'medium',
-              {
-                requestId,
-                ip,
-                userAgent,
-                userId: user?.id,
-              },
-            );
+            this.logger.security(`Unauthorized access attempt: ${method} ${url}`, 'medium', {
+              requestId,
+              ip,
+              userAgent,
+              userId: user?.id,
+            });
           }
         },
       }),

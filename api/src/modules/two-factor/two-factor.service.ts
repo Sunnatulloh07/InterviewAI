@@ -48,9 +48,7 @@ export class TwoFactorService {
 
     // Generate backup codes
     const backupCodes = this.generateBackupCodes(10);
-    const hashedBackupCodes = await Promise.all(
-      backupCodes.map((code) => bcrypt.hash(code, 12)),
-    );
+    const hashedBackupCodes = await Promise.all(backupCodes.map((code) => bcrypt.hash(code, 12)));
 
     // Save or update 2FA record
     await this.twoFactorAuthModel.findOneAndUpdate(
@@ -208,9 +206,7 @@ export class TwoFactorService {
 
       this.logger.security('2FA account locked due to failed attempts', 'high', { userId });
 
-      throw new UnauthorizedException(
-        'Too many failed attempts. Account locked for 15 minutes',
-      );
+      throw new UnauthorizedException('Too many failed attempts. Account locked for 15 minutes');
     }
 
     await twoFa.save();
@@ -282,9 +278,7 @@ export class TwoFactorService {
 
     // Generate new backup codes
     const backupCodes = this.generateBackupCodes(10);
-    const hashedBackupCodes = await Promise.all(
-      backupCodes.map((code) => bcrypt.hash(code, 12)),
-    );
+    const hashedBackupCodes = await Promise.all(backupCodes.map((code) => bcrypt.hash(code, 12)));
 
     twoFa.backupCodes = hashedBackupCodes;
     twoFa.backupCodesUsed = 0;

@@ -68,7 +68,11 @@ export class NotificationLog {
   responseWindowEndsAt: Date;
 
   /** Delivery status */
-  @Prop({ type: String, enum: Object.values(NotificationDeliveryStatus), default: NotificationDeliveryStatus.SENT })
+  @Prop({
+    type: String,
+    enum: Object.values(NotificationDeliveryStatus),
+    default: NotificationDeliveryStatus.SENT,
+  })
   deliveryStatus: NotificationDeliveryStatus;
 
   /** Error message if delivery failed */
@@ -83,7 +87,7 @@ export class NotificationLog {
   @Prop()
   responseReceivedAt?: Date;
 
-  /** 
+  /**
    * Whether this log has been processed by the scheduler (either responded or expired)
    * This prevents re-processing expired notifications multiple times
    */

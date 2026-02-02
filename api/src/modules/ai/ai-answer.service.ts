@@ -416,7 +416,7 @@ export class AiAnswerService {
     const isBehavioral = this.isBehavioralQuestion(dto.question);
     const isTechnical = this.isTechnicalQuestion(dto.question);
     // If not explicitly detected, assume technical/conceptual if it contains tech terms, else behavioral preference if CV is rich
-    const effectiveType = isBehavioral ? 'behavioral' : 'technical'; 
+    const effectiveType = isBehavioral ? 'behavioral' : 'technical';
 
     let prompt = `## INTERVIEW QUESTION\n`;
     prompt += `**Question:** "${dto.question}"\n\n`;
@@ -438,10 +438,11 @@ export class AiAnswerService {
     // 4. Previous Conversation (Last 3-5 messages only to save tokens)
     if (context.messages && context.messages.length > 0) {
       prompt += `## CONVERSATION HISTORY (Last 3)\n`;
-      const recentMessages = context.messages.slice(-3); 
+      const recentMessages = context.messages.slice(-3);
       recentMessages.forEach((msg: any, idx: number) => {
         const role = msg.role === 'user' ? 'Q' : 'A';
-        const content = msg.content.length > 300 ? `${msg.content.substring(0, 300)}...` : msg.content;
+        const content =
+          msg.content.length > 300 ? `${msg.content.substring(0, 300)}...` : msg.content;
         prompt += `${role}: ${content}\n`;
       });
       prompt += `\nIf this question is a follow-up, build on previous answers.\n\n`;
@@ -449,23 +450,23 @@ export class AiAnswerService {
 
     // 5. SMART CONTEXT INJECTION (The Core Optimization)
     if (cvData) {
-        prompt += `## CANDIDATE BACKGROUND\n`;
-        
-        // Always show what the candidate KNOWS (Technologies/Skills)
-        prompt += `**Known Technologies:** ${cvData.technologies?.join(', ') || 'N/A'}\n`;
-        prompt += `**Education:** ${cvData.education?.map((e:any) => e.field).join(', ') || 'N/A'}\n\n`;
+      prompt += `## CANDIDATE BACKGROUND\n`;
 
-        // CONDITIONAL FULL CV INJECTION
-        if (effectiveType === 'behavioral') {
-            prompt += `**FULL CV TEXT (Use for Behavioral/Experience questions):**\n`;
-            prompt += `"${cvData.fullText.substring(0, 4000)}"\n\n`; // Cap at 4000 chars
-            prompt += `**INSTRUCTION:** Search the CV above. If the candidate has specific experience matching the question, cite it (Company, Project, Result). Use STAR method.\n`;
-        } else {
-            // Technical Question - DO NOT INJECT FULL CV
-            prompt += `**NOTE:** Full CV omitted for this Technical/Conceptual question to save tokens.\n`;
-            prompt += `**INSTRUCTION:** Answer as a knowledgeable candidate. Do NOT invent specific personal stories. Focus on explaining the concept ("What", "How", "Why").\n`;
-            prompt += `Use "Men bilaman..." (I know...) or "Mening tajribamda..." (In my experience [general]).\n`;
-        }
+      // Always show what the candidate KNOWS (Technologies/Skills)
+      prompt += `**Known Technologies:** ${cvData.technologies?.join(', ') || 'N/A'}\n`;
+      prompt += `**Education:** ${cvData.education?.map((e: any) => e.field).join(', ') || 'N/A'}\n\n`;
+
+      // CONDITIONAL FULL CV INJECTION
+      if (effectiveType === 'behavioral') {
+        prompt += `**FULL CV TEXT (Use for Behavioral/Experience questions):**\n`;
+        prompt += `"${cvData.fullText.substring(0, 4000)}"\n\n`; // Cap at 4000 chars
+        prompt += `**INSTRUCTION:** Search the CV above. If the candidate has specific experience matching the question, cite it (Company, Project, Result). Use STAR method.\n`;
+      } else {
+        // Technical Question - DO NOT INJECT FULL CV
+        prompt += `**NOTE:** Full CV omitted for this Technical/Conceptual question to save tokens.\n`;
+        prompt += `**INSTRUCTION:** Answer as a knowledgeable candidate. Do NOT invent specific personal stories. Focus on explaining the concept ("What", "How", "Why").\n`;
+        prompt += `Use "Men bilaman..." (I know...) or "Mening tajribamda..." (In my experience [general]).\n`;
+      }
     }
 
     // 6. Output Requirements
@@ -473,7 +474,7 @@ export class AiAnswerService {
     prompt += `- Style: ${style}\n`;
     prompt += `- Length: ${length}\n`;
     prompt += `- Language: ${language.toUpperCase()} ONLY.\n`;
-    
+
     return prompt;
   }
 

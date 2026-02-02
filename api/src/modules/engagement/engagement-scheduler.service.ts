@@ -35,12 +35,12 @@ interface JobRunStats {
 
 /**
  * EngagementSchedulerService
- * 
+ *
  * Handles scheduled tasks for the engagement system:
  * - Daily notification processing (09:00 UTC+5 = 04:00 UTC)
  * - Expired notification cleanup
  * - Batch processing with rate limiting
- * 
+ *
  * Features:
  * - Environment-based enable/disable
  * - Graceful shutdown support
@@ -53,7 +53,7 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
   private isProcessing = false;
   private isEnabled = true;
   private shouldStop = false;
-  
+
   private stats: JobRunStats = {
     lastRunAt: null,
     lastRunDurationMs: 0,
@@ -73,11 +73,13 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
     // Check if scheduler is enabled via environment
     const disabled = this.configService.get<string>('ENGAGEMENT_SCHEDULER_DISABLED');
     const nodeEnv = this.configService.get<string>('NODE_ENV');
-    
+
     // Disable in test environment by default
     if (disabled === 'true' || nodeEnv === 'test') {
       this.isEnabled = false;
-      this.logger.warn('EngagementSchedulerService DISABLED (set ENGAGEMENT_SCHEDULER_DISABLED=false to enable)');
+      this.logger.warn(
+        'EngagementSchedulerService DISABLED (set ENGAGEMENT_SCHEDULER_DISABLED=false to enable)',
+      );
       return;
     }
 
@@ -113,16 +115,16 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
 
     try {
       const results = await this.processNotificationBatches();
-      
+
       const durationMs = Date.now() - startTime;
       const durationSec = (durationMs / 1000).toFixed(1);
-      
+
       // Update stats
       this.updateStats(durationMs, results);
-      
+
       this.logger.log(
         `Daily notification job completed in ${durationSec}s: ` +
-        `sent=${results.sent}, failed=${results.failed}, skipped=${results.skipped}`
+          `sent=${results.sent}, failed=${results.failed}, skipped=${results.skipped}`,
       );
     } catch (error) {
       this.logger.error(`Daily notification job failed: ${error.message}`);
@@ -145,10 +147,10 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
 
     try {
       const result = await this.engagementService.processExpiredNotifications();
-      
+
       if (result.processed > 0) {
         this.logger.log(
-          `Processed ${result.processed} expired notifications, ${result.errors} errors`
+          `Processed ${result.processed} expired notifications, ${result.errors} errors`,
         );
       }
     } catch (error) {
@@ -161,7 +163,7 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
    * Handles two categories:
    * 1. NEW USERS: Scheduled surveys (scheduledSurveyAt set by pre-save hook, 3-4h after registration)
    * 2. EXISTING USERS: Backfill users who haven't completed survey and don't have scheduledSurveyAt
-   * 
+   *
    * SCALABILITY: Processes max 1000 users per run = 4000/hour
    */
   @Cron('*/15 9-21 * * *', { name: 'process-pending-surveys', timeZone: 'Asia/Tashkent' })
@@ -179,13 +181,14 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
       // ═══════════════════════════════════════════════════════════════════════
       // QUERY 1: New users with scheduled surveys (pre-save hook scheduled them)
       // ═══════════════════════════════════════════════════════════════════════
-      const scheduledUsers = await this.userModel.find({
-        'engagement.scheduledSurveyAt': { $lte: now, $ne: null },
-        'engagement.surveyCompletedAt': null,
-        'engagement.isBotBlocked': { $ne: true },
-        'engagement.notificationsPaused': { $ne: true },
-        deletedAt: null,
-      })
+      const scheduledUsers = await this.userModel
+        .find({
+          'engagement.scheduledSurveyAt': { $lte: now, $ne: null },
+          'engagement.surveyCompletedAt': null,
+          'engagement.isBotBlocked': { $ne: true },
+          'engagement.notificationsPaused': { $ne: true },
+          deletedAt: null,
+        })
         .select('_id telegramId language')
         .limit(BATCH_SIZE)
         .lean()
@@ -197,22 +200,23 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
       // ═══════════════════════════════════════════════════════════════════════
       const remainingSlots = BATCH_SIZE - scheduledUsers.length;
       let existingUsers: any[] = [];
-      
+
       if (remainingSlots > 0) {
-        existingUsers = await this.userModel.find({
-          // No scheduledSurveyAt (pre-feature users)
-          'engagement.scheduledSurveyAt': { $exists: false },
-          // Not completed
-          'engagement.surveyCompletedAt': null,
-          // Not NOT_SET (exclude users who explicitly declined or were reset)
-          'engagement.jobSeekingStatus': { $exists: false },
-          // Active filters
-          'engagement.isBotBlocked': { $ne: true },
-          'engagement.notificationsPaused': { $ne: true },
-          // Has telegram ID (required for sending)
-          telegramId: { $exists: true, $ne: null },
-          deletedAt: null,
-        })
+        existingUsers = await this.userModel
+          .find({
+            // No scheduledSurveyAt (pre-feature users)
+            'engagement.scheduledSurveyAt': { $exists: false },
+            // Not completed
+            'engagement.surveyCompletedAt': null,
+            // Not NOT_SET (exclude users who explicitly declined or were reset)
+            'engagement.jobSeekingStatus': { $exists: false },
+            // Active filters
+            'engagement.isBotBlocked': { $ne: true },
+            'engagement.notificationsPaused': { $ne: true },
+            // Has telegram ID (required for sending)
+            telegramId: { $exists: true, $ne: null },
+            deletedAt: null,
+          })
           .select('_id telegramId language')
           .limit(remainingSlots)
           .lean()
@@ -226,7 +230,7 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
       }
 
       this.logger.log(
-        `Processing ${allUsers.length} surveys: scheduled=${scheduledUsers.length}, existing=${existingUsers.length}`
+        `Processing ${allUsers.length} surveys: scheduled=${scheduledUsers.length}, existing=${existingUsers.length}`,
       );
 
       let sent = 0;
@@ -279,21 +283,22 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
       const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
 
       // Find active job seekers inactive for 24-48h
-      const inactiveJobseekers = await this.userModel.find({
-        'engagement.jobSeekingStatus': JobSeekingStatus.ACTIVELY_LOOKING,
-        'engagement.lastActiveAt': {
-          $lte: twentyFourHoursAgo,
-          $gte: fortyEightHoursAgo, // Don't spam users who've been inactive longer
-        },
-        'engagement.isBotBlocked': { $ne: true },
-        'engagement.notificationsPaused': { $ne: true },
-        // Avoid sending if we already sent a notification recently
-        $or: [
-          { 'engagement.lastNotificationSentAt': null },
-          { 'engagement.lastNotificationSentAt': { $lte: twentyFourHoursAgo } },
-        ],
-        deletedAt: null,
-      })
+      const inactiveJobseekers = await this.userModel
+        .find({
+          'engagement.jobSeekingStatus': JobSeekingStatus.ACTIVELY_LOOKING,
+          'engagement.lastActiveAt': {
+            $lte: twentyFourHoursAgo,
+            $gte: fortyEightHoursAgo, // Don't spam users who've been inactive longer
+          },
+          'engagement.isBotBlocked': { $ne: true },
+          'engagement.notificationsPaused': { $ne: true },
+          // Avoid sending if we already sent a notification recently
+          $or: [
+            { 'engagement.lastNotificationSentAt': null },
+            { 'engagement.lastNotificationSentAt': { $lte: twentyFourHoursAgo } },
+          ],
+          deletedAt: null,
+        })
         .select('_id')
         .limit(100)
         .lean()
@@ -333,10 +338,10 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
     let totalSent = 0;
     let totalFailed = 0;
     let totalSkipped = 0;
-    
+
     // Safety: prevent infinite loops
     let totalProcessedCount = 0;
-    const MAX_TOTAL_USERS = 10000; 
+    const MAX_TOTAL_USERS = 10000;
 
     // Keep track of users processed effectively in this run to avoid duplicates
     // This is crucial if a user fails but remains "eligible" in DB
@@ -355,10 +360,10 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
 
       // Fetch next batch of users
       // We rely on previous batch having their 'nextNotificationAt' updated
-      // so they are no longer eligible. 
+      // so they are no longer eligible.
       // Failed users (not updated) are filtered by processedUserIds check.
       const users = await this.engagementService.getEligibleUsers(
-        SCHEDULER_CONFIG.MAX_USERS_PER_RUN
+        SCHEDULER_CONFIG.MAX_USERS_PER_RUN,
       );
 
       if (users.length === 0) {
@@ -367,8 +372,8 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
       }
 
       // Filter out already processed users (to prevent infinite loop on failed-but-eligible users)
-      const newUsers = users.filter(id => !processedUserIds.has(id));
-      
+      const newUsers = users.filter((id) => !processedUserIds.has(id));
+
       if (newUsers.length === 0) {
         this.logger.debug('Fetched users were already processed. Stopping loop.');
         hasMoreUsers = false;
@@ -381,7 +386,7 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
       const results = await this.processBatch(newUsers);
 
       // Track processed IDs
-      newUsers.forEach(id => processedUserIds.add(id));
+      newUsers.forEach((id) => processedUserIds.add(id));
       totalProcessedCount += newUsers.length;
 
       totalSent += results.sent;
@@ -415,10 +420,8 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
       if (this.shouldStop) break;
 
       const chunk = userIds.slice(i, i + SCHEDULER_CONFIG.MAX_CONCURRENT);
-      
-      const results = await Promise.allSettled(
-        chunk.map(userId => this.processUser(userId))
-      );
+
+      const results = await Promise.allSettled(chunk.map((userId) => this.processUser(userId)));
 
       for (const result of results) {
         if (result.status === 'fulfilled') {
@@ -445,11 +448,11 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
   private async processUser(userId: string): Promise<'sent' | 'failed' | 'skipped'> {
     try {
       const result = await this.engagementService.processUserForEngagement(userId);
-      
+
       if (!result) {
         return 'skipped'; // No trigger or not eligible
       }
-      
+
       return result.success ? 'sent' : 'failed';
     } catch (error) {
       this.logger.debug(`Failed to process user ${userId}: ${error.message}`);
@@ -460,10 +463,13 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
   /**
    * Update run statistics
    */
-  private updateStats(durationMs: number, results: { sent: number; failed: number; skipped: number }): void {
+  private updateStats(
+    durationMs: number,
+    results: { sent: number; failed: number; skipped: number },
+  ): void {
     const now = new Date();
     const lastRunDate = this.stats.lastRunAt;
-    
+
     // Reset daily counts if it's a new day
     if (!lastRunDate || lastRunDate.toDateString() !== now.toDateString()) {
       this.stats.totalRunsToday = 0;
@@ -481,7 +487,7 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
    * Helper: delay execution
    */
   private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   /**

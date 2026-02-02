@@ -76,10 +76,11 @@ export class HealthController {
       // System resources
       () => this.memory.checkRSS('memory_rss', 1024 * 1024 * 1024),
       () => this.memory.checkHeap('memory_heap', 512 * 1024 * 1024),
-      () => this.disk.checkStorage('disk', {
-        path: '/',
-        thresholdPercent: 0.9, // 90% threshold
-      }),
+      () =>
+        this.disk.checkStorage('disk', {
+          path: '/',
+          thresholdPercent: 0.9, // 90% threshold
+        }),
     ]);
   }
 
@@ -93,9 +94,7 @@ export class HealthController {
   @ApiOperation({ summary: 'Liveness probe for Kubernetes' })
   @ApiResponse({ status: 200, description: 'Application is alive' })
   async checkLiveness() {
-    return this.health.check([
-      () => this.memory.checkRSS('memory_rss', 1024 * 1024 * 1024),
-    ]);
+    return this.health.check([() => this.memory.checkRSS('memory_rss', 1024 * 1024 * 1024)]);
   }
 
   /**

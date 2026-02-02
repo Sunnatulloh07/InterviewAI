@@ -19,7 +19,7 @@ export class AiTtsService {
     @Inject(CACHE_MANAGER) cache: Cache,
   ) {
     this.cache = cache;
-    
+
     const apiKey = this.configService.get<string>('OPENAI_API_KEY');
     if (apiKey) {
       this.openai = new OpenAI({ apiKey });
@@ -74,7 +74,9 @@ export class AiTtsService {
       await this.cache.set(cacheKey, audioBuffer, this.cacheTTL);
 
       const duration = Date.now() - startTime;
-      this.logger.log(`TTS synthesis completed. Text length: ${text.length} chars, Duration: ${duration}ms`);
+      this.logger.log(
+        `TTS synthesis completed. Text length: ${text.length} chars, Duration: ${duration}ms`,
+      );
 
       return { audioBuffer, duration };
     } catch (error: any) {
@@ -95,7 +97,7 @@ export class AiTtsService {
     let hash = 0;
     for (let i = 0; i < text.length; i++) {
       const char = text.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
+      hash = (hash << 5) - hash + char;
       hash = hash & hash;
     }
     return Math.abs(hash).toString(16);

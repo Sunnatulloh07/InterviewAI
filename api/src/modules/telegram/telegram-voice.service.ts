@@ -70,7 +70,7 @@ export class TelegramVoiceService {
     // 2. Mock interview (currentInterviewSessionId is set)
     const isInLiveSession = ctx.session.liveSessionStep === 'active';
     const isInMockInterview = ctx.session.currentInterviewSessionId !== undefined;
-    
+
     if (!isInLiveSession && !isInMockInterview) {
       // User is not in any active flow - reject voice message
       const notInFlowText: Record<string, string> = {
@@ -90,7 +90,7 @@ export class TelegramVoiceService {
     if (!canUseVoice) {
       const featureName = isInLiveSession ? 'Voice in Live' : 'Voice Messages';
       this.logger.warn(`User ${userId} tried to use ${featureName} but not allowed by plan`);
-      
+
       const upgradeText: Record<string, string> = {
         uz: `🔒 <b>Ovozli xabarlar cheklangan</b>\n\nSizning tarifingizda bu funksiya mavjud emas.\nIltimos, /upgrade buyrug'i orqali tarifni yangilang.`,
         ru: `🔒 <b>Голосовые сообщения ограничены</b>\n\nВ вашем тарифе эта функция недоступна.\nПожалуйста, обновите тариф через /upgrade.`,
@@ -102,7 +102,7 @@ export class TelegramVoiceService {
 
     // Track if quota was already deducted (to prevent duplicate charging)
     let voiceQuotaDeducted = false;
-    
+
     try {
       // Get voice object early for quota pre-check
       const voice = ctx.message?.voice as Voice;
@@ -193,14 +193,14 @@ export class TelegramVoiceService {
       // GEMINI MULTIMODAL: Process ALL voice messages with Gemini
       // This handles audio directly without separate STT step
       // ═══════════════════════════════════════════════════════════════════
-      
+
       if (this.geminiAudioService.isEnabled()) {
         this.logger.log(`Using Gemini for voice message from user ${userId}`);
-        
+
         try {
           // Get session metadata if available
           const metadata = ctx.session?.liveSessionMetadata || {};
-          
+
           // Process audio with Gemini
           const response = await this.geminiAudioService.processLiveAudio({
             audioBase64: base64Audio,
@@ -217,12 +217,12 @@ export class TelegramVoiceService {
           // CRITICAL FIX: Deduct quota BEFORE sending response to user
           // If quota fails, don't send response (user not charged for failed service)
           const estimatedDurationSeconds = Math.max(30, voice.duration || 30);
-          
+
           // REMOVED: Old double tracking system
           // await this.subscriptionService.addLiveMinutes(userId, 1);
           // REASON: voiceQuota.realVoice.used already tracks live interview usage
           // No need for separate usage.liveInterviewMinutesThisMonth counter
-          
+
           // Deduct from realVoice quota (throws if insufficient)
           await this.voiceQuotaService.checkAndUseVoice(
             userId,
@@ -231,24 +231,22 @@ export class TelegramVoiceService {
             undefined, // No session ID for live interviews
             response.text?.substring(0, 500), // Log AI response for tracking
           );
-          
+
           // Delete processing message AFTER quota deduction succeeds
           try {
             await ctx.api.deleteMessage(processingMsg.chat.id, processingMsg.message_id);
           } catch {
             // Ignore delete errors
           }
-          
+
           // Now send response (quota already deducted, user gets service)
           const responseText = `${response.text}\n\n⏱️ ${response.processingTime}ms | 🤖 Gemini`;
           await this.sendSafeMessage(ctx, responseText);
 
           // CRITICAL: Mark quota as deducted to prevent duplicate charging in STT fallback
           voiceQuotaDeducted = true;
-          
-          this.logger.log(
-            `Gemini audio processed: ${response.processingTime}ms, user=${userId}`,
-          );
+
+          this.logger.log(`Gemini audio processed: ${response.processingTime}ms, user=${userId}`);
           return;
         } catch (error: any) {
           this.logger.error(
@@ -267,12 +265,10 @@ export class TelegramVoiceService {
         }
       }
 
-
-
       // ═══════════════════════════════════════════════════════════════════
       // FALLBACK: STT + LLM (only if Gemini is disabled)
       // ═══════════════════════════════════════════════════════════════════
-      
+
       // Update message: Transcribing
       const transcribingText: Record<string, string> = {
         uz: `🎤 Ovozli xabar qayta ishlanmoqda...\n📝 Matnga o'girilmoqda...`,
@@ -331,7 +327,7 @@ export class TelegramVoiceService {
 
       // Check if in live session (for STT fallback path)
       const isLive = await this.liveService.isInLiveSession(telegramId);
-      
+
       if (isLive) {
         await this.handleLiveVoiceMessage(ctx, transcribedText, userId, voice);
         return;
@@ -342,7 +338,7 @@ export class TelegramVoiceService {
       if (ctx.session.currentInterviewSessionId && ctx.session.currentQuestionIndex !== undefined) {
         // Note: Quota check already done before file download (line 111-125)
         // No need to check again here - file already downloaded
-        
+
         // Handle as interview answer (voice message) - For MOCK and LIVE interviews
         // userId already declared at line 82
         if (!userId) {
@@ -538,21 +534,24 @@ export class TelegramVoiceService {
           // This prevents users from getting free service
           this.logger.error(
             `CRITICAL: Failed to deduct mock voice quota for user ${userId}: ${error.message}. ` +
-            `Answer NOT submitted to prevent revenue loss. Duration: ${transcription.duration}s`,
+              `Answer NOT submitted to prevent revenue loss. Duration: ${transcription.duration}s`,
             error.stack,
           );
-          
+
           // Inform user that their answer was not saved due to quota issue
           const quotaErrorText: Record<string, string> = {
-            uz: `❌ <b>Ovozli javob saqlanmadi</b>\n\n` +
-                `Hisobingizda yetarli daqiqalar yo'q.\n` +
-                `Iltimos, /voice buyrug'i orqali tarifni yangilang va qayta urinib ko'ring.`,
-            ru: `❌ <b>Голосовой ответ не сохранен</b>\n\n` +
-                `Недостаточно минут на вашем счете.\n` +
-                `Пожалуйста, обновите тариф через /voice и попробуйте снова.`,
-            en: `❌ <b>Voice answer not saved</b>\n\n` +
-                `Not enough minutes on your account.\n` +
-                `Please upgrade via /voice and try again.`,
+            uz:
+              `❌ <b>Ovozli javob saqlanmadi</b>\n\n` +
+              `Hisobingizda yetarli daqiqalar yo'q.\n` +
+              `Iltimos, /voice buyrug'i orqali tarifni yangilang va qayta urinib ko'ring.`,
+            ru:
+              `❌ <b>Голосовой ответ не сохранен</b>\n\n` +
+              `Недостаточно минут на вашем счете.\n` +
+              `Пожалуйста, обновите тариф через /voice и попробуйте снова.`,
+            en:
+              `❌ <b>Voice answer not saved</b>\n\n` +
+              `Not enough minutes on your account.\n` +
+              `Please upgrade via /voice and try again.`,
           };
           await ctx.reply(quotaErrorText[lang] || quotaErrorText['en'], {
             parse_mode: 'HTML',
@@ -628,7 +627,12 @@ export class TelegramVoiceService {
     }
   }
 
-  private async handleLiveVoiceMessage(ctx: BotContext, transcribedText: string, userId: string, voice: Voice) {
+  private async handleLiveVoiceMessage(
+    ctx: BotContext,
+    transcribedText: string,
+    userId: string,
+    voice: Voice,
+  ) {
     const telegramId = ctx.from?.id as number;
 
     // Get user for language preference
@@ -787,7 +791,7 @@ export class TelegramVoiceService {
     // CRITICAL FIX: Deduct from realVoice quota for STT fallback path
     // This method is only called from STT path (not Gemini), so always deduct
     const durationSeconds = voice.duration || 30; // Default 30s if unknown
-    
+
     try {
       // Deduct from realVoice quota for live interviews
       await this.voiceQuotaService.checkAndUseVoice(
@@ -804,7 +808,7 @@ export class TelegramVoiceService {
       // CRITICAL: Log as ERROR for quota deduction failures
       this.logger.error(
         `CRITICAL: Failed to deduct real voice quota (STT path) for user ${userId}: ${error.message}. ` +
-        `User may have bypassed quota check! Duration: ${durationSeconds}s`,
+          `User may have bypassed quota check! Duration: ${durationSeconds}s`,
         error.stack,
       );
       // Continue - already processed the answer, can't rollback
@@ -831,12 +835,12 @@ export class TelegramVoiceService {
 
   /**
    * Handle live voice message using Gemini multimodal (faster path)
-   * 
+   *
    * This method sends audio directly to Gemini, which:
    * 1. Transcribes the audio
    * 2. Understands the context
    * 3. Generates a professional response
-   * 
+   *
    * Benefits:
    * - Single API call instead of STT + LLM
    * - ~60-70% faster response time
@@ -849,10 +853,10 @@ export class TelegramVoiceService {
     lang: string,
   ): Promise<void> {
     const telegramId = ctx.from?.id as number;
-    
+
     // Get metadata from session
     const metadata = ctx.session.liveSessionMetadata || {};
-    
+
     // Show processing message (Gemini-specific)
     const processingText: Record<string, string> = {
       uz: `🚀 Audio tahlil qilinmoqda (Gemini)...`,
@@ -884,7 +888,7 @@ export class TelegramVoiceService {
 
       // Format and send response
       const responseText = `${response.text}\n\n⏱️ ${response.processingTime}ms | 🤖 Gemini`;
-      
+
       await ctx.reply(responseText, {
         parse_mode: 'HTML',
       });
@@ -894,9 +898,7 @@ export class TelegramVoiceService {
       // No separate usage.liveInterviewMinutesThisMonth counter needed
       // Quota already deducted above via voiceQuotaService.checkAndUseVoice()
 
-      this.logger.log(
-        `Gemini live audio processed: ${response.processingTime}ms, user=${userId}`,
-      );
+      this.logger.log(`Gemini live audio processed: ${response.processingTime}ms, user=${userId}`);
     } catch (error: any) {
       // Delete processing message on error
       try {
@@ -904,7 +906,7 @@ export class TelegramVoiceService {
       } catch {
         // Ignore
       }
-      
+
       // Re-throw to trigger fallback
       throw error;
     }
@@ -915,7 +917,7 @@ export class TelegramVoiceService {
    */
   private async sendSafeMessage(ctx: BotContext, text: string): Promise<void> {
     const chunks = this.splitMarkdownMessage(text);
-    
+
     for (const chunk of chunks) {
       try {
         await ctx.reply(chunk, { parse_mode: 'Markdown' });
@@ -963,9 +965,8 @@ export class TelegramVoiceService {
       }
 
       const feedbackText = typeof feedback === 'string' ? feedback : JSON.stringify(feedback);
-      const summaryText = feedbackText.length > 1000 
-        ? feedbackText.substring(0, 1000) + '...' 
-        : feedbackText;
+      const summaryText =
+        feedbackText.length > 1000 ? feedbackText.substring(0, 1000) + '...' : feedbackText;
 
       const { audioBuffer } = await this.ttsService.synthesize(summaryText, {
         language: lang,
@@ -992,14 +993,14 @@ export class TelegramVoiceService {
     let currentLanguage = '';
 
     const lines = text.split('\n');
-    
+
     for (const line of lines) {
       // Check for code block toggle
       if (line.trim().startsWith('```')) {
         insideCodeBlock = !insideCodeBlock;
         if (insideCodeBlock) {
           // Extract language if present (e.g. ```typescript)
-          currentLanguage = line.trim().slice(3).trim(); 
+          currentLanguage = line.trim().slice(3).trim();
         } else {
           currentLanguage = '';
         }
@@ -1021,11 +1022,11 @@ export class TelegramVoiceService {
         currentChunk += line + '\n';
       }
     }
-    
+
     if (currentChunk.trim()) {
       chunks.push(currentChunk);
     }
-    
+
     return chunks;
   }
 }

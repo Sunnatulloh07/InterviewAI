@@ -12,13 +12,15 @@ export class OcrService {
   async recognize(imageBuffer: Buffer, language = 'eng'): Promise<string> {
     try {
       this.logger.log(`Starting OCR processing (Language: ${language})...`);
-      
+
       const worker = await createWorker(language);
-      
-      const { data: { text } } = await worker.recognize(imageBuffer);
-      
+
+      const {
+        data: { text },
+      } = await worker.recognize(imageBuffer);
+
       await worker.terminate();
-      
+
       this.logger.log(`OCR processing completed. Extracted ${text.length} characters.`);
       return text;
     } catch (error) {

@@ -62,10 +62,10 @@ export interface ProcessLiveAudioParams {
 
 /**
  * Service for processing audio using Gemini multimodal capabilities
- * 
+ *
  * This service provides faster audio processing for Live Interviews by
  * sending audio directly to Gemini instead of using separate STT + LLM calls.
- * 
+ *
  * @example
  * ```typescript
  * const response = await geminiAudioService.processLiveAudio({
@@ -85,7 +85,7 @@ export class AiGeminiAudioService {
 
   constructor(private readonly configService: ConfigService) {
     this.openai = createOpenAIClient(this.configService);
-    
+
     if (this.isEnabled()) {
       this.logger.log(`Gemini Audio Service initialized with model: ${this.getModel()}`);
     } else {
@@ -113,20 +113,20 @@ export class AiGeminiAudioService {
 
   /**
    * Process audio and generate AI response in a single call
-   * 
+   *
    * This is the main method for Live Interview audio processing.
    * It sends audio directly to Gemini, which:
    * 1. Transcribes the audio
    * 2. Understands the context
    * 3. Generates a professional response
-   * 
+   *
    * @param params - Audio processing parameters
    * @returns AI response with processing metadata
    * @throws BadRequestException if service is disabled or audio format unsupported
    */
   async processLiveAudio(params: ProcessLiveAudioParams): Promise<GeminiAudioResponse> {
     const startTime = Date.now();
-    
+
     // Validate service is enabled
     if (!this.isEnabled()) {
       throw new BadRequestException(
@@ -203,10 +203,10 @@ export class AiGeminiAudioService {
       } catch (error: any) {
         lastError = error;
         const processingTime = Date.now() - startTime;
-        
+
         // Check if error is retryable
         const isRetryable = this.isRetryableError(error);
-        
+
         this.logger.warn(
           `Gemini audio attempt ${attempt}/${maxRetries} failed after ${processingTime}ms: ${error.message} (retryable: ${isRetryable})`,
         );
@@ -226,7 +226,7 @@ export class AiGeminiAudioService {
       `Gemini audio processing failed after ${processingTime}ms and ${maxRetries} attempts: ${lastError?.message}`,
       lastError?.stack,
     );
-    
+
     throw new BadRequestException(
       `Audio processing failed: ${lastError?.message || 'Unknown error'}`,
     );
@@ -255,7 +255,9 @@ export class AiGeminiAudioService {
               content: [
                 {
                   type: 'text',
-                  text: systemPrompt + '\n\n(DIQQAT: Quyida audio xabar ilova qilingan. Uni tinglang va javob bering.)',
+                  text:
+                    systemPrompt +
+                    '\n\n(DIQQAT: Quyida audio xabar ilova qilingan. Uni tinglang va javob bering.)',
                 },
                 // OpenRouter generic multimodal format (using image_url for audio data URI)
                 {
@@ -299,22 +301,22 @@ export class AiGeminiAudioService {
     if (error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT') {
       return true;
     }
-    
+
     // Rate limiting
     if (error.status === 429) {
       return true;
     }
-    
+
     // Server errors (5xx)
     if (error.status >= 500 && error.status < 600) {
       return true;
     }
-    
+
     // Timeout/abort
     if (error.name === 'AbortError') {
       return true;
     }
-    
+
     return false;
   }
 
@@ -322,7 +324,7 @@ export class AiGeminiAudioService {
    * Sleep utility for retry backoff
    */
   private sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -331,7 +333,7 @@ export class AiGeminiAudioService {
 
   /**
    * Build context-aware system prompt for Live Interview
-   * 
+   *
    * This prompt instructs Gemini to:
    * 1. Transcribe the audio question
    * 2. Provide a professional answer

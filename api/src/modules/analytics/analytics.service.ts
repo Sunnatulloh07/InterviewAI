@@ -22,17 +22,19 @@ export class AnalyticsService {
   }
 
   async getPlanDistribution(): Promise<any> {
-    const distribution = await this.eventModel.aggregate([
-      {
-        $group: {
-          _id: '$properties.plan',
-          count: { $sum: 1 },
+    const distribution = await this.eventModel
+      .aggregate([
+        {
+          $group: {
+            _id: '$properties.plan',
+            count: { $sum: 1 },
+          },
         },
-      },
-      {
-        $sort: { count: -1 as any },
-      },
-    ]).exec();
+        {
+          $sort: { count: -1 as any },
+        },
+      ])
+      .exec();
 
     const result: any = {};
     for (const item of distribution) {
@@ -51,23 +53,33 @@ export class AnalyticsService {
     const since = new Date();
     since.setDate(since.getDate() - days);
 
-    const featureUsage = await this.eventModel.aggregate([
-      {
-        $match: {
-          timestamp: { $gte: since },
-          eventType: { $in: ['daily_task_completed', 'ocr_used', 'tts_used', 'mock_interview_started', 'mock_interview_completed'] },
+    const featureUsage = await this.eventModel
+      .aggregate([
+        {
+          $match: {
+            timestamp: { $gte: since },
+            eventType: {
+              $in: [
+                'daily_task_completed',
+                'ocr_used',
+                'tts_used',
+                'mock_interview_started',
+                'mock_interview_completed',
+              ],
+            },
+          },
         },
-      },
-      {
-        $group: {
-          _id: '$eventType',
-          count: { $sum: 1 },
+        {
+          $group: {
+            _id: '$eventType',
+            count: { $sum: 1 },
+          },
         },
-      },
-      {
-        $sort: { count: -1 as any },
-      },
-    ]).exec();
+        {
+          $sort: { count: -1 as any },
+        },
+      ])
+      .exec();
 
     const result: any = {};
     for (const item of featureUsage) {
@@ -85,27 +97,29 @@ export class AnalyticsService {
     const since = new Date();
     since.setDate(since.getDate() - days);
 
-    const usage = await this.eventModel.aggregate([
-      {
-        $match: {
-          timestamp: { $gte: since },
-          eventType: { $in: ['voice_quota_used'] },
-        },
-      },
-      {
-        $group: {
-          _id: {
-            date: { $dateToString: { format: '%Y-%m-%d', date: '$timestamp' } },
-            plan: '$properties.plan',
+    const usage = await this.eventModel
+      .aggregate([
+        {
+          $match: {
+            timestamp: { $gte: since },
+            eventType: { $in: ['voice_quota_used'] },
           },
-          minutesUsed: { $sum: '$properties.minutes' },
-          users: { $addToSet: '$userId' },
         },
-      },
-      {
-        $sort: { '_id.date': -1 as any },
-      },
-    ]).exec();
+        {
+          $group: {
+            _id: {
+              date: { $dateToString: { format: '%Y-%m-%d', date: '$timestamp' } },
+              plan: '$properties.plan',
+            },
+            minutesUsed: { $sum: '$properties.minutes' },
+            users: { $addToSet: '$userId' },
+          },
+        },
+        {
+          $sort: { '_id.date': -1 as any },
+        },
+      ])
+      .exec();
 
     const result: any = {};
     for (const item of usage) {
@@ -131,28 +145,30 @@ export class AnalyticsService {
     const since = new Date();
     since.setDate(since.getDate() - days);
 
-    const completion = await this.eventModel.aggregate([
-      {
-        $match: {
-          timestamp: { $gte: since },
-          eventType: 'daily_task_completed',
-        },
-      },
-      {
-        $group: {
-          _id: {
-            date: { $dateToString: { format: '%Y-%m-%d', date: '$timestamp' } },
-            plan: '$properties.plan',
+    const completion = await this.eventModel
+      .aggregate([
+        {
+          $match: {
+            timestamp: { $gte: since },
+            eventType: 'daily_task_completed',
           },
-          tasksCompleted: { $sum: { $ifNull: ['$properties.tasksCompleted', 1] } },
-          users: { $addToSet: '$userId' },
-          averageScore: { $avg: '$properties.averageScore' },
         },
-      },
-      {
-        $sort: { '_id.date': -1 as any },
-      },
-    ]).exec();
+        {
+          $group: {
+            _id: {
+              date: { $dateToString: { format: '%Y-%m-%d', date: '$timestamp' } },
+              plan: '$properties.plan',
+            },
+            tasksCompleted: { $sum: { $ifNull: ['$properties.tasksCompleted', 1] } },
+            users: { $addToSet: '$userId' },
+            averageScore: { $avg: '$properties.averageScore' },
+          },
+        },
+        {
+          $sort: { '_id.date': -1 as any },
+        },
+      ])
+      .exec();
 
     const result: any = {};
     for (const item of completion) {
@@ -179,27 +195,29 @@ export class AnalyticsService {
     const since = new Date();
     since.setDate(since.getDate() - days);
 
-    const revenue = await this.eventModel.aggregate([
-      {
-        $match: {
-          timestamp: { $gte: since },
-          eventType: 'subscription_created',
-        },
-      },
-      {
-        $group: {
-          _id: {
-            date: { $dateToString: { format: '%Y-%m-%d', date: '$timestamp' } },
-            plan: '$properties.plan',
+    const revenue = await this.eventModel
+      .aggregate([
+        {
+          $match: {
+            timestamp: { $gte: since },
+            eventType: 'subscription_created',
           },
-          revenue: { $sum: '$properties.amount' },
-          subscriptions: { $sum: 1 },
         },
-      },
-      {
-        $sort: { '_id.date': -1 as any },
-      },
-    ]).exec();
+        {
+          $group: {
+            _id: {
+              date: { $dateToString: { format: '%Y-%m-%d', date: '$timestamp' } },
+              plan: '$properties.plan',
+            },
+            revenue: { $sum: '$properties.amount' },
+            subscriptions: { $sum: 1 },
+          },
+        },
+        {
+          $sort: { '_id.date': -1 as any },
+        },
+      ])
+      .exec();
 
     const result: any = {};
     for (const item of revenue) {
@@ -305,7 +323,10 @@ export class AnalyticsService {
   }
 
   private calculatePercentages(distribution: any): any {
-    const total = Object.values(distribution).reduce((sum: number, val: any) => sum + (val as number), 0) as number;
+    const total = Object.values(distribution).reduce(
+      (sum: number, val: any) => sum + (val as number),
+      0,
+    ) as number;
     const result: any = {};
     for (const [plan, count] of Object.entries(distribution)) {
       result[plan] = total > 0 ? Math.round(((count as number) / total) * 100) : 0;
@@ -383,8 +404,8 @@ export class AnalyticsService {
       totalSubscriptions,
       planRevenue,
       planSubscriptions,
-      averageRevenue: totalSubscriptions > 0 ? Math.round((totalRevenue / totalSubscriptions) * 100) / 100 : 0,
+      averageRevenue:
+        totalSubscriptions > 0 ? Math.round((totalRevenue / totalSubscriptions) * 100) / 100 : 0,
     };
   }
 }
-

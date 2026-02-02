@@ -13,14 +13,14 @@ import {
 
 /**
  * User Activation Service
- * 
+ *
  * Handles engagement for two user segments:
- * 
+ *
  * 1. NON-REGISTERED USERS (started bot but didn't register)
  *    - Send 10 different motivational messages
  *    - Goal: Convert to registered users
  *    - Schedule: Every 6 hours, send 1 random message
- * 
+ *
  * 2. FREE TRIAL USERS (registered but not fully using features)
  *    - Remind about trial expiration
  *    - Show remaining days and unused features
@@ -43,7 +43,7 @@ export class UserActivationService {
   /**
    * Engage non-registered users
    * Runs every 6 hours to send motivational messages
-   * 
+   *
    * Note: Non-registered users don't have User document yet,
    * so we track them via TelegramSession with a flag
    */
@@ -56,9 +56,9 @@ export class UserActivationService {
       // TODO: Implement tracking for users who started bot but didn't register
       // This requires adding a flag to TelegramSession or creating a separate collection
       // For now, we'll skip this as it needs schema changes
-      
+
       this.logger.log('Non-registered user engagement - pending implementation');
-      
+
       // Implementation plan:
       // 1. Track users who pressed /start in TelegramSession
       // 2. Check if they completed registration (have User document)
@@ -80,7 +80,7 @@ export class UserActivationService {
   async sendTrialReminders() {
     try {
       const now = new Date();
-      
+
       // Find users on free trial
       const trialUsers = await this.userModel
         .find({
@@ -107,7 +107,7 @@ export class UserActivationService {
           if (lastNotificationDate) {
             const todayStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
             const lastNotifStr = new Date(lastNotificationDate).toISOString().split('T')[0];
-            
+
             if (lastNotifStr === todayStr) {
               skipped++;
               continue; // Already sent today
@@ -122,7 +122,7 @@ export class UserActivationService {
 
           const trialEndsAt = new Date(user.subscription.trialEndsAt);
           const daysRemaining = Math.ceil(
-            (trialEndsAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+            (trialEndsAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
           );
 
           if (daysRemaining <= 0) {
@@ -135,7 +135,7 @@ export class UserActivationService {
           const usedInterviews = user.usage?.mockInterviewsThisMonth || 0;
 
           let message: string;
-          
+
           if (daysRemaining === 1) {
             // Trial ending tomorrow - urgent message
             message = getTrialEndingSoonMessage(user.language || 'uz');
@@ -145,7 +145,7 @@ export class UserActivationService {
               daysRemaining,
               usedInterviews,
               totalInterviews,
-              user.language || 'uz'
+              user.language || 'uz',
             );
           }
 
@@ -164,7 +164,7 @@ export class UserActivationService {
 
               sent++;
               this.logger.debug(
-                `Sent trial reminder to user ${user._id} (${daysRemaining} days remaining)`
+                `Sent trial reminder to user ${user._id} (${daysRemaining} days remaining)`,
               );
             } catch (sendError: any) {
               // CRITICAL: Handle Telegram bot block errors
@@ -177,9 +177,7 @@ export class UserActivationService {
                 errorDescription.includes('user is deactivated') ||
                 errorDescription.includes('chat not found')
               ) {
-                this.logger.warn(
-                  `User ${user._id} blocked bot. Marking as blocked.`,
-                );
+                this.logger.warn(`User ${user._id} blocked bot. Marking as blocked.`);
 
                 await this.userModel.findByIdAndUpdate(user._id, {
                   $set: {
@@ -211,7 +209,7 @@ export class UserActivationService {
           await this.delay(200);
         } catch (userError: any) {
           this.logger.error(
-            `Failed to send trial reminder to user ${user._id}: ${userError.message}`
+            `Failed to send trial reminder to user ${user._id}: ${userError.message}`,
           );
         }
       }
@@ -225,7 +223,10 @@ export class UserActivationService {
   /**
    * Send activation message to specific user (can be called manually)
    */
-  async sendActivationMessage(userId: string, messageType: 'trial' | 'non_registered'): Promise<boolean> {
+  async sendActivationMessage(
+    userId: string,
+    messageType: 'trial' | 'non_registered',
+  ): Promise<boolean> {
     try {
       const user = await this.userModel.findById(userId).lean();
       if (!user || !user.telegramId) {
@@ -242,7 +243,7 @@ export class UserActivationService {
         const now = new Date();
         const trialEndsAt = new Date(user.subscription.trialEndsAt);
         const daysRemaining = Math.ceil(
-          (trialEndsAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+          (trialEndsAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
         );
         const usedInterviews = user.usage?.mockInterviewsThisMonth || 0;
         const totalInterviews = 5;
@@ -251,7 +252,7 @@ export class UserActivationService {
           daysRemaining,
           usedInterviews,
           totalInterviews,
-          user.language || 'uz'
+          user.language || 'uz',
         );
       } else {
         message = getRandomNonRegisteredMessage(user.language || 'uz');

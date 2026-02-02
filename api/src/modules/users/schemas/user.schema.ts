@@ -307,7 +307,11 @@ UserSchema.index({ telegramId: 1, deletedAt: 1 });
 UserSchema.index({ createdAt: -1 });
 
 // Engagement indexes for notification scheduling
-UserSchema.index({ 'engagement.nextNotificationAt': 1, 'engagement.isBotBlocked': 1, 'engagement.notificationsPaused': 1 });
+UserSchema.index({
+  'engagement.nextNotificationAt': 1,
+  'engagement.isBotBlocked': 1,
+  'engagement.notificationsPaused': 1,
+});
 UserSchema.index({ 'engagement.lastActiveAt': 1 });
 
 // Survey scheduling index (for cron job queries)
@@ -346,11 +350,15 @@ UserSchema.index({
 // Index for finding users who have never been active (createdAt = lastActiveAt)
 UserSchema.index({
   'engagement.lastActiveAt': 1,
-  'createdAt': 1,
+  createdAt: 1,
 });
 
 // Index for trial stats queries
-UserSchema.index({ 'subscription.status': 1, 'subscription.plan': 1, 'usage.mockInterviewsThisMonth': 1 });
+UserSchema.index({
+  'subscription.status': 1,
+  'subscription.plan': 1,
+  'usage.mockInterviewsThisMonth': 1,
+});
 
 // Virtual properties
 UserSchema.virtual('fullName').get(function (this: UserDocument) {
@@ -485,15 +493,15 @@ UserSchema.pre('save', function (next) {
     // Only schedule if: 1) not yet scheduled, 2) not already completed, 3) user is new (no lastActiveAt set beyond initial creation)
     const isNewUser = !user.engagement?.surveyCompletedAt && !user.engagement?.scheduledSurveyAt;
     const hasNeverBeenScheduled = !user.engagement?.surveyCompletedAt; // Don't re-schedule if completed
-    
+
     if (isNewUser && hasNeverBeenScheduled && this.isNew) {
       const surveyDelayHours = 3 + Math.random(); // 3-4 hours random
       const scheduledTime = new Date(Date.now() + surveyDelayHours * 60 * 60 * 1000);
-      
+
       // Ensure survey is scheduled within allowed hours (09:00-21:00 UTC+5)
       const utcPlus5Hours = scheduledTime.getUTCHours() + 5;
       const localHour = utcPlus5Hours % 24;
-      
+
       if (localHour < 9) {
         // Too early, schedule for 09:00 same day
         scheduledTime.setUTCHours(4, 0, 0, 0); // 09:00 UTC+5 = 04:00 UTC
@@ -508,7 +516,7 @@ UserSchema.pre('save', function (next) {
       }
       user.engagement.scheduledSurveyAt = scheduledTime;
     }
-    
+
     // Initialize inactivity tracking fields for new users
     if (user.isNew && user.engagement) {
       user.engagement.inactiveReminderLevel = null;

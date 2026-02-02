@@ -7,13 +7,7 @@ import { AnalyticsModule } from '../analytics/analytics.module';
 import { VoiceModule } from '../voice/voice.module';
 
 @Module({
-  imports: [
-    MongooseModule,
-    UsersModule,
-    PaymentsModule,
-    AnalyticsModule,
-    VoiceModule,
-  ],
+  imports: [MongooseModule, UsersModule, PaymentsModule, AnalyticsModule, VoiceModule],
   controllers: [AdminController],
   exports: [],
 })

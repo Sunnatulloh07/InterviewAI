@@ -7,7 +7,11 @@ import { ConfigService } from '@nestjs/config';
 import { NotificationLogRepository } from './notification-log.repository';
 import { EngagementAiService } from './engagement-ai.service';
 import { NotificationTrigger, NotificationDeliveryStatus } from './schemas/notification-log.schema';
-import { EngagementUserContext, NotificationResult, CreateNotificationLogDto } from './dto/engagement.dto';
+import {
+  EngagementUserContext,
+  NotificationResult,
+  CreateNotificationLogDto,
+} from './dto/engagement.dto';
 import { JobSeekingStatus } from './dto/job-seeking-status.enum';
 import { UsersService } from '../users/users.service';
 import { InterviewsService } from '../interviews/interviews.service';
@@ -34,7 +38,7 @@ const TRIGGER_THRESHOLDS = {
 
 /**
  * EngagementService
- * 
+ *
  * Core service for smart user engagement. Analyzes user state,
  * detects trigger conditions, applies backoff algorithm,
  * generates personalized messages via AI, and sends via Telegram.
@@ -114,7 +118,9 @@ export class EngagementService implements OnModuleInit {
 
       // Skip if message content is empty (e.g., trial notifications handled by cron job)
       if (!generated.content || generated.content.trim() === '') {
-        this.logger.debug(`Skipping empty engagement message for trigger=${trigger}, user=${userId}`);
+        this.logger.debug(
+          `Skipping empty engagement message for trigger=${trigger}, user=${userId}`,
+        );
         return null;
       }
 
@@ -136,7 +142,7 @@ export class EngagementService implements OnModuleInit {
    */
   shouldSendNotification(user: UserDocument): boolean {
     const engagement = user.engagement;
-    
+
     // No engagement data yet - user is eligible
     if (!engagement) {
       return true;
@@ -147,7 +153,10 @@ export class EngagementService implements OnModuleInit {
     }
 
     if (engagement.notificationsPaused) {
-      if (!engagement.notificationsPausedUntil || new Date() < engagement.notificationsPausedUntil) {
+      if (
+        !engagement.notificationsPausedUntil ||
+        new Date() < engagement.notificationsPausedUntil
+      ) {
         return false;
       }
       // Pause expired, should resume
@@ -189,7 +198,7 @@ export class EngagementService implements OnModuleInit {
     // Priority 2: Trial ending soon
     if (user.subscription?.status === 'trialing' && user.subscription?.trialEndsAt) {
       const daysUntilTrialEnd = Math.ceil(
-        (new Date(user.subscription.trialEndsAt).getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+        (new Date(user.subscription.trialEndsAt).getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
       );
       if ((TRIGGER_THRESHOLDS.TRIAL_ENDING_DAYS as readonly number[]).includes(daysUntilTrialEnd)) {
         return NotificationTrigger.TRIAL_ENDING;
@@ -198,7 +207,7 @@ export class EngagementService implements OnModuleInit {
 
     // Priority 3: Long absence
     const daysSinceActive = Math.floor(
-      (now.getTime() - new Date(lastActiveAt).getTime()) / (1000 * 60 * 60 * 24)
+      (now.getTime() - new Date(lastActiveAt).getTime()) / (1000 * 60 * 60 * 24),
     );
     if (daysSinceActive >= TRIGGER_THRESHOLDS.LONG_ABSENCE_DAYS) {
       return NotificationTrigger.LONG_ABSENCE;
@@ -221,8 +230,12 @@ export class EngagementService implements OnModuleInit {
 
     // Priority 5: Job-seeker inactivity (active job seekers inactive 24h+)
     if (user.engagement?.jobSeekingStatus === JobSeekingStatus.ACTIVELY_LOOKING) {
-      const hoursSinceActive = (now.getTime() - new Date(lastActiveAt).getTime()) / (1000 * 60 * 60);
-      if (hoursSinceActive >= TRIGGER_THRESHOLDS.JOBSEEKER_INACTIVE_HOURS && hoursSinceActive < 48) {
+      const hoursSinceActive =
+        (now.getTime() - new Date(lastActiveAt).getTime()) / (1000 * 60 * 60);
+      if (
+        hoursSinceActive >= TRIGGER_THRESHOLDS.JOBSEEKER_INACTIVE_HOURS &&
+        hoursSinceActive < 48
+      ) {
         return NotificationTrigger.JOBSEEKER_INACTIVE;
       }
     }
@@ -241,8 +254,12 @@ export class EngagementService implements OnModuleInit {
     const lastActiveAt = user.engagement?.lastActiveAt || user.createdAt;
 
     // Get interview stats with error handling
-    let interviewStats: { averageScore: number; correctQuestions: string[]; incorrectQuestions: string[]; allQuestions: string[] } = 
-      { averageScore: 0, correctQuestions: [], incorrectQuestions: [], allQuestions: [] };
+    let interviewStats: {
+      averageScore: number;
+      correctQuestions: string[];
+      incorrectQuestions: string[];
+      allQuestions: string[];
+    } = { averageScore: 0, correctQuestions: [], incorrectQuestions: [], allQuestions: [] };
     try {
       interviewStats = await this.interviewsService.getUserInterviewContext(user.id, 5);
     } catch (error) {
@@ -258,14 +275,14 @@ export class EngagementService implements OnModuleInit {
     }
 
     const daysSinceActive = Math.floor(
-      (now.getTime() - new Date(lastActiveAt).getTime()) / (1000 * 60 * 60 * 24)
+      (now.getTime() - new Date(lastActiveAt).getTime()) / (1000 * 60 * 60 * 24),
     );
 
     // Calculate trial days remaining
     let trialDaysRemaining: number | undefined;
     if (user.subscription?.status === 'trialing' && user.subscription?.trialEndsAt) {
       trialDaysRemaining = Math.ceil(
-        (new Date(user.subscription.trialEndsAt).getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+        (new Date(user.subscription.trialEndsAt).getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
       );
     }
 
@@ -360,7 +377,11 @@ export class EngagementService implements OnModuleInit {
     }
 
     // Generic failure
-    await this.notificationLogRepository.markFailed(logId, NotificationDeliveryStatus.FAILED, errorMessage);
+    await this.notificationLogRepository.markFailed(
+      logId,
+      NotificationDeliveryStatus.FAILED,
+      errorMessage,
+    );
     this.logger.error(`Failed to send notification to ${telegramId}: ${errorMessage}`);
     return { success: false, error: errorMessage };
   }
@@ -375,17 +396,17 @@ export class EngagementService implements OnModuleInit {
   private async updateUserAfterSend(userId: string): Promise<void> {
     const now = new Date();
     const backoffDays = BACKOFF_DAYS[0]; // 1 day
-    
+
     // Randomize next notification time to prevent spikes
     // Target window: Tomorrow 09:00 - 21:00 Tashkent Time
     // Tashkent is UTC+5, so UTC window is 04:00 - 16:00
     const nextNotificationAt = new Date(now.getTime() + backoffDays * 24 * 60 * 60 * 1000);
-    
+
     // Use UTC to be server-timezone agnostic
     // 4 (04:00 UTC) + 0..11 hours = 04:00 .. 15:59 UTC
-    const randomHourUtc = 4 + Math.floor(Math.random() * 12); 
+    const randomHourUtc = 4 + Math.floor(Math.random() * 12);
     const randomMinute = Math.floor(Math.random() * 60);
-    
+
     nextNotificationAt.setUTCHours(randomHourUtc, randomMinute, 0, 0);
 
     await this.userModel.updateOne(
@@ -405,7 +426,8 @@ export class EngagementService implements OnModuleInit {
    */
   async checkAndMarkNotificationResponse(userId: string): Promise<boolean> {
     try {
-      const pendingNotification = await this.notificationLogRepository.findLastUnrespondedForUser(userId);
+      const pendingNotification =
+        await this.notificationLogRepository.findLastUnrespondedForUser(userId);
 
       if (!pendingNotification) {
         return false;
@@ -471,7 +493,9 @@ export class EngagementService implements OnModuleInit {
           },
         );
 
-        this.logger.debug(`User ${userId} ignored, ignores=${currentIgnores}, next in ${backoffDays} days`);
+        this.logger.debug(
+          `User ${userId} ignored, ignores=${currentIgnores}, next in ${backoffDays} days`,
+        );
         processed++;
       } catch (error) {
         this.logger.error(`Failed to process expired notification: ${error.message}`);
@@ -543,12 +567,12 @@ export class EngagementService implements OnModuleInit {
     try {
       await this.userModel.updateOne(
         { _id: new Types.ObjectId(userId) },
-        { 
-          $set: { 
+        {
+          $set: {
             'engagement.lastActiveAt': new Date(),
             'engagement.isBotBlocked': false,
             'engagement.botBlockedAt': null,
-          } 
+          },
         },
       );
     } catch (error) {
@@ -564,7 +588,7 @@ export class EngagementService implements OnModuleInit {
     try {
       // Get recent sessions with their scores
       const sessions = await this.interviewsService.getHistory(userId, limit, 0);
-      
+
       // Extract scores from completed sessions (convert 0-10 to 0-100)
       const scores = sessions
         .filter((s: any) => s.status === 'completed' && typeof s.overallScore === 'number')
@@ -618,10 +642,10 @@ export class EngagementService implements OnModuleInit {
             },
             // STRICT CHECK: Ensure not sent today (Double safety)
             {
-               $or: [
-                 { 'engagement.lastNotificationSentAt': { $exists: false } },
-                 { 'engagement.lastNotificationSentAt': { $lt: startOfToday } },
-               ]
+              $or: [
+                { 'engagement.lastNotificationSentAt': { $exists: false } },
+                { 'engagement.lastNotificationSentAt': { $lt: startOfToday } },
+              ],
             },
             // Exclude users who hit max ignores
             {

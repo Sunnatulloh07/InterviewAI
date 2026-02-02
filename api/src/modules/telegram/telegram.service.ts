@@ -127,23 +127,21 @@ export class TelegramService implements OnModuleInit {
         }
 
         const rateLimitKey = `ratelimit:telegram:${userId}`;
-        
+
         try {
           // Increment counter and get current count
           const count = await this.redis.incr(rateLimitKey);
-          
+
           // Set expiry on first request (count === 1)
           if (count === 1) {
             await this.redis.expire(rateLimitKey, 60); // 60 second window
           }
-          
+
           // Check if user exceeded limit
           if (count > 30) {
             // Log potential abuse
-            this.logger.warn(
-              `Rate limit exceeded for user ${userId}: ${count} requests in 60s`
-            );
-            
+            this.logger.warn(`Rate limit exceeded for user ${userId}: ${count} requests in 60s`);
+
             // Send warning to user
             const lang = ctx.session?.language || 'en';
             const warningText: Record<string, string> = {
@@ -151,18 +149,16 @@ export class TelegramService implements OnModuleInit {
               ru: `⚠️ Слишком много запросов. Пожалуйста, подождите минуту.`,
               en: `⚠️ Too many requests. Please wait a minute.`,
             };
-            
+
             await ctx.reply(warningText[lang] || warningText['en']);
             return; // Don't call next() - block request
           }
-          
+
           // Rate limit OK, continue processing
           return next();
         } catch (error: any) {
           // Redis error - log but don't block user (fail open)
-          this.logger.error(
-            `Rate limit check failed for user ${userId}: ${error.message}`
-          );
+          this.logger.error(`Rate limit check failed for user ${userId}: ${error.message}`);
           return next(); // Allow request if Redis fails
         }
       });
@@ -267,12 +263,12 @@ export class TelegramService implements OnModuleInit {
         { command: 'interview', description: '🎯 Start Interview' },
         { command: 'tasks', description: '📋 Daily Tasks' },
         { command: 'analyze_cv', description: '📄 CV Analysis' },
-        
+
         // User Info
         { command: 'profile', description: '👤 My Profile' },
         { command: 'stats', description: '📊 My Statistics' },
         { command: 'voice', description: '🎤 Voice Quota' },
-        
+
         // Settings & Help
         { command: 'upgrade', description: '💳 Plans & Pricing' },
         { command: 'settings', description: '⚙️ Settings' },
@@ -383,7 +379,7 @@ export class TelegramService implements OnModuleInit {
     // Check for Menu Buttons Logic (Reply Keyboard)
     // Priority: Top level check to allow navigation away from flows
     if (await this.commandsService.handleMenuText(ctx)) {
-       return;
+      return;
     }
 
     // Check if user is collecting live session metadata (PRIORITY: check this first)

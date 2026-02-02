@@ -1,11 +1,5 @@
 import { Controller, Get, Post, Put, Body, Query, Param, UseGuards, Delete } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiBearerAuth,
-  ApiQuery,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { UsersRepository } from '../users/users.repository';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { VoiceQuotaService } from '../voice/voice-quota.service';
@@ -56,7 +50,7 @@ export class AdminController {
     @Query('plan') plan?: string,
   ) {
     const skip = (page - 1) * limit;
-    
+
     let filters: any = {};
     if (search) {
       filters.$or = [
@@ -66,7 +60,7 @@ export class AdminController {
         { phoneNumber: { $regex: search, $options: 'i' } },
       ];
     }
-    
+
     if (plan) {
       filters['subscription.plan'] = plan;
     }
@@ -74,7 +68,7 @@ export class AdminController {
     const allUsers = await this.usersRepository.findAll(filters);
     const users = allUsers.slice(skip, skip + limit);
     const total = allUsers.length;
-    
+
     return {
       users,
       pagination: {
@@ -90,7 +84,7 @@ export class AdminController {
   @ApiResponse({ status: 200, description: 'User details retrieved' })
   async getUserDetails(@Param('userId') userId: string) {
     const user = await this.usersRepository.findById(userId);
-    
+
     if (!user) {
       throw new Error('User not found');
     }
@@ -134,13 +128,13 @@ export class AdminController {
       status: 'active',
       startDate: new Date(),
     };
-    
+
     if (data.duration) {
       subscriptionData.endDate = new Date(Date.now() + data.duration * 24 * 60 * 60 * 1000);
     }
 
     await this.usersRepository.update(userId, { subscription: subscriptionData });
-    
+
     return { success: true };
   }
 
@@ -160,7 +154,7 @@ export class AdminController {
         endDate: new Date(),
       },
     });
-    
+
     return { success: true };
   }
 
@@ -180,10 +174,10 @@ export class AdminController {
     const quotaKey = `${data.type}Voice` as keyof typeof quota;
     const currentTotal = (quota[quotaKey] as any)?.total || 0;
     const currentUsed = (quota[quotaKey] as any)?.used || 0;
-    
+
     const newTotal = currentTotal + data.minutes;
     const newRemaining = newTotal - currentUsed;
-    
+
     await this.usersRepository.update(userId, {
       voiceQuota: {
         ...quota,
@@ -195,7 +189,7 @@ export class AdminController {
         },
       },
     });
-    
+
     return { success: true, added: data.minutes };
   }
 
@@ -218,11 +212,11 @@ export class AdminController {
 
     const allUsers = await this.usersRepository.findAll(filters);
     const users = allUsers.slice((page - 1) * limit, page * limit);
-    
+
     return {
       subscriptions: users
-        .filter(u => u.subscription)
-        .map(u => ({
+        .filter((u) => u.subscription)
+        .map((u) => ({
           userId: u._id,
           plan: u.subscription?.plan,
           status: u.subscription?.status,
@@ -240,12 +234,9 @@ export class AdminController {
   @Get('revenue')
   @ApiOperation({ summary: 'Get revenue analytics' })
   @ApiResponse({ status: 200, description: 'Revenue analytics retrieved' })
-  async getRevenue(
-    @Query('days') days: number = 30,
-    @Query('plan') plan?: string,
-  ) {
+  async getRevenue(@Query('days') days: number = 30, @Query('plan') plan?: string) {
     const revenue = await this.analyticsService.getRevenueMetrics(days);
-    
+
     if (plan) {
       const filteredDailyRevenue: any = {};
       for (const [date, dailyPlans] of Object.entries(revenue.dailyRevenue)) {
@@ -253,13 +244,13 @@ export class AdminController {
           filteredDailyRevenue[date] = (dailyPlans as any)[plan];
         }
       }
-      
+
       return {
         ...revenue,
         dailyRevenue: filteredDailyRevenue,
       };
     }
-    
+
     return revenue;
   }
 
@@ -293,7 +284,7 @@ export class AdminController {
 
   private async getSubscriptionSummary() {
     const allUsers = await this.usersRepository.findAll();
-    
+
     const summary = {
       total: allUsers.length,
       active: 0,

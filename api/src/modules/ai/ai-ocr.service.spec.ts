@@ -37,26 +37,22 @@ describe('AiOcrService', () => {
   describe('recognize', () => {
     it('should reject files larger than 20MB', async () => {
       const largeBuffer = Buffer.alloc(21 * 1024 * 1024);
-      
-      await expect(
-        service.recognize(largeBuffer, 'image/jpeg', 'en')
-      ).rejects.toThrow();
+
+      await expect(service.recognize(largeBuffer, 'image/jpeg', 'en')).rejects.toThrow();
     });
 
     it('should reject unsupported MIME types', async () => {
       const buffer = Buffer.from('test');
-      
-      await expect(
-        service.recognize(buffer, 'application/pdf', 'en')
-      ).rejects.toThrow();
+
+      await expect(service.recognize(buffer, 'application/pdf', 'en')).rejects.toThrow();
     });
 
     it('should validate image size before processing', async () => {
       const buffer = Buffer.alloc(19 * 1024 * 1024);
-      
+
       const fileSize = buffer.length;
       const maxSize = 20 * 1024 * 1024;
-      
+
       expect(fileSize).toBeLessThan(maxSize);
     });
   });

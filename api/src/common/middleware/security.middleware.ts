@@ -101,7 +101,8 @@ export class CsrfMiddleware implements NestMiddleware {
     }
 
     // Validate CSRF token
-    const csrfToken = req.headers[this.CSRF_HEADER.toLowerCase()] || req.cookies?.[this.CSRF_COOKIE];
+    const csrfToken =
+      req.headers[this.CSRF_HEADER.toLowerCase()] || req.cookies?.[this.CSRF_COOKIE];
     const sessionCsrfToken = (req as any).session?.csrfToken;
 
     if (!csrfToken || csrfToken !== sessionCsrfToken) {

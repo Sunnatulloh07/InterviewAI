@@ -92,30 +92,32 @@ export class InterviewsFeedbackService {
       const BATCH_SIZE = 5; // Process 5 answers at a time to be safe with tokens
 
       // 1. CHUNK PROCESSING (Get Scores & Feedback)
-      this.logger.log(`Starting batch analysis for session ${sessionId} with ${answers.length} answers`);
-      
+      this.logger.log(
+        `Starting batch analysis for session ${sessionId} with ${answers.length} answers`,
+      );
+
       const chunks: any[][] = [];
       for (let i = 0; i < answers.length; i += BATCH_SIZE) {
         chunks.push(answers.slice(i, i + BATCH_SIZE));
       }
 
       const chunkResults = await Promise.all(
-        chunks.map(chunk => this.analyzeAnswersBatch(chunk, session, model, language))
+        chunks.map((chunk) => this.analyzeAnswersBatch(chunk, session, model, language)),
       );
 
       // Flatten results
       const allAnalysis = chunkResults.flat();
-      
+
       // Update answers in DB
       let totalScore = 0;
       let scoredCount = 0;
-      
+
       const summaryForOverall: any[] = []; // Data for step 2
 
       for (let i = 0; i < answers.length; i++) {
         const answer = answers[i];
         // Match analysis to answer (assuming strict order preservation in chunks and arrays)
-        // To be safer, we could map by index, but Promise.all preserves order of chunks, 
+        // To be safer, we could map by index, but Promise.all preserves order of chunks,
         // and map preserves order within chunk. So allAnalysis[i] corresponds to answers[i].
         const analysis = allAnalysis[i];
 
@@ -126,13 +128,13 @@ export class InterviewsFeedbackService {
 
           // Construct valid feedback object
           const feedbackData = {
-              score,
-              strengths: analysis.strengths || [],
-              improvements: analysis.improvements || [],
-              suggestions: analysis.suggestions || [],
-              keyPointsCovered: [],
-              keyPointsMissed: [],
-              exampleAnswer: analysis.feedback || '', // Map 'feedback' from AI to 'exampleAnswer' or just generic field
+            score,
+            strengths: analysis.strengths || [],
+            improvements: analysis.improvements || [],
+            suggestions: analysis.suggestions || [],
+            keyPointsCovered: [],
+            keyPointsMissed: [],
+            exampleAnswer: analysis.feedback || '', // Map 'feedback' from AI to 'exampleAnswer' or just generic field
           };
 
           // Update DB
@@ -142,7 +144,7 @@ export class InterviewsFeedbackService {
             analyzed: true,
             aiModel: model,
           });
-          
+
           await this.updateQuestionStatistics(answer.questionId.toString(), score);
 
           // Collect summary data
@@ -150,13 +152,18 @@ export class InterviewsFeedbackService {
             question: answer.questionId?.['question'] || 'Question', // Handle populated field safely
             score,
             strengths: analysis.strengths?.slice(0, 2) || [],
-            weaknesses: analysis.improvements?.slice(0, 2) || []
+            weaknesses: analysis.improvements?.slice(0, 2) || [],
           });
         }
       }
 
       // 2. OVERALL SUMMARY GENERATION (Lightweight)
-      const overallAnalysis = await this.generateOverallSummary(session, summaryForOverall, model, language);
+      const overallAnalysis = await this.generateOverallSummary(
+        session,
+        summaryForOverall,
+        model,
+        language,
+      );
       const overallScore = scoredCount > 0 ? totalScore / scoredCount : 0;
 
       await this.repository.updateSession(sessionId, {
@@ -177,21 +184,23 @@ export class InterviewsFeedbackService {
     answers: any[],
     session: any,
     model: string,
-    language: string
+    language: string,
   ): Promise<any[]> {
     const languageName = this.getLanguageName(language);
-    
-    const answersText = answers.map((a, i) => {
-      const q = a.questionId?.question || 'Question';
-      const ans = a.content;
-      const dur = a.duration || 0;
-      return `Q${i + 1}: ${q}\nA${i + 1}: ${ans}\n[Time Taken: ${dur} seconds]\n`;
-    }).join('\n---\n');
+
+    const answersText = answers
+      .map((a, i) => {
+        const q = a.questionId?.question || 'Question';
+        const ans = a.content;
+        const dur = a.duration || 0;
+        return `Q${i + 1}: ${q}\nA${i + 1}: ${ans}\n[Time Taken: ${dur} seconds]\n`;
+      })
+      .join('\n---\n');
 
     let prompt = `Analyze these ${answers.length} interview answers. Context: ${session.type}, Level: ${session.difficulty}.\n\n`;
     prompt += `QUESTIONS & ANSWERS:\n${answersText}\n\n`;
     prompt += `Respond in specific JSON format. LANGUAGE: ${languageName} (${language.toUpperCase()}).\n`;
-    
+
     prompt += `ANALYSIS RULES:\n`;
     prompt += `1. **Time Analysis:** Consider 'Time Taken'. If a complex technical question is answered in <5 seconds, flag it as 'Too Fast'. If >120s, flag as 'Too Slow'.\n`;
     prompt += `2. **Authenticity Check (AI Detection):** Analyze if the answer sounds natural (human) or purely AI-generated (ChatGPT style). Look for: perfect grammar without pauses, generic lists, unnatural structure.\n`;
@@ -214,14 +223,14 @@ export class InterviewsFeedbackService {
 
     try {
       if (!this.openai) throw new BadRequestException('AI not configured');
-      
+
       const completion = await this.openai.chat.completions.create({
         model,
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.7,
         response_format: { type: 'json_object' },
       });
-      
+
       const content = JSON.parse(completion.choices[0].message.content || '{}');
       return content.results || Array(answers.length).fill({}); // Fallback to empty objects if parsing fails
     } catch (e) {
@@ -237,38 +246,39 @@ export class InterviewsFeedbackService {
     session: any,
     summaries: any[],
     model: string,
-    language: string
+    language: string,
   ): Promise<any> {
-     // Reuse logic from analyzeSession but with summaries instead of full text
-     // (Simplified implementation for brevity, follows previous analyzeSession logic)
-     // ... logic to build prompt using summaries ...
-     // For now, let's call the existing analyzeSession but passing lighter data if possible,
-     // or just reimplement the prompt builder here efficiently.
-     
-     // Creating a highly optimized prompt using summaries
-     const languageName = this.getLanguageName(language);
-     const summaryText = summaries.map((s, i) => 
-       `Q${i+1}: Score ${s.score}/10. Str: ${s.strengths.join(', ')}. Weak: ${s.weaknesses.join(', ')}`
-     ).join('\n');
+    // Reuse logic from analyzeSession but with summaries instead of full text
+    // (Simplified implementation for brevity, follows previous analyzeSession logic)
+    // ... logic to build prompt using summaries ...
+    // For now, let's call the existing analyzeSession but passing lighter data if possible,
+    // or just reimplement the prompt builder here efficiently.
 
-     let prompt = `Provide overall interview feedback based on these summaries:\n${summaryText}\n\n`;
-     prompt += `Context: ${session.type}, ${session.difficulty}.\n`;
-     prompt += `LANGUAGE: ${languageName}.\n`;
-     prompt += `OUTPUT JSON: { "summary": { "strengths": [], "weaknesses": [], "topConcerns": [] }, "recommendations": [], "ratings": { "technicalAccuracy": 0, "communication": 0, "structuredThinking": 0 } }`;
+    // Creating a highly optimized prompt using summaries
+    const languageName = this.getLanguageName(language);
+    const summaryText = summaries
+      .map(
+        (s, i) =>
+          `Q${i + 1}: Score ${s.score}/10. Str: ${s.strengths.join(', ')}. Weak: ${s.weaknesses.join(', ')}`,
+      )
+      .join('\n');
 
-     try {
-       const completion = await this.openai!.chat.completions.create({
-         model,
-         messages: [{ role: 'user', content: prompt }],
-         response_format: { type: 'json_object' },
-       });
-       return JSON.parse(completion.choices[0].message.content || '{}');
-     } catch (e) {
-       return {};
-     }
+    let prompt = `Provide overall interview feedback based on these summaries:\n${summaryText}\n\n`;
+    prompt += `Context: ${session.type}, ${session.difficulty}.\n`;
+    prompt += `LANGUAGE: ${languageName}.\n`;
+    prompt += `OUTPUT JSON: { "summary": { "strengths": [], "weaknesses": [], "topConcerns": [] }, "recommendations": [], "ratings": { "technicalAccuracy": 0, "communication": 0, "structuredThinking": 0 } }`;
+
+    try {
+      const completion = await this.openai!.chat.completions.create({
+        model,
+        messages: [{ role: 'user', content: prompt }],
+        response_format: { type: 'json_object' },
+      });
+      return JSON.parse(completion.choices[0].message.content || '{}');
+    } catch (e) {
+      return {};
+    }
   }
-
-
 
   /**
    * Get AI model based on subscription plan

@@ -102,7 +102,18 @@ export class LoggerService implements NestLoggerService {
    * These logs are kept for 90 days for compliance
    */
   audit(metadata: AuditLogMetadata) {
-    const { eventType, userId, telegramId, ip, userAgent, resource, action, result, errorMessage, metadata: additionalMeta } = metadata;
+    const {
+      eventType,
+      userId,
+      telegramId,
+      ip,
+      userAgent,
+      resource,
+      action,
+      result,
+      errorMessage,
+      metadata: additionalMeta,
+    } = metadata;
 
     logger.info(`[AUDIT] ${eventType}`, {
       level: 'audit',
@@ -163,7 +174,13 @@ export class LoggerService implements NestLoggerService {
   /**
    * Log external API call
    */
-  apiCall(service: string, endpoint: string, durationMs: number, statusCode?: number, meta?: Record<string, any>) {
+  apiCall(
+    service: string,
+    endpoint: string,
+    durationMs: number,
+    statusCode?: number,
+    meta?: Record<string, any>,
+  ) {
     logger.info(`[API] ${service} ${endpoint}`, {
       ...this.buildMetadata(meta),
       service,
@@ -186,7 +203,11 @@ export class LoggerService implements NestLoggerService {
   /**
    * Log security event
    */
-  security(event: string, severity: 'low' | 'medium' | 'high' | 'critical', meta?: Record<string, any>) {
+  security(
+    event: string,
+    severity: 'low' | 'medium' | 'high' | 'critical',
+    meta?: Record<string, any>,
+  ) {
     const level = severity === 'critical' || severity === 'high' ? 'error' : 'warn';
 
     logger[level](`[SECURITY] ${event}`, {

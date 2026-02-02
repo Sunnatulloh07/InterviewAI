@@ -14,12 +14,12 @@ import { createOpenAIClient } from '@common/utils/openai-client.factory';
 
 /**
  * Task Reminder Service
- * 
+ *
  * Sends 3 daily reminders to PAID users who haven't completed their daily tasks:
  * 1. First reminder: 30 minutes after task delivery (09:30 if tasks delivered at 09:00)
  * 2. Second reminder: 13:30 (1:30 PM)
  * 3. Third reminder: 18:00 (6:00 PM)
- * 
+ *
  * Features:
  * - AI-generated learning tips and recommendations (not answers!)
  * - Stops sending after user completes all tasks
@@ -36,9 +36,9 @@ export class TaskReminderService {
     private readonly dailyTaskModel: Model<DailyTaskDocument>,
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
-    @Inject(forwardRef(() => TelegramService))
+    @Inject(() => TelegramService) // ✅ FIXED: Remove forwardRef
     private readonly telegramService: TelegramService,
-    @Inject(forwardRef(() => FailedNotificationRetryService))
+    @Inject(() => FailedNotificationRetryService) // ✅ FIXED: Remove forwardRef
     private readonly retryService: FailedNotificationRetryService,
     private readonly configService: ConfigService,
     @InjectRedis() private readonly redis: Redis,
@@ -58,10 +58,16 @@ export class TaskReminderService {
   async sendFirstReminder() {
     const lockKey = 'cron:task-reminder:first';
     const lockTTL = 1800; // 30 minutes
-    
+
     try {
-      const lockAcquired = await this.redis.set(lockKey, Date.now().toString(), 'EX', lockTTL, 'NX');
-      
+      const lockAcquired = await this.redis.set(
+        lockKey,
+        Date.now().toString(),
+        'EX',
+        lockTTL,
+        'NX',
+      );
+
       if (!lockAcquired) {
         this.logger.warn('First reminder cron already running, skipping');
         return;
@@ -76,9 +82,9 @@ export class TaskReminderService {
       // SCALABILITY FIX: Use aggregation to get task count
       const totalTasks = await this.dailyTaskModel.countDocuments({
         status: 'pending',
-        createdAt: { 
+        createdAt: {
           $gte: oneHourAgo,
-          $lte: thirtyMinutesAgo
+          $lte: thirtyMinutesAgo,
         },
         'reminders.firstReminderSentAt': null,
       });
@@ -94,9 +100,9 @@ export class TaskReminderService {
       while (true) {
         const query: any = {
           status: 'pending',
-          createdAt: { 
+          createdAt: {
             $gte: oneHourAgo,
-            $lte: thirtyMinutesAgo
+            $lte: thirtyMinutesAgo,
           },
           'reminders.firstReminderSentAt': null,
         };
@@ -116,11 +122,13 @@ export class TaskReminderService {
           break;
         }
 
-        this.logger.log(`Processing reminder batch: ${taskBatch.length} tasks (${sent + skipped + failed}/${totalTasks})`);
+        this.logger.log(
+          `Processing reminder batch: ${taskBatch.length} tasks (${sent + skipped + failed}/${totalTasks})`,
+        );
 
         // Get unique user IDs and filter paid users
-        const userIds = [...new Set(taskBatch.map(t => t.userId.toString()))];
-        
+        const userIds = [...new Set(taskBatch.map((t) => t.userId.toString()))];
+
         const paidUsers = await this.userModel
           .find({
             _id: { $in: userIds },
@@ -137,12 +145,12 @@ export class TaskReminderService {
           .select('_id telegramId language profile subscription')
           .lean();
 
-        const paidUserIdsSet = new Set(paidUsers.map(u => u._id.toString()));
-        const userMap = new Map(paidUsers.map(u => [u._id.toString(), u]));
+        const paidUserIdsSet = new Set(paidUsers.map((u) => u._id.toString()));
+        const userMap = new Map(paidUsers.map((u) => [u._id.toString(), u]));
 
         for (const task of taskBatch) {
           const userId = task.userId.toString();
-          
+
           if (!paidUserIdsSet.has(userId)) {
             skipped++;
             continue;
@@ -156,7 +164,7 @@ export class TaskReminderService {
 
           try {
             await this.sendReminderWithTips(user, task, 'first');
-            
+
             await this.dailyTaskModel.findByIdAndUpdate(task._id, {
               $set: { 'reminders.firstReminderSentAt': now },
             });
@@ -164,7 +172,9 @@ export class TaskReminderService {
             sent++;
             await this.delay(200);
           } catch (error: any) {
-            this.logger.error(`Failed to send first reminder for task ${task._id}: ${error.message}`);
+            this.logger.error(
+              `Failed to send first reminder for task ${task._id}: ${error.message}`,
+            );
             failed++;
           }
         }
@@ -172,7 +182,9 @@ export class TaskReminderService {
         lastId = taskBatch[taskBatch.length - 1]._id;
       }
 
-      this.logger.log(`First reminder completed: sent=${sent}, skipped=${skipped}, failed=${failed}`);
+      this.logger.log(
+        `First reminder completed: sent=${sent}, skipped=${skipped}, failed=${failed}`,
+      );
     } catch (error: any) {
       this.logger.error(`First reminder job failed: ${error.message}`);
     } finally {
@@ -195,10 +207,16 @@ export class TaskReminderService {
   async sendSecondReminder() {
     const lockKey = 'cron:task-reminder:second';
     const lockTTL = 1800;
-    
+
     try {
-      const lockAcquired = await this.redis.set(lockKey, Date.now().toString(), 'EX', lockTTL, 'NX');
-      
+      const lockAcquired = await this.redis.set(
+        lockKey,
+        Date.now().toString(),
+        'EX',
+        lockTTL,
+        'NX',
+      );
+
       if (!lockAcquired) {
         this.logger.warn('Second reminder cron already running, skipping');
         return;
@@ -241,8 +259,8 @@ export class TaskReminderService {
 
         if (taskBatch.length === 0) break;
 
-        const userIds = [...new Set(taskBatch.map(t => t.userId.toString()))];
-        
+        const userIds = [...new Set(taskBatch.map((t) => t.userId.toString()))];
+
         const paidUsers = await this.userModel
           .find({
             _id: { $in: userIds },
@@ -259,12 +277,12 @@ export class TaskReminderService {
           .select('_id telegramId language profile subscription')
           .lean();
 
-        const paidUserIdsSet = new Set(paidUsers.map(u => u._id.toString()));
-        const userMap = new Map(paidUsers.map(u => [u._id.toString(), u]));
+        const paidUserIdsSet = new Set(paidUsers.map((u) => u._id.toString()));
+        const userMap = new Map(paidUsers.map((u) => [u._id.toString(), u]));
 
         for (const task of taskBatch) {
           const userId = task.userId.toString();
-          
+
           if (!paidUserIdsSet.has(userId)) {
             skipped++;
             continue;
@@ -278,7 +296,7 @@ export class TaskReminderService {
 
           try {
             await this.sendReminderWithTips(user, task, 'second');
-            
+
             await this.dailyTaskModel.findByIdAndUpdate(task._id, {
               $set: { 'reminders.secondReminderSentAt': now },
             });
@@ -286,7 +304,9 @@ export class TaskReminderService {
             sent++;
             await this.delay(200);
           } catch (error: any) {
-            this.logger.error(`Failed to send second reminder for task ${task._id}: ${error.message}`);
+            this.logger.error(
+              `Failed to send second reminder for task ${task._id}: ${error.message}`,
+            );
             failed++;
           }
         }
@@ -294,7 +314,9 @@ export class TaskReminderService {
         lastId = taskBatch[taskBatch.length - 1]._id;
       }
 
-      this.logger.log(`Second reminder completed: sent=${sent}, skipped=${skipped}, failed=${failed}`);
+      this.logger.log(
+        `Second reminder completed: sent=${sent}, skipped=${skipped}, failed=${failed}`,
+      );
     } catch (error: any) {
       this.logger.error(`Second reminder job failed: ${error.message}`);
     } finally {
@@ -317,10 +339,16 @@ export class TaskReminderService {
   async sendThirdReminder() {
     const lockKey = 'cron:task-reminder:third';
     const lockTTL = 1800;
-    
+
     try {
-      const lockAcquired = await this.redis.set(lockKey, Date.now().toString(), 'EX', lockTTL, 'NX');
-      
+      const lockAcquired = await this.redis.set(
+        lockKey,
+        Date.now().toString(),
+        'EX',
+        lockTTL,
+        'NX',
+      );
+
       if (!lockAcquired) {
         this.logger.warn('Third reminder cron already running, skipping');
         return;
@@ -363,8 +391,8 @@ export class TaskReminderService {
 
         if (taskBatch.length === 0) break;
 
-        const userIds = [...new Set(taskBatch.map(t => t.userId.toString()))];
-        
+        const userIds = [...new Set(taskBatch.map((t) => t.userId.toString()))];
+
         const paidUsers = await this.userModel
           .find({
             _id: { $in: userIds },
@@ -381,12 +409,12 @@ export class TaskReminderService {
           .select('_id telegramId language profile subscription')
           .lean();
 
-        const paidUserIdsSet = new Set(paidUsers.map(u => u._id.toString()));
-        const userMap = new Map(paidUsers.map(u => [u._id.toString(), u]));
+        const paidUserIdsSet = new Set(paidUsers.map((u) => u._id.toString()));
+        const userMap = new Map(paidUsers.map((u) => [u._id.toString(), u]));
 
         for (const task of taskBatch) {
           const userId = task.userId.toString();
-          
+
           if (!paidUserIdsSet.has(userId)) {
             skipped++;
             continue;
@@ -400,7 +428,7 @@ export class TaskReminderService {
 
           try {
             await this.sendReminderWithTips(user, task, 'third');
-            
+
             await this.dailyTaskModel.findByIdAndUpdate(task._id, {
               $set: { 'reminders.thirdReminderSentAt': now },
             });
@@ -408,7 +436,9 @@ export class TaskReminderService {
             sent++;
             await this.delay(200);
           } catch (error: any) {
-            this.logger.error(`Failed to send third reminder for task ${task._id}: ${error.message}`);
+            this.logger.error(
+              `Failed to send third reminder for task ${task._id}: ${error.message}`,
+            );
             failed++;
           }
         }
@@ -416,7 +446,9 @@ export class TaskReminderService {
         lastId = taskBatch[taskBatch.length - 1]._id;
       }
 
-      this.logger.log(`Third reminder completed: sent=${sent}, skipped=${skipped}, failed=${failed}`);
+      this.logger.log(
+        `Third reminder completed: sent=${sent}, skipped=${skipped}, failed=${failed}`,
+      );
     } catch (error: any) {
       this.logger.error(`Third reminder job failed: ${error.message}`);
     } finally {
@@ -440,7 +472,7 @@ export class TaskReminderService {
     try {
       const language = user.language || 'uz';
       const incompleteTasks = task.tasks.filter((t: any) => !t.completed);
-      
+
       if (incompleteTasks.length === 0) {
         // All tasks completed, don't send reminder
         return;
@@ -476,9 +508,7 @@ export class TaskReminderService {
             errorDescription.includes('user is deactivated') ||
             errorDescription.includes('chat not found')
           ) {
-            this.logger.warn(
-              `User ${user._id} blocked bot or chat not found. Marking as blocked.`,
-            );
+            this.logger.warn(`User ${user._id} blocked bot or chat not found. Marking as blocked.`);
 
             // Mark user as bot blocked (prevent future notifications)
             await this.userModel.findByIdAndUpdate(user._id, {
@@ -492,7 +522,11 @@ export class TaskReminderService {
             await this.retryService.trackFailedNotification(
               user._id.toString(),
               user.telegramId,
-              reminderType === 'first' ? 'first_reminder' : reminderType === 'second' ? 'second_reminder' : 'third_reminder',
+              reminderType === 'first'
+                ? 'first_reminder'
+                : reminderType === 'second'
+                  ? 'second_reminder'
+                  : 'third_reminder',
               errorDescription,
               errorCode,
               {
@@ -506,9 +540,7 @@ export class TaskReminderService {
         }
       }
     } catch (error: any) {
-      this.logger.error(
-        `Failed to send reminder to user ${user._id}: ${error.message}`,
-      );
+      this.logger.error(`Failed to send reminder to user ${user._id}: ${error.message}`);
     }
   }
 
@@ -623,11 +655,7 @@ ${taskTitles}
   /**
    * Fallback message if AI generation fails
    */
-  private getFallbackMessage(
-    taskCount: number,
-    language: string,
-    reminderType: string,
-  ): string {
+  private getFallbackMessage(taskCount: number, language: string, reminderType: string): string {
     const messages = {
       uz: `📚 <b>Kunlik topshiriqlar eslatmasi</b>\n\n⏰ Sizda ${taskCount} ta tugallanmagan topshiriq bor!\n\n💡 Har kuni 30 daqiqa mashq qilish sizni mutaxassis darajasiga olib chiqadi.\n\n🎯 Bugungi topshiriqlarni yakunlang!\n\nTopshiriqlar: /tasks`,
       ru: `📚 <b>Напоминание о ежедневных заданиях</b>\n\n⏰ У вас ${taskCount} незавершенных заданий!\n\n💡 Ежедневная практика 30 минут приведет вас к уровню эксперта.\n\n🎯 Завершите сегодняшние задания!\n\nЗадания: /tasks`,
@@ -642,38 +670,35 @@ ${taskTitles}
    */
   private isPaidUser(user: any): boolean {
     const paidPlans = ['starter', 'pro', 'elite'];
-    return (
-      paidPlans.includes(user.subscription?.plan) &&
-      user.subscription?.status === 'active'
-    );
+    return paidPlans.includes(user.subscription?.plan) && user.subscription?.status === 'active';
   }
 
   /**
    * Get midnight in Tashkent timezone as UTC date
    * Tashkent is UTC+5, so today 00:00 Tashkent = yesterday 19:00 UTC
-   * 
+   *
    * CRITICAL: DailyTasksService creates tasks with `date` field set to
    * midnight in Tashkent time, stored as UTC. We need to match that.
    */
   private getTashkentMidnight(): Date {
     const now = new Date();
-    
+
     // Get current time in Tashkent (UTC+5)
     // Method: Convert to UTC, then add 5 hours to get Tashkent time
     const utcHours = now.getUTCHours();
     const utcMinutes = now.getUTCMinutes();
-    
+
     // Tashkent hours = UTC hours + 5
     const tashkentHours = utcHours + 5;
-    
+
     // Create date for today at midnight Tashkent
     const midnight = new Date(now);
     midnight.setUTCHours(0, 0, 0, 0);
-    
+
     // Subtract 5 hours to convert Tashkent midnight to UTC
     // Example: Tashkent 00:00 Jan 15 = UTC 19:00 Jan 14
     midnight.setUTCHours(midnight.getUTCHours() - 5);
-    
+
     return midnight;
   }
 

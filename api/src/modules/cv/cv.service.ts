@@ -201,7 +201,7 @@ export class CvService {
     // Check if this is a RE-analysis (CV was already analyzed before)
     // First-time analysis usage is counted in uploadCv, so only count re-analysis
     const isReanalysis = cv.analysisStatus === 'completed' || cv.analysisStatus === 'failed';
-    
+
     if (isReanalysis) {
       // Check usage limits for re-analysis
       await this.checkUsageLimits(userId);
@@ -337,13 +337,14 @@ export class CvService {
     const executeAnalysis = async (targetModel: string) => {
       if (!this.openai) throw new Error('OpenAI client not initialized');
       this.logger.log(`Performing CV analysis using model: ${targetModel}`);
-      
+
       const completion = await this.openai.chat.completions.create({
         model: targetModel,
         messages: [
           {
             role: 'system',
-            content: 'You are an expert CV analyst. Return ONLY valid JSON. No explanations, no markdown.',
+            content:
+              'You are an expert CV analyst. Return ONLY valid JSON. No explanations, no markdown.',
           },
           {
             role: 'user',
@@ -391,14 +392,19 @@ export class CvService {
     try {
       let completion;
       let usedModel = model;
-      
+
       // First attempt with requested model
       try {
         completion = await executeAnalysis(model);
       } catch (err) {
         // Fallback for API errors
-        if ((err.status === 402 || err.status === 404 || err.status === 429) && model !== AI_MODELS.GPT35) {
-          this.logger.warn(`Model ${model} API error (${err.status}). Falling back to ${AI_MODELS.GPT35}`);
+        if (
+          (err.status === 402 || err.status === 404 || err.status === 429) &&
+          model !== AI_MODELS.GPT35
+        ) {
+          this.logger.warn(
+            `Model ${model} API error (${err.status}). Falling back to ${AI_MODELS.GPT35}`,
+          );
           completion = await executeAnalysis(AI_MODELS.GPT35);
           usedModel = AI_MODELS.GPT35;
         } else {
@@ -406,14 +412,21 @@ export class CvService {
         }
       }
       // Validate API response structure (some free models return malformed responses)
-      if (!completion || !completion.choices || !completion.choices[0] || !completion.choices[0].message) {
-        this.logger.error(`Model ${usedModel} returned malformed response: ${JSON.stringify(completion)}`);
-        
+      if (
+        !completion ||
+        !completion.choices ||
+        !completion.choices[0] ||
+        !completion.choices[0].message
+      ) {
+        this.logger.error(
+          `Model ${usedModel} returned malformed response: ${JSON.stringify(completion)}`,
+        );
+
         if (usedModel !== AI_MODELS.GPT35) {
           this.logger.log(`Malformed response. Retrying with reliable model: ${AI_MODELS.GPT35}`);
           completion = await executeAnalysis(AI_MODELS.GPT35);
           usedModel = AI_MODELS.GPT35;
-          
+
           if (!completion || !completion.choices || !completion.choices[0]) {
             throw new Error('Both models returned malformed responses');
           }
@@ -427,12 +440,16 @@ export class CvService {
       const usage = completion.usage;
 
       // Debug logging
-      this.logger.debug(`AI Metadata: model=${completion.model}, finish=${finishReason}, tokens=${JSON.stringify(usage)}`);
+      this.logger.debug(
+        `AI Metadata: model=${completion.model}, finish=${finishReason}, tokens=${JSON.stringify(usage)}`,
+      );
       this.logger.debug(`Raw Response (first 500 chars): ${rawText.substring(0, 500)}`);
-      
+
       // CRITICAL: Warn if response was truncated due to token limit
       if (finishReason === 'length') {
-        this.logger.warn(`⚠️ AI RESPONSE TRUNCATED! Model: ${completion.model}, Tokens: ${usage?.total_tokens || 'unknown'}`);
+        this.logger.warn(
+          `⚠️ AI RESPONSE TRUNCATED! Model: ${completion.model}, Tokens: ${usage?.total_tokens || 'unknown'}`,
+        );
         this.logger.warn(`Full truncated response: ${rawText}`);
       }
 
@@ -443,14 +460,14 @@ export class CvService {
       if (!analysis || (typeof analysis === 'object' && Object.keys(analysis).length === 0)) {
         this.logger.warn(`Model ${usedModel} returned empty/invalid JSON.`);
         this.logger.warn(`FULL RAW RESPONSE: ${rawText}`); // Log complete response for debugging
-        
+
         if (usedModel !== AI_MODELS.GPT35) {
           this.logger.log(`Retrying with reliable model: ${AI_MODELS.GPT35}`);
           completion = await executeAnalysis(AI_MODELS.GPT35);
           const retryText = completion.choices[0].message.content || '';
           analysis = extractJSON(retryText);
           usedModel = AI_MODELS.GPT35;
-          
+
           if (!analysis) {
             this.logger.error(`Fallback model also failed. Raw: "${retryText.substring(0, 200)}"`);
             throw new Error('Both primary and fallback models failed to return valid JSON');
@@ -467,10 +484,16 @@ export class CvService {
         aiRejectionRisk: analysis.aiRejectionRisk || 'medium',
         sixSecondVerdict: analysis.sixSecondVerdict || 'unknown',
         strengths: Array.isArray(analysis.strengths) ? analysis.strengths : [],
-        criticalWeaknesses: Array.isArray(analysis.criticalWeaknesses) ? analysis.criticalWeaknesses : [],
-        weaknesses: Array.isArray(analysis.weaknesses) ? analysis.weaknesses : (analysis.criticalWeaknesses || []),
+        criticalWeaknesses: Array.isArray(analysis.criticalWeaknesses)
+          ? analysis.criticalWeaknesses
+          : [],
+        weaknesses: Array.isArray(analysis.weaknesses)
+          ? analysis.weaknesses
+          : analysis.criticalWeaknesses || [],
         missingKeywords: Array.isArray(analysis.missingKeywords) ? analysis.missingKeywords : [],
-        transformationRoadmap: Array.isArray(analysis.transformationRoadmap) ? analysis.transformationRoadmap : [],
+        transformationRoadmap: Array.isArray(analysis.transformationRoadmap)
+          ? analysis.transformationRoadmap
+          : [],
         suggestions: Array.isArray(analysis.suggestions) ? analysis.suggestions : [],
         quickWins: Array.isArray(analysis.quickWins) ? analysis.quickWins : [],
         aiBypassTips: Array.isArray(analysis.aiBypassTips) ? analysis.aiBypassTips : [],
@@ -553,7 +576,7 @@ export class CvService {
     language: string = 'en',
   ): string {
     const languageName = this.getLanguageName(language);
-    
+
     let prompt = `# ROLE & EXPERTISE\n`;
     prompt += `You are a world-class CV Strategist and ATS Systems Expert with:\n`;
     prompt += `- 15+ years recruiting at FAANG companies (Google, Meta, Amazon)\n`;
@@ -824,7 +847,7 @@ export class CvService {
 
     if (file.size > maxSizeBytes) {
       throw new BadRequestException(
-        `File size exceeds ${maxSizeMB}MB limit for ${plan} plan. Your file: ${(file.size / 1024 / 1024).toFixed(2)}MB`
+        `File size exceeds ${maxSizeMB}MB limit for ${plan} plan. Your file: ${(file.size / 1024 / 1024).toFixed(2)}MB`,
       );
     }
 
@@ -842,10 +865,10 @@ export class CvService {
   private async checkUsageLimits(userId: string): Promise<void> {
     const user = await this.usersService.findById(userId);
     const plan = user.subscription?.plan || 'free_trial';
-    
+
     // ✅ Use COMPLETE_PLAN_LIMITS (single source of truth)
     const monthlyLimit = getCvAnalysisMonthlyLimit(plan);
-    
+
     // Check if limit reached (-1 means unlimited)
     if (monthlyLimit !== -1 && user.usage.cvAnalysesThisMonth >= monthlyLimit) {
       // Provide helpful upgrade message based on current plan
@@ -854,15 +877,16 @@ export class CvService {
         starter: 'CV analysis limit reached (5/month). Upgrade to Pro for 15/month.',
         pro: 'CV analysis limit reached (15/month). Upgrade to Elite for unlimited analyses.',
       };
-      
-      const message = upgradeMessages[plan] 
-        || `CV analysis limit reached for ${plan} plan. Upgrade to analyze more CVs.`;
-      
+
+      const message =
+        upgradeMessages[plan] ||
+        `CV analysis limit reached for ${plan} plan. Upgrade to analyze more CVs.`;
+
       throw new ForbiddenException(message);
     }
-    
+
     this.logger.debug(
-      `CV analysis usage check passed: ${user.usage.cvAnalysesThisMonth}/${monthlyLimit === -1 ? 'unlimited' : monthlyLimit} for ${plan} plan`
+      `CV analysis usage check passed: ${user.usage.cvAnalysesThisMonth}/${monthlyLimit === -1 ? 'unlimited' : monthlyLimit} for ${plan} plan`,
     );
   }
 

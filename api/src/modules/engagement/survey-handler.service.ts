@@ -58,13 +58,13 @@ const SURVEY_CONTENT = {
 
 /**
  * SurveyHandlerService
- * 
+ *
  * Handles the onboarding survey flow for new users:
  * 1. Sends survey with inline keyboard buttons
  * 2. Processes user responses via callback queries
  * 3. Updates user's jobSeekingStatus accordingly
  * 4. Marks survey as completed
- * 
+ *
  * Production-ready with:
  * - Multi-language support (uz, ru, en)
  * - Error handling and logging
@@ -98,7 +98,7 @@ export class SurveyHandlerService {
 
   /**
    * Send the onboarding survey to a user
-   * 
+   *
    * @param userId - MongoDB user ID
    * @param telegramId - Telegram user ID
    * @param lang - User's preferred language
@@ -114,7 +114,10 @@ export class SurveyHandlerService {
 
     // Build inline keyboard with survey options
     const keyboard = new InlineKeyboard()
-      .text(content.buttons[JobSeekingStatus.ACTIVELY_LOOKING], `survey_${JobSeekingStatus.ACTIVELY_LOOKING}`)
+      .text(
+        content.buttons[JobSeekingStatus.ACTIVELY_LOOKING],
+        `survey_${JobSeekingStatus.ACTIVELY_LOOKING}`,
+      )
       .row()
       .text(content.buttons[JobSeekingStatus.PREPARING], `survey_${JobSeekingStatus.PREPARING}`)
       .row()
@@ -138,8 +141,8 @@ export class SurveyHandlerService {
     } catch (error: any) {
       // Handle common Telegram API errors
       if (error?.description?.includes('bot was blocked')) {
-        await this.usersService.updateEngagement(userId, { 
-          isBotBlocked: true, 
+        await this.usersService.updateEngagement(userId, {
+          isBotBlocked: true,
           botBlockedAt: new Date(),
           scheduledSurveyAt: null, // Clear to prevent retry
         });
@@ -162,7 +165,9 @@ export class SurveyHandlerService {
         await this.usersService.updateEngagement(userId, {
           scheduledSurveyAt: retryTime,
         });
-        this.logger.error(`Failed to send survey to user ${userId}: ${error.message}, retrying at ${retryTime.toISOString()}`);
+        this.logger.error(
+          `Failed to send survey to user ${userId}: ${error.message}, retrying at ${retryTime.toISOString()}`,
+        );
       }
       return false;
     }
@@ -170,7 +175,7 @@ export class SurveyHandlerService {
 
   /**
    * Process user's survey response from callback query
-   * 
+   *
    * @param userId - MongoDB user ID
    * @param status - Selected job-seeking status
    * @param lang - User's preferred language
@@ -197,7 +202,7 @@ export class SurveyHandlerService {
 
   /**
    * Update user's job-seeking status (e.g., from settings)
-   * 
+   *
    * @param userId - MongoDB user ID
    * @param status - New job-seeking status
    */
@@ -222,14 +227,14 @@ export class SurveyHandlerService {
     if (!this.isSurveyCallback(callbackData)) {
       return null;
     }
-    
+
     const status = callbackData.replace('survey_', '') as JobSeekingStatus;
-    
+
     // Validate it's a valid status
     if (Object.values(JobSeekingStatus).includes(status)) {
       return status;
     }
-    
+
     return null;
   }
 
@@ -238,9 +243,12 @@ export class SurveyHandlerService {
    */
   getJobStatusOptions(lang: string): Array<{ status: JobSeekingStatus; label: string }> {
     const content = SURVEY_CONTENT[lang as keyof typeof SURVEY_CONTENT] || SURVEY_CONTENT.uz;
-    
+
     return [
-      { status: JobSeekingStatus.ACTIVELY_LOOKING, label: content.buttons[JobSeekingStatus.ACTIVELY_LOOKING] },
+      {
+        status: JobSeekingStatus.ACTIVELY_LOOKING,
+        label: content.buttons[JobSeekingStatus.ACTIVELY_LOOKING],
+      },
       { status: JobSeekingStatus.PREPARING, label: content.buttons[JobSeekingStatus.PREPARING] },
       { status: JobSeekingStatus.LEARNING, label: content.buttons[JobSeekingStatus.LEARNING] },
       { status: JobSeekingStatus.EMPLOYED, label: content.buttons[JobSeekingStatus.EMPLOYED] },
@@ -252,12 +260,12 @@ export class SurveyHandlerService {
    */
   getStatusLabel(status: JobSeekingStatus, lang: string): string {
     const content = SURVEY_CONTENT[lang as keyof typeof SURVEY_CONTENT] || SURVEY_CONTENT.uz;
-    
+
     // NOT_SET doesn't have a button label, return appropriate fallback
     if (status === JobSeekingStatus.NOT_SET) {
       return lang === 'uz' ? 'Belgilanmagan' : lang === 'ru' ? 'Не указано' : 'Not set';
     }
-    
+
     return content.buttons[status] || 'Unknown';
   }
 }

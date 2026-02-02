@@ -18,10 +18,7 @@ export class VoiceQuotaService {
    * Get voice quota for a user
    */
   async getQuota(userId: string) {
-    const user = await this.userModel
-      .findById(userId)
-      .select('voiceQuota subscription')
-      .lean();
+    const user = await this.userModel.findById(userId).select('voiceQuota subscription').lean();
 
     if (!user) {
       throw new BadRequestException('User not found');
@@ -82,10 +79,7 @@ export class VoiceQuotaService {
     interviewSessionId?: string,
     transcriptionText?: string,
   ): Promise<VoiceUsageDocument> {
-    const user = await this.userModel
-      .findById(userId)
-      .select('voiceQuota subscription')
-      .lean();
+    const user = await this.userModel.findById(userId).select('voiceQuota subscription').lean();
 
     if (!user) {
       throw new BadRequestException('User not found');
@@ -174,11 +168,7 @@ export class VoiceQuotaService {
   /**
    * Check if user has enough quota without deducting
    */
-  async hasEnoughQuota(
-    userId: string,
-    type: 'mock' | 'real',
-    minutes: number,
-  ): Promise<boolean> {
+  async hasEnoughQuota(userId: string, type: 'mock' | 'real', minutes: number): Promise<boolean> {
     const quota = await this.getQuota(userId);
     const voiceQuota = type === 'mock' ? quota.mockVoice : quota.realVoice;
     return voiceQuota.remaining >= minutes;
@@ -229,9 +219,7 @@ export class VoiceQuotaService {
 
           successCount++;
         } catch (userError: any) {
-          this.logger.error(
-            `Failed to reset quota for user ${user._id}: ${userError.message}`,
-          );
+          this.logger.error(`Failed to reset quota for user ${user._id}: ${userError.message}`);
           errorCount++;
         }
       }
@@ -240,10 +228,7 @@ export class VoiceQuotaService {
         `✅ Monthly quota reset completed. Success: ${successCount}, Errors: ${errorCount}`,
       );
     } catch (error: any) {
-      this.logger.error(
-        `❌ Monthly quota reset failed: ${error.message}`,
-        error.stack,
-      );
+      this.logger.error(`❌ Monthly quota reset failed: ${error.message}`, error.stack);
     }
   }
 
@@ -269,10 +254,7 @@ export class VoiceQuotaService {
         `🗑️ Cleaned up ${result.deletedCount} voice usage records older than 90 days`,
       );
     } catch (error: any) {
-      this.logger.error(
-        `Failed to cleanup old usage history: ${error.message}`,
-        error.stack,
-      );
+      this.logger.error(`Failed to cleanup old usage history: ${error.message}`, error.stack);
     }
   }
 }

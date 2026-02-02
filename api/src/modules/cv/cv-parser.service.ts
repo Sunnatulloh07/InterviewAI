@@ -41,17 +41,21 @@ export class CvParserService {
           text = await this.ocrService.recognize(buffer);
           break;
         default:
-          throw new BadRequestException('Unsupported file type. Please upload PDF, DOCX, or Image (JPG/PNG).');
+          throw new BadRequestException(
+            'Unsupported file type. Please upload PDF, DOCX, or Image (JPG/PNG).',
+          );
       }
 
       // Check if text is empty (especially after OCR or Scanned PDF)
       if (!text || text.trim().length < 50) {
-         if (mimeType === 'application/pdf') {
-             throw new BadRequestException(
-              'PDF dan matn o\'qib bo\'lmadi (Scan qilingan bo\'lishi mumkin). Iltimos, bu faylni Rasm (JPG/PNG) formatiga o\'tkazib yuklang yoki Word faylidan foydalaning.'
-             );
-         }
-         throw new BadRequestException('Fayldan yetarli matn topilmadi. Sifati yaxshiroq fayl yuklang.');
+        if (mimeType === 'application/pdf') {
+          throw new BadRequestException(
+            "PDF dan matn o'qib bo'lmadi (Scan qilingan bo'lishi mumkin). Iltimos, bu faylni Rasm (JPG/PNG) formatiga o'tkazib yuklang yoki Word faylidan foydalaning.",
+          );
+        }
+        throw new BadRequestException(
+          'Fayldan yetarli matn topilmadi. Sifati yaxshiroq fayl yuklang.',
+        );
       }
 
       // Extract structured data from text
@@ -95,7 +99,7 @@ export class CvParserService {
 
       if (!result || !result.text || result.text.trim().length < 50) {
         throw new BadRequestException(
-          'Fayldan yettarli matn topilmadi. Sizning PDF faylingiz rasm (scanned) ko\'rinishida bo\'lishi mumkin. Iltimos, matn formatidagi PDF yoki Word fayl yuklang.',
+          "Fayldan yettarli matn topilmadi. Sizning PDF faylingiz rasm (scanned) ko'rinishida bo'lishi mumkin. Iltimos, matn formatidagi PDF yoki Word fayl yuklang.",
         );
       }
 

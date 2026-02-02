@@ -1,6 +1,6 @@
 /**
  * Engagement Messages for Different User Segments
- * 
+ *
  * 3 segments:
  * 1. Non-registered users (started bot but didn't register)
  * 2. Free trial users (registered but not fully using features)
@@ -71,7 +71,7 @@ export const NON_REGISTERED_USER_MESSAGES = [
 export function getRandomNonRegisteredMessage(language: string = 'uz'): string {
   const randomIndex = Math.floor(Math.random() * NON_REGISTERED_USER_MESSAGES.length);
   const message = NON_REGISTERED_USER_MESSAGES[randomIndex];
-  
+
   // Fallback to Uzbek if language not supported
   return message[language as keyof typeof message] || message.uz;
 }
@@ -85,13 +85,13 @@ export function getTrialReminderMessage(
   daysRemaining: number,
   usedInterviews: number,
   totalInterviews: number,
-  language: string = 'uz'
+  language: string = 'uz',
 ): string {
   const messages = {
     uz: `⏰ BEPUL SINOV: ${daysRemaining} kun qoldi!\n\n📊 Sizning statistikangiz:\n• Mock interviews: ${usedInterviews}/${totalInterviews} ishlatildi\n• Ovozli javoblar: ${totalInterviews - usedInterviews} ta qoldi\n\n🎁 Bepul sinov davridagi imkoniyatlar:\n✅ ${totalInterviews} ta mock interview\n✅ 5 daqiqa ovozli javoblar\n✅ CV tahlili\n✅ Kunlik amaliy topshiriqlar\n✅ AI yordamchisi 24/7\n\n💡 Imkoniyatdan to'liq foydalaning!\n\nIntervyu boshlash: /interview\nCV yuklash: /cv`,
-    
+
     ru: `⏰ ПРОБНЫЙ ПЕРИОД: осталось ${daysRemaining} дней!\n\n📊 Ваша статистика:\n• Mock интервью: ${usedInterviews}/${totalInterviews} использовано\n• Голосовые ответы: ${totalInterviews - usedInterviews} осталось\n\n🎁 Возможности пробного периода:\n✅ ${totalInterviews} mock интервью\n✅ 5 минут голосовых ответов\n✅ Анализ CV\n✅ Ежедневные задания\n✅ AI помощник 24/7\n\n💡 Используйте все возможности!\n\nНачать интервью: /interview\nЗагрузить CV: /cv`,
-    
+
     en: `⏰ FREE TRIAL: ${daysRemaining} days left!\n\n📊 Your statistics:\n• Mock interviews: ${usedInterviews}/${totalInterviews} used\n• Voice responses: ${totalInterviews - usedInterviews} remaining\n\n🎁 Trial period features:\n✅ ${totalInterviews} mock interviews\n✅ 5 minutes voice responses\n✅ CV analysis\n✅ Daily tasks\n✅ AI assistant 24/7\n\n💡 Use all opportunities!\n\nStart interview: /interview\nUpload CV: /cv`,
   };
 
@@ -104,9 +104,9 @@ export function getTrialReminderMessage(
 export function getTrialEndingSoonMessage(language: string = 'uz'): string {
   const messages = {
     uz: `⚠️ DIQQAT: Bepul sinov ERTAGA tugaydi!\n\n🎯 Davom etish uchun:\n1️⃣ Pro rejani tanlang (50% chegirma)\n2️⃣ Cheksiz mock interviews\n3️⃣ 45 daqiqa ovozli javoblar/oy\n4️⃣ Advanced AI tahlil\n\n💰 Faqat 49,000 so'm/oy\n\nRejalarni ko'rish: /plans`,
-    
+
     ru: `⚠️ ВНИМАНИЕ: Пробный период заканчивается ЗАВТРА!\n\n🎯 Чтобы продолжить:\n1️⃣ Выберите Pro план (скидка 50%)\n2️⃣ Неограниченные mock интервью\n3️⃣ 45 минут голосовых ответов/месяц\n4️⃣ Продвинутый AI анализ\n\n💰 Всего 49,000 сум/месяц\n\nСмотреть планы: /plans`,
-    
+
     en: `⚠️ ATTENTION: Free trial ends TOMORROW!\n\n🎯 To continue:\n1️⃣ Choose Pro plan (50% discount)\n2️⃣ Unlimited mock interviews\n3️⃣ 45 minutes voice responses/month\n4️⃣ Advanced AI analysis\n\n💰 Only 49,000 sum/month\n\nView plans: /plans`,
   };
 

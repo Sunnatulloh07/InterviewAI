@@ -130,12 +130,16 @@ export class LimitExhaustedUserService {
 
           await this.delay(200);
         } catch (userError: any) {
-          this.logger.error(`Failed to process limit exhausted user ${user._id}: ${userError.message}`);
+          this.logger.error(
+            `Failed to process limit exhausted user ${user._id}: ${userError.message}`,
+          );
           failed++;
         }
       }
 
-      this.logger.log(`Limit exhausted engagement: sent=${sent}, failed=${failed}, skipped=${skipped}`);
+      this.logger.log(
+        `Limit exhausted engagement: sent=${sent}, failed=${failed}, skipped=${skipped}`,
+      );
     } catch (error: any) {
       this.logger.error(`Limit exhausted engagement failed: ${error.message}`);
     }

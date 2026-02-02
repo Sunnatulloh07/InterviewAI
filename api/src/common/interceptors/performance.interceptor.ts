@@ -19,10 +19,7 @@ export class PerformanceInterceptor implements NestInterceptor {
   }
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
-    const operationName = this.reflector.get<string>(
-      TRACK_PERFORMANCE_KEY,
-      context.getHandler(),
-    );
+    const operationName = this.reflector.get<string>(TRACK_PERFORMANCE_KEY, context.getHandler());
 
     // Skip if no performance tracking metadata
     if (!operationName) {
@@ -42,20 +39,18 @@ export class PerformanceInterceptor implements NestInterceptor {
 
           // Alert if operation is very slow (> 5 seconds)
           if (duration > 5000) {
-            this.logger.error(
-              `Very slow operation detected: ${fullOperationName}`,
-              undefined,
-              { duration, threshold: 5000 },
-            );
+            this.logger.error(`Very slow operation detected: ${fullOperationName}`, undefined, {
+              duration,
+              threshold: 5000,
+            });
           }
         },
         error: (error) => {
           const duration = Date.now() - startTime;
-          this.logger.error(
-            `Operation failed: ${fullOperationName}`,
-            error.stack,
-            { duration, error: error.message },
-          );
+          this.logger.error(`Operation failed: ${fullOperationName}`, error.stack, {
+            duration,
+            error: error.message,
+          });
         },
       }),
     );

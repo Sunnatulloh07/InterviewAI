@@ -227,10 +227,7 @@ export class InterviewsRepository {
         .populate('questionId')
         .exec()) as any;
     } catch (error) {
-      this.logger.error(
-        `Failed to find answers by session IDs: ${error.message}`,
-        error.stack,
-      );
+      this.logger.error(`Failed to find answers by session IDs: ${error.message}`, error.stack);
       throw new Error(`Database operation failed: ${error.message}`);
     }
   }

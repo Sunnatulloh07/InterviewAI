@@ -90,4 +90,3 @@ export class AnalyticsController {
     return await this.analyticsService.getRevenueMetrics(days);
   }
 }
-

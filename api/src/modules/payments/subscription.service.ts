@@ -19,9 +19,7 @@ import { Cron } from '@nestjs/schedule';
 export class SubscriptionService {
   private readonly logger = new Logger(SubscriptionService.name);
 
-  constructor(
-    @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
-  ) {}
+  constructor(@InjectModel(User.name) private readonly userModel: Model<UserDocument>) {}
 
   /**
    * Check if user's trial has expired
@@ -178,31 +176,32 @@ export class SubscriptionService {
   /**
    * Get live interview status (allowed, remaining minutes)
    */
-  async getLiveInterviewStatus(userId: string): Promise<{ 
-    allowed: boolean; 
-    reason?: 'expired' | 'limit_reached'; 
-    remainingMinutes: number; 
+  async getLiveInterviewStatus(userId: string): Promise<{
+    allowed: boolean;
+    reason?: 'expired' | 'limit_reached';
+    remainingMinutes: number;
     plan: SubscriptionPlan;
     limit: number;
     usage: number;
   }> {
     const user = await this.userModel.findById(userId).select('subscription usage voiceQuota');
-    if (!user) return { allowed: false, remainingMinutes: 0, plan: 'free_trial', limit: 0, usage: 0 };
+    if (!user)
+      return { allowed: false, remainingMinutes: 0, plan: 'free_trial', limit: 0, usage: 0 };
 
     if (await this.isTrialExpired(userId)) {
-      return { 
-        allowed: false, 
-        reason: 'expired', 
+      return {
+        allowed: false,
+        reason: 'expired',
         remainingMinutes: 0,
         plan: (user.subscription?.plan || 'free_trial') as SubscriptionPlan,
         limit: 0,
-        usage: 0
+        usage: 0,
       };
     }
 
     const plan = (user.subscription?.plan || 'free_trial') as SubscriptionPlan;
     const limits = this.getPlanLimits(plan);
-    
+
     // ✅ FIX: Use voice.realVoice from new PlanLimits structure
     const limit = limits.voice.realVoice;
     const usage = user.voiceQuota?.realVoice?.used || 0;
@@ -213,15 +212,15 @@ export class SubscriptionService {
     }
 
     const remaining = Math.max(0, limit - usage);
-    
+
     if (remaining <= 0) {
-      return { 
-        allowed: false, 
-        reason: 'limit_reached', 
+      return {
+        allowed: false,
+        reason: 'limit_reached',
         remainingMinutes: 0,
         plan,
         limit,
-        usage
+        usage,
       };
     }
 
@@ -254,9 +253,10 @@ export class SubscriptionService {
     billingCycle: 'monthly' | 'annual' = 'monthly',
   ): Promise<void> {
     const now = new Date();
-    const endDate = billingCycle === 'annual'
-      ? new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000)
-      : new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const endDate =
+      billingCycle === 'annual'
+        ? new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000)
+        : new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
     // ✅ Get new plan's voice quotas from COMPLETE_PLAN_LIMITS
     const planLimits = getCompletePlanLimits(newPlan);
@@ -272,7 +272,7 @@ export class SubscriptionService {
         // Clear trial fields when upgrading
         'subscription.trialStartDate': null,
         'subscription.trialEndsAt': null,
-        
+
         // ✅ CRITICAL FIX: Reset voice quotas to new plan limits
         'voiceQuota.mockVoice': {
           total: planLimits.voice.mockVoice,
@@ -286,7 +286,7 @@ export class SubscriptionService {
           remaining: planLimits.voice.realVoice,
           resetDate: nextMonthResetDate,
         },
-        
+
         // ✅ Reset usage counters to give fresh start on new plan
         'usage.mockInterviewsThisMonth': 0,
         'usage.cvAnalysesThisMonth': 0,
@@ -296,7 +296,7 @@ export class SubscriptionService {
 
     this.logger.log(
       `User ${userId} upgraded to ${newPlan} (${billingCycle}). ` +
-      `Voice quotas reset: mock=${planLimits.voice.mockVoice}min, real=${planLimits.voice.realVoice}min`
+        `Voice quotas reset: mock=${planLimits.voice.mockVoice}min, real=${planLimits.voice.realVoice}min`,
     );
   }
 
@@ -369,14 +369,10 @@ export class SubscriptionService {
       );
 
       this.logger.log(
-        `✅ Monthly usage counters reset completed. ${result.modifiedCount} users updated.`
+        `✅ Monthly usage counters reset completed. ${result.modifiedCount} users updated.`,
       );
     } catch (error: any) {
-      this.logger.error(
-        `❌ Monthly usage counters reset failed: ${error.message}`,
-        error.stack,
-      );
+      this.logger.error(`❌ Monthly usage counters reset failed: ${error.message}`, error.stack);
     }
   }
 }
-

@@ -103,7 +103,6 @@ export const INTERVIEW_QUESTION_COUNTS = {
 
 export type InterviewDuration = keyof typeof INTERVIEW_QUESTION_COUNTS;
 
-
 // Subscription Plan Features
 // Aligned with USAGE_LIMITS plan types
 export const PLAN_FEATURES = {

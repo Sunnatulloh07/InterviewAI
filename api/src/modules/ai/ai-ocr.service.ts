@@ -4,17 +4,17 @@ import axios from 'axios';
 
 /**
  * AI OCR Service
- * 
+ *
  * Integrates with OpenRouter Vision API (Gemini 2.5 Flash)
  * Supports image-to-text extraction for daily task answers
- * 
+ *
  * Features:
  * - Multiple languages (Uzbek, Russian, English)
  * - Base64 image encoding
  * - File validation (20MB max)
  * - Error handling with retry logic
  * - Text-only fallback (no expensive API calls if configured)
- * 
+ *
  * Pricing:
  * - Input: Image processing (~300-1000 tokens per image)
  * - Output: Text extraction (~200-500 tokens)
@@ -29,9 +29,10 @@ export class AiOcrService {
   private readonly maxImageSize = 20 * 1024 * 1024; // 20MB
 
   constructor(private readonly configService: ConfigService) {
-    this.openrouterBaseUrl = this.configService.get<string>('OPENROUTER_BASE_URL') || 'https://openrouter.ai/api/v1';
+    this.openrouterBaseUrl =
+      this.configService.get<string>('OPENROUTER_BASE_URL') || 'https://openrouter.ai/api/v1';
     this.openrouterApiKey = this.configService.get<string>('OPENROUTER_API_KEY') || '';
-    
+
     if (!this.openrouterApiKey) {
       this.logger.warn('OPENROUTER_API_KEY not configured. OCR will be unavailable.');
     }
@@ -39,14 +40,14 @@ export class AiOcrService {
 
   /**
    * Extract text from image using OpenRouter Vision API (Gemini 2.5 Flash)
-   * 
+   *
    * @param imageBuffer - Image file as buffer
    * @param mimeType - Image MIME type (image/jpeg, image/png, image/webp, etc.)
    * @param language - User language for better text extraction (uz, ru, en)
-   * 
+   *
    * @returns { text: string; confidence: number } - Extracted text and confidence score
    * @throws BadRequestException if image is invalid or exceeds size limit
-   * 
+   *
    * @throws Error if OCR fails with non-429 errors (quota exceeded, rate limits, etc.)
    */
   async recognize(
@@ -90,7 +91,7 @@ export class AiOcrService {
       }
 
       this.logger.log(
-        `Starting OCR processing. Language: ${language}, Image: ${imageMbSize}MB, Format: ${mimeType}`
+        `Starting OCR processing. Language: ${language}, Image: ${imageMbSize}MB, Format: ${mimeType}`,
       );
 
       // 3. Convert to base64 for API
@@ -105,11 +106,12 @@ export class AiOcrService {
           messages: [
             {
               role: 'system',
-              content: language === 'uz'
-                ? 'You are an expert OCR specialist. Extract ALL text from this image with perfect accuracy. Include numbers, letters, symbols, and code. Be thorough.'
-                : language === 'ru'
-                ? 'Вы экспертный OCR-специалист. Извлеките ВСЕ текст из изображения с идеальной точностью. Включайте цифры, буквы, символы и код. Будьте тщательны.'
-                : 'You are an expert OCR specialist. Extract ALL text from this image with perfect accuracy. Include numbers, letters, symbols, and code. Be thorough.',
+              content:
+                language === 'uz'
+                  ? 'You are an expert OCR specialist. Extract ALL text from this image with perfect accuracy. Include numbers, letters, symbols, and code. Be thorough.'
+                  : language === 'ru'
+                    ? 'Вы экспертный OCR-специалист. Извлеките ВСЕ текст из изображения с идеальной точностью. Включайте цифры, буквы, символы и код. Будьте тщательны.'
+                    : 'You are an expert OCR specialist. Extract ALL text from this image with perfect accuracy. Include numbers, letters, symbols, and code. Be thorough.',
             },
             {
               role: 'user',
@@ -129,7 +131,7 @@ export class AiOcrService {
         },
         {
           headers: {
-            'Authorization': `Bearer ${this.openrouterApiKey}`,
+            Authorization: `Bearer ${this.openrouterApiKey}`,
             'HTTP-Referer': 'https://interviewai.pro',
             'Content-Type': 'application/json',
           },
@@ -139,7 +141,7 @@ export class AiOcrService {
 
       // 5. Parse response
       const completion = response.data?.choices?.[0]?.message?.content;
-      
+
       if (!completion) {
         this.logger.warn('Empty response from Vision API');
         throw new Error('Empty response from Vision API');
@@ -152,11 +154,12 @@ export class AiOcrService {
       } catch (e) {
         // Not JSON, try to extract text from response
         this.logger.warn(`Failed to parse as JSON: ${e.message}`);
-        
+
         // Fallback: Extract text from string
-        const textMatches = completion.match(/(["']([^"']+)["']([^"']+)["'])/i) ||
-                          completion.match(/["']?\s*:?\s*["']/i);
-        
+        const textMatches =
+          completion.match(/(["']([^"']+)["']([^"']+)["'])/i) ||
+          completion.match(/["']?\s*:?\s*["']/i);
+
         if (textMatches && textMatches[1]) {
           result = { text: textMatches[1], confidence: 0.85 };
         } else {
@@ -167,11 +170,10 @@ export class AiOcrService {
 
       const duration = Date.now() - startTime;
       this.logger.log(
-        `OCR processing completed. Duration: ${duration}ms. Extracted ${result.text.length} chars. Confidence: ${result.confidence}`
+        `OCR processing completed. Duration: ${duration}ms. Extracted ${result.text.length} chars. Confidence: ${result.confidence}`,
       );
 
       return result;
-
     } catch (error: any) {
       // Check if it's a 429 error (quota exceeded, rate limit, etc.)
       if (error.response?.status === 429) {
@@ -181,7 +183,8 @@ export class AiOcrService {
           ru: '❌ Лимит API OpenRouter превышен. Проверьте лимит на сегодня.',
           en: '❌ OpenRouter API quota exceeded. Check your daily limit.',
         };
-        const message = quotaText[lang] || '❌ OpenRouter API quota exceeded. Limit: 200 images/day';
+        const message =
+          quotaText[lang] || '❌ OpenRouter API quota exceeded. Limit: 200 images/day';
         this.logger.error(message);
         throw new Error(message);
       }
@@ -193,7 +196,7 @@ export class AiOcrService {
 
   /**
    * Detect image type from MIME type or buffer signature
-   * 
+   *
    * @param mimeType - Image MIME type
    * @returns Image type description (JPG, PNG, WebP, PDF, Unknown)
    */
@@ -207,13 +210,13 @@ export class AiOcrService {
       'image/tiff': 'TIFF',
       'application/pdf': 'PDF',
     };
-    
+
     return typeMap[mimeType] || 'Unknown';
   }
 
   /**
    * Convert image size to human-readable format
-   * 
+   *
    * @param bytes - Size in bytes
    * @returns Formatted size string (e.g. "1.5 MB", "500 KB", "2 MB")
    */

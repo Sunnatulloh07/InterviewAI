@@ -24,4 +24,3 @@ import { UsersModule } from '../users/users.module';
   exports: [PaymentsService, SubscriptionService],
 })
 export class PaymentsModule {}
-

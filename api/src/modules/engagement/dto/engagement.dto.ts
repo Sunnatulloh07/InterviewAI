@@ -49,11 +49,11 @@ export interface EngagementUserContext {
   trialDaysRemaining?: number;
   /** Last 3 interview scores for trend analysis */
   recentScores?: number[];
-  
+
   // Achievement trigger fields
   /** Type of achievement (e.g., "new_high_score", "10_interviews", "streak_7") */
   achievementType?: string;
-  
+
   // Weekly progress trigger fields
   /** Number of interviews completed this week */
   weeklyInterviews?: number;
@@ -61,7 +61,7 @@ export interface EngagementUserContext {
   strengths?: string[];
   /** Areas that need improvement */
   improvements?: string[];
-  
+
   // First interview trigger fields
   /** Score from first interview */
   firstScore?: number;

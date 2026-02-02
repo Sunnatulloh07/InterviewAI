@@ -50,7 +50,11 @@ import { TasksModule } from '../tasks/tasks.module';
     TrialNotificationService,
     TelegramDailyTaskService,
   ],
-  exports: [TelegramService, TelegramSubscriptionService, TrialNotificationService, TelegramDailyTaskService],
+  exports: [
+    TelegramService,
+    TelegramSubscriptionService,
+    TrialNotificationService,
+    TelegramDailyTaskService,
+  ],
 })
 export class TelegramModule {}
-

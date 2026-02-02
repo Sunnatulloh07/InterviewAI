@@ -2,7 +2,10 @@ import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Cron } from '@nestjs/schedule';
-import { FailedNotification, FailedNotificationDocument } from './schemas/failed-notification.schema';
+import {
+  FailedNotification,
+  FailedNotificationDocument,
+} from './schemas/failed-notification.schema';
 import { TelegramService } from '../telegram/telegram.service';
 import { UsersService } from '../users/users.service';
 
@@ -96,7 +99,9 @@ export class FailedNotificationRetryService {
         return;
       }
 
-      this.logger.log(`Processing ${failedNotifications.length} failed notifications (${totalFailed} remaining)`);
+      this.logger.log(
+        `Processing ${failedNotifications.length} failed notifications (${totalFailed} remaining)`,
+      );
 
       let success = 0;
       let failed = 0;
@@ -106,7 +111,10 @@ export class FailedNotificationRetryService {
         try {
           const user = await this.usersService.findById(notification.userId.toString());
           if (!user || user.engagement?.isBotBlocked) {
-            await this.markAsPermanentlyFailed((notification as any)._id.toString(), 'User not found or blocked bot');
+            await this.markAsPermanentlyFailed(
+              (notification as any)._id.toString(),
+              'User not found or blocked bot',
+            );
             permanentlyFailed++;
             continue;
           }
@@ -132,17 +140,22 @@ export class FailedNotificationRetryService {
             case 'first_reminder':
             case 'second_reminder':
             case 'third_reminder':
-              message = notification.metadata?.messageContent || 'Please complete your daily tasks!';
+              message =
+                notification.metadata?.messageContent || 'Please complete your daily tasks!';
               break;
             case 'engagement':
             case 'inactivity':
-              message = notification.metadata?.messageContent || 'We miss you! Come back to practice.';
+              message =
+                notification.metadata?.messageContent || 'We miss you! Come back to practice.';
               break;
             case 'limit_exhausted':
-              message = notification.metadata?.messageContent || 'Your free trial limits have been reached!';
+              message =
+                notification.metadata?.messageContent ||
+                'Your free trial limits have been reached!';
               break;
             default:
-              message = notification.metadata?.messageContent || 'New notification from InterviewAI Pro';
+              message =
+                notification.metadata?.messageContent || 'New notification from InterviewAI Pro';
           }
 
           await bot.api.sendMessage(notification.telegramChatId, message, {
@@ -152,7 +165,9 @@ export class FailedNotificationRetryService {
           await this.failedNotificationModel.findByIdAndDelete(notification._id);
 
           success++;
-          this.logger.debug(`Successfully resent ${notification.notificationType} to user ${notification.userId}`);
+          this.logger.debug(
+            `Successfully resent ${notification.notificationType} to user ${notification.userId}`,
+          );
         } catch (error: any) {
           const errorMessage = error.description || error.message;
           const isBlockedError =
@@ -164,7 +179,9 @@ export class FailedNotificationRetryService {
           if (isBlockedError || notification.retryCount >= this.MAX_RETRY_ATTEMPTS - 1) {
             await this.markAsPermanentlyFailed(
               (notification as any)._id.toString(),
-              isBlockedError ? 'User blocked bot' : `Max retries (${this.MAX_RETRY_ATTEMPTS}) exceeded`,
+              isBlockedError
+                ? 'User blocked bot'
+                : `Max retries (${this.MAX_RETRY_ATTEMPTS}) exceeded`,
             );
             permanentlyFailed++;
           } else {
@@ -188,7 +205,9 @@ export class FailedNotificationRetryService {
         await this.delay(50);
       }
 
-      this.logger.log(`Retry queue processed: success=${success}, failed=${failed}, permanentlyFailed=${permanentlyFailed}`);
+      this.logger.log(
+        `Retry queue processed: success=${success}, failed=${failed}, permanentlyFailed=${permanentlyFailed}`,
+      );
     } catch (error: any) {
       this.logger.error(`Retry queue processing failed: ${error.message}`);
     }
@@ -216,7 +235,9 @@ export class FailedNotificationRetryService {
       });
 
       if (result.deletedCount > 0) {
-        this.logger.log(`Cleaned up ${result.deletedCount} permanently failed notifications older than 30 days`);
+        this.logger.log(
+          `Cleaned up ${result.deletedCount} permanently failed notifications older than 30 days`,
+        );
       }
     } catch (error: any) {
       this.logger.error(`Failed to cleanup old notifications: ${error.message}`);

@@ -48,7 +48,10 @@ export class TrialExpiredUserService {
       for (const user of expiredUsers) {
         try {
           const daysSinceExpiry = user.trialExpiredNotifiedAt
-            ? Math.floor((now.getTime() - new Date(user.trialExpiredNotifiedAt).getTime()) / (1000 * 60 * 60 * 24))
+            ? Math.floor(
+                (now.getTime() - new Date(user.trialExpiredNotifiedAt).getTime()) /
+                  (1000 * 60 * 60 * 24),
+              )
             : -1;
 
           if (daysSinceExpiry >= 0 && daysSinceExpiry < 7) {
@@ -57,7 +60,10 @@ export class TrialExpiredUserService {
           }
 
           const daysExpired = user.subscription.trialEndsAt
-            ? Math.floor((now.getTime() - new Date(user.subscription.trialEndsAt).getTime()) / (1000 * 60 * 60 * 24))
+            ? Math.floor(
+                (now.getTime() - new Date(user.subscription.trialEndsAt).getTime()) /
+                  (1000 * 60 * 60 * 24),
+              )
             : 0;
 
           let message: string;
@@ -85,7 +91,9 @@ export class TrialExpiredUserService {
               });
 
               sent++;
-              this.logger.debug(`Sent trial expired message to user ${user._id} (${daysExpired} days expired)`);
+              this.logger.debug(
+                `Sent trial expired message to user ${user._id} (${daysExpired} days expired)`,
+              );
             } catch (sendError: any) {
               const errorCode = sendError.error_code;
               const errorDescription = sendError.description || '';
@@ -119,12 +127,16 @@ export class TrialExpiredUserService {
 
           await this.delay(200);
         } catch (userError: any) {
-          this.logger.error(`Failed to process trial expired user ${user._id}: ${userError.message}`);
+          this.logger.error(
+            `Failed to process trial expired user ${user._id}: ${userError.message}`,
+          );
           failed++;
         }
       }
 
-      this.logger.log(`Trial expired engagement: sent=${sent}, failed=${failed}, skipped=${skipped}`);
+      this.logger.log(
+        `Trial expired engagement: sent=${sent}, failed=${failed}, skipped=${skipped}`,
+      );
     } catch (error: any) {
       this.logger.error(`Trial expired engagement failed: ${error.message}`);
     }

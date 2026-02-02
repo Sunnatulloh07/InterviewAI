@@ -59,7 +59,7 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
       // Check if usage limit is reached (double check in real-time)
       const userId = client.data.userId;
       if (userId) {
-         // Optionally check remaining minutes here if strict enforcement is needed
+        // Optionally check remaining minutes here if strict enforcement is needed
       }
 
       // Transcribe audio chunk
@@ -103,9 +103,12 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
 
   @UseGuards(WsJwtGuard)
   @SubscribeMessage('session:join')
-  async handleJoinSession(@ConnectedSocket() client: Socket, @MessageBody() data: { sessionId: string }) {
+  async handleJoinSession(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { sessionId: string },
+  ) {
     client.join(data.sessionId);
-    
+
     // Start tracking duration
     this.sessionStartTimes.set(client.id, Date.now());
     this.logger.debug(`Session tracking started for ${client.id} (User: ${client.data.userId})`);
@@ -139,10 +142,12 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         try {
           await this.subscriptionService.addLiveMinutes(client.data.userId, minutesUsed);
         } catch (error) {
-          this.logger.error(`Failed to deduct minutes for user ${client.data.userId}: ${error.message}`);
+          this.logger.error(
+            `Failed to deduct minutes for user ${client.data.userId}: ${error.message}`,
+          );
         }
       }
-      
+
       this.sessionStartTimes.delete(client.id);
     }
   }

@@ -1,9 +1,9 @@
 /**
  * COMPLETE SUBSCRIPTION PLAN LIMITS
- * 
+ *
  * This is the SINGLE SOURCE OF TRUTH for all plan-based feature limits.
  * Based on COMPLETE_PLAN_AUDIT.md specification.
- * 
+ *
  * ⚠️ CRITICAL: All plan enforcement MUST reference this structure.
  * ⚠️ DO NOT hardcode limits elsewhere in the codebase.
  */
@@ -11,20 +11,20 @@
 export interface PlanLimits {
   // Voice Quotas (minutes per month)
   voice: {
-    mockVoice: number;  // Voice quota for mock interview practice
-    realVoice: number;  // Voice quota for real interview assistance
+    mockVoice: number; // Voice quota for mock interview practice
+    realVoice: number; // Voice quota for real interview assistance
   };
 
   // Mock Interview Limits
   mockInterviews: {
-    perMonth: number;  // -1 = unlimited
+    perMonth: number; // -1 = unlimited
     questionsPerInterview: number;
   };
 
   // CV Analysis Limits
   cvAnalysis: {
-    perMonth: number;  // -1 = unlimited
-    maxFileSize: number;  // MB
+    perMonth: number; // -1 = unlimited
+    maxFileSize: number; // MB
     allowedFormats: string[] | '*';
   };
 
@@ -36,17 +36,17 @@ export interface PlanLimits {
     imageAnswer: boolean;
     videoAnswer: boolean;
     textAnswer: boolean;
-    customQuestions?: boolean;  // Elite only
+    customQuestions?: boolean; // Elite only
   };
 
   // File Upload Limits (general)
   fileUploads: {
-    maxSize: number;  // MB
+    maxSize: number; // MB
     allowedTypes: string[] | '*';
     imagesAllowed: boolean;
     audioAllowed: boolean;
     videoAllowed: boolean;
-    documentsAllowed?: boolean;  // Elite only
+    documentsAllowed?: boolean; // Elite only
   };
 
   // AI Features Level
@@ -57,9 +57,9 @@ export interface PlanLimits {
     taskCompletionCheck: 'basic' | 'advanced' | 'ai-powered';
     personalizedHints?: boolean;
     progressTracking?: 'basic' | 'advanced';
-    oneOnOneCoaching?: boolean;  // Elite only
-    prioritySupport?: boolean;  // Elite only
-    customInterviews?: boolean;  // Elite only
+    oneOnOneCoaching?: boolean; // Elite only
+    prioritySupport?: boolean; // Elite only
+    customInterviews?: boolean; // Elite only
   };
 }
 
@@ -73,18 +73,18 @@ export const COMPLETE_PLAN_LIMITS: Record<string, PlanLimits> = {
    */
   free_trial: {
     voice: {
-      mockVoice: 5,  // 5 minutes per month
-      realVoice: 0,  // NO real interview voice
+      mockVoice: 5, // 5 minutes per month
+      realVoice: 0, // NO real interview voice
     },
 
     mockInterviews: {
-      perMonth: 3,  // Only 3 mock interviews per month
+      perMonth: 3, // Only 3 mock interviews per month
       questionsPerInterview: 10,
     },
 
     cvAnalysis: {
-      perMonth: 2,  // Only 2 CV analyses per month
-      maxFileSize: 5,  // 5 MB max
+      perMonth: 2, // Only 2 CV analyses per month
+      maxFileSize: 5, // 5 MB max
       allowedFormats: ['pdf', 'docx', 'txt'],
     },
 
@@ -93,16 +93,16 @@ export const COMPLETE_PLAN_LIMITS: Record<string, PlanLimits> = {
     // But current implementation sets dailyTasks = FALSE for free trial
     // DECISION: Setting to TRUE per audit spec, but limiting features
     dailyTasks: {
-      enabled: true,  // ✅ Per COMPLETE_PLAN_AUDIT.md
+      enabled: true, // ✅ Per COMPLETE_PLAN_AUDIT.md
       questionsPerDay: 3,
-      voiceAnswer: false,  // ❌ Cannot answer with voice
-      imageAnswer: false,  // ❌ Cannot answer with image
-      videoAnswer: false,  // ❌ Cannot answer with video
-      textAnswer: true,    // ✅ Only text answers
+      voiceAnswer: false, // ❌ Cannot answer with voice
+      imageAnswer: false, // ❌ Cannot answer with image
+      videoAnswer: false, // ❌ Cannot answer with video
+      textAnswer: true, // ✅ Only text answers
     },
 
     fileUploads: {
-      maxSize: 5,  // 5 MB
+      maxSize: 5, // 5 MB
       allowedTypes: ['text', 'pdf', 'docx'],
       imagesAllowed: false,
       audioAllowed: false,
@@ -113,7 +113,7 @@ export const COMPLETE_PLAN_LIMITS: Record<string, PlanLimits> = {
       basicFeedback: true,
       detailedAnalysis: false,
       voiceExplanations: false,
-      taskCompletionCheck: 'basic',  // Simple keyword check
+      taskCompletionCheck: 'basic', // Simple keyword check
     },
   },
 
@@ -123,32 +123,32 @@ export const COMPLETE_PLAN_LIMITS: Record<string, PlanLimits> = {
    */
   starter: {
     voice: {
-      mockVoice: 10,  // 5 → 10 minutes
-      realVoice: 15,  // 0 → 15 minutes (NEW!)
+      mockVoice: 10, // 5 → 10 minutes
+      realVoice: 15, // 0 → 15 minutes (NEW!)
     },
 
     mockInterviews: {
-      perMonth: 10,  // 3 → 10 interviews
+      perMonth: 10, // 3 → 10 interviews
       questionsPerInterview: 15,
     },
 
     cvAnalysis: {
-      perMonth: 5,  // 2 → 5 analyses
-      maxFileSize: 10,  // 5 → 10 MB
+      perMonth: 5, // 2 → 5 analyses
+      maxFileSize: 10, // 5 → 10 MB
       allowedFormats: ['pdf', 'docx', 'txt', 'rtf'],
     },
 
     dailyTasks: {
       enabled: true,
       questionsPerDay: 3,
-      voiceAnswer: true,   // ✅ Can answer with voice!
-      imageAnswer: true,   // ✅ Can answer with image!
-      videoAnswer: false,  // ❌ Video only in PRO+
+      voiceAnswer: true, // ✅ Can answer with voice!
+      imageAnswer: true, // ✅ Can answer with image!
+      videoAnswer: false, // ❌ Video only in PRO+
       textAnswer: true,
     },
 
     fileUploads: {
-      maxSize: 10,  // 5 → 10 MB
+      maxSize: 10, // 5 → 10 MB
       allowedTypes: ['text', 'pdf', 'docx', 'png', 'jpg', 'jpeg'],
       imagesAllowed: true,
       audioAllowed: false,
@@ -157,9 +157,9 @@ export const COMPLETE_PLAN_LIMITS: Record<string, PlanLimits> = {
 
     aiFeatures: {
       basicFeedback: true,
-      detailedAnalysis: true,      // ✅ Detailed analysis enabled
-      voiceExplanations: true,     // ✅ Voice explanations enabled
-      taskCompletionCheck: 'advanced',  // Better AI checking
+      detailedAnalysis: true, // ✅ Detailed analysis enabled
+      voiceExplanations: true, // ✅ Voice explanations enabled
+      taskCompletionCheck: 'advanced', // Better AI checking
     },
   },
 
@@ -169,47 +169,56 @@ export const COMPLETE_PLAN_LIMITS: Record<string, PlanLimits> = {
    */
   pro: {
     voice: {
-      mockVoice: 30,  // 10 → 30 minutes
-      realVoice: 45,  // 15 → 45 minutes
+      mockVoice: 30, // 10 → 30 minutes
+      realVoice: 45, // 15 → 45 minutes
     },
 
     mockInterviews: {
-      perMonth: 30,  // 10 → 30 interviews
+      perMonth: 30, // 10 → 30 interviews
       questionsPerInterview: 20,
     },
 
     cvAnalysis: {
-      perMonth: 15,  // 5 → 15 analyses
-      maxFileSize: 20,  // 10 → 20 MB
+      perMonth: 15, // 5 → 15 analyses
+      maxFileSize: 20, // 10 → 20 MB
       allowedFormats: ['pdf', 'docx', 'txt', 'rtf', 'odt'],
     },
 
     dailyTasks: {
       enabled: true,
-      questionsPerDay: 5,  // 3 → 5 questions!
+      questionsPerDay: 5, // 3 → 5 questions!
       voiceAnswer: true,
       imageAnswer: true,
-      videoAnswer: false,   // ❌ NO VIDEO - Too expensive for AI processing
+      videoAnswer: false, // ❌ NO VIDEO - Too expensive for AI processing
       textAnswer: true,
     },
 
     fileUploads: {
-      maxSize: 20,  // 10 → 20 MB
+      maxSize: 20, // 10 → 20 MB
       allowedTypes: [
-        'text', 'pdf', 'docx', 'png', 'jpg', 'jpeg',
-        'gif', 'webp', 'mp3', 'wav', 'ogg',  // ❌ NO mp4 - video disabled
+        'text',
+        'pdf',
+        'docx',
+        'png',
+        'jpg',
+        'jpeg',
+        'gif',
+        'webp',
+        'mp3',
+        'wav',
+        'ogg', // ❌ NO mp4 - video disabled
       ],
       imagesAllowed: true,
-      audioAllowed: true,  // ✅ Audio files enabled
-      videoAllowed: false,  // ❌ NO VIDEO - Token cost too high
+      audioAllowed: true, // ✅ Audio files enabled
+      videoAllowed: false, // ❌ NO VIDEO - Token cost too high
     },
 
     aiFeatures: {
       basicFeedback: true,
       detailedAnalysis: true,
       voiceExplanations: true,
-      taskCompletionCheck: 'ai-powered',    // Full AI analysis
-      personalizedHints: true,              // Custom hints
+      taskCompletionCheck: 'ai-powered', // Full AI analysis
+      personalizedHints: true, // Custom hints
       progressTracking: 'advanced',
     },
   },
@@ -220,37 +229,37 @@ export const COMPLETE_PLAN_LIMITS: Record<string, PlanLimits> = {
    */
   elite: {
     voice: {
-      mockVoice: 60,   // 30 → 60 minutes
-      realVoice: 120,  // 45 → 120 minutes
+      mockVoice: 60, // 30 → 60 minutes
+      realVoice: 120, // 45 → 120 minutes
     },
 
     mockInterviews: {
-      perMonth: -1,  // UNLIMITED!
+      perMonth: -1, // UNLIMITED!
       questionsPerInterview: 30,
     },
 
     cvAnalysis: {
-      perMonth: -1,  // UNLIMITED!
-      maxFileSize: 50,  // 20 → 50 MB
-      allowedFormats: '*',  // ALL formats
+      perMonth: -1, // UNLIMITED!
+      maxFileSize: 50, // 20 → 50 MB
+      allowedFormats: '*', // ALL formats
     },
 
     dailyTasks: {
       enabled: true,
-      questionsPerDay: 10,  // 5 → 10 questions!
+      questionsPerDay: 10, // 5 → 10 questions!
       voiceAnswer: true,
       imageAnswer: true,
-      videoAnswer: false,  // ❌ NO VIDEO - Too expensive for AI processing
+      videoAnswer: false, // ❌ NO VIDEO - Too expensive for AI processing
       textAnswer: true,
-      customQuestions: true,  // ✅ Can request custom questions
+      customQuestions: true, // ✅ Can request custom questions
     },
 
     fileUploads: {
-      maxSize: 50,  // 20 → 50 MB
-      allowedTypes: '*',  // ALL file types (except video)
+      maxSize: 50, // 20 → 50 MB
+      allowedTypes: '*', // ALL file types (except video)
       imagesAllowed: true,
       audioAllowed: true,
-      videoAllowed: false,  // ❌ NO VIDEO - Token cost too high
+      videoAllowed: false, // ❌ NO VIDEO - Token cost too high
       documentsAllowed: true,
     },
 
@@ -261,9 +270,9 @@ export const COMPLETE_PLAN_LIMITS: Record<string, PlanLimits> = {
       taskCompletionCheck: 'ai-powered',
       personalizedHints: true,
       progressTracking: 'advanced',
-      oneOnOneCoaching: true,     // ✅ Personal coaching
-      prioritySupport: true,      // ✅ Priority support
-      customInterviews: true,     // ✅ Custom interview creation
+      oneOnOneCoaching: true, // ✅ Personal coaching
+      prioritySupport: true, // ✅ Priority support
+      customInterviews: true, // ✅ Custom interview creation
     },
   },
 };
