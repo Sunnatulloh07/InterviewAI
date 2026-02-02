@@ -115,10 +115,12 @@ AI-powered interview preparation assistant that helps you:
 ✅ <b>CV Analysis</b> - AI-powered resume review
 ✅ <b>Voice Support</b> - Answer with voice messages
 
+━━━━━━━━━━━━━━━━━━
 🌍 <b>Please select your language:</b>
 Пожалуйста, выберите язык:
 Iltimos, tilni tanlang:`;
       
+      // InlineKeyboard for language selection (message buttons, not keyboard)
       const langKeyboard = new InlineKeyboard()
         .text('🇺🇿 O\'zbek', 'lang_uz')
         .text('🇷🇺 Русский', 'lang_ru')
@@ -180,7 +182,17 @@ ${planEmoji[plan]} Tarif: <b>${planNames[plan]?.uz || plan}</b>
 • 🎤 Ovozli: Mock ${mockVoiceRemaining} | Live ${realVoiceRemaining} daqiqa
 
 ━━━━━━━━━━━━━━━━━━
-<b>Nima qilmoqchisiz?</b>`,
+<b>📋 Asosiy buyruqlar:</b>
+
+/interview - 🎯 Mock intervyu boshlash
+/live - 🔴 Live intervyu yordami
+/tasks - 📋 Kunlik vazifalar
+/analyze_cv - 📄 CV tahlil qilish
+/profile - 👤 Profil sozlamalari
+/voice - 🎤 Ovozli kvota
+/upgrade - 💎 Tariflarni ko'rish
+/stats - 📊 To'liq statistika
+/help - ❓ Yordam`,
 
       ru: `👋 <b>Добро пожаловать, ${user.firstName}!</b>
 
@@ -192,7 +204,17 @@ ${planEmoji[plan]} Тариф: <b>${planNames[plan]?.ru || plan}</b>
 • 🎤 Голосовые: Mock ${mockVoiceRemaining} | Live ${realVoiceRemaining} мин
 
 ━━━━━━━━━━━━━━━━━━
-<b>Что хотите сделать?</b>`,
+<b>📋 Основные команды:</b>
+
+/interview - 🎯 Начать mock интервью
+/live - 🔴 Помощь в реальном интервью
+/tasks - 📋 Ежедневные задания
+/analyze_cv - 📄 Анализ резюме
+/profile - 👤 Настройки профиля
+/voice - 🎤 Голосовая квота
+/upgrade - 💎 Посмотреть тарифы
+/stats - 📊 Полная статистика
+/help - ❓ Помощь`,
 
       en: `👋 <b>Welcome, ${user.firstName}!</b>
 
@@ -204,33 +226,22 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
 • 🎤 Voice: Mock ${mockVoiceRemaining} | Live ${realVoiceRemaining} min
 
 ━━━━━━━━━━━━━━━━━━
-<b>What would you like to do?</b>`,
+<b>📋 Main Commands:</b>
+
+/interview - 🎯 Start mock interview
+/live - 🔴 Real interview help
+/tasks - 📋 Daily tasks
+/analyze_cv - 📄 Analyze resume
+/profile - 👤 Profile settings
+/voice - 🎤 Voice quota
+/upgrade - 💎 View plans
+/stats - 📊 Full statistics
+/help - ❓ Help`,
     };
 
-    const buttonLabels: Record<string, Record<string, string>> = {
-      interview: { uz: '🎯 Intervyu', ru: '🎯 Интервью', en: '🎯 Interview' },
-      tasks: { uz: '📋 Vazifalar', ru: '📋 Задания', en: '📋 Tasks' },
-      cv: { uz: '📄 CV Tahlil', ru: '📄 Анализ CV', en: '📄 CV Analysis' },
-      profile: { uz: '👤 Profil', ru: '👤 Профиль', en: '👤 Profile' },
-      upgrade: { uz: '💳 Tarif', ru: '💳 Тарифы', en: '💳 Plans' },
-      help: { uz: '❓ Yordam', ru: '❓ Помощь', en: '❓ Help' },
-    };
-
-    // Inline keyboard (message buttons) - ALL main features
-    const inlineKeyboard = new InlineKeyboard()
-      .text(buttonLabels.interview[lang] || buttonLabels.interview.en, 'menu_interview')
-      .text(buttonLabels.tasks[lang] || buttonLabels.tasks.en, 'menu_tasks')
-      .text(buttonLabels.cv[lang] || buttonLabels.cv.en, 'menu_cv')
-      .row()
-      .text(buttonLabels.profile[lang] || buttonLabels.profile.en, 'menu_profile')
-      .text(buttonLabels.upgrade[lang] || buttonLabels.upgrade.en, 'menu_upgrade')
-      .row()
-      .text(buttonLabels.help[lang] || buttonLabels.help.en, 'menu_help');
-
-    // Send main menu with inline keyboard (clean UI without persistent bottom buttons)
+    // Send main menu WITHOUT inline keyboard - use commands only
     await ctx.reply(menuText[lang] || menuText['en'], {
       parse_mode: 'HTML',
-      reply_markup: inlineKeyboard,
     });
   }
 
@@ -889,7 +900,6 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
         
         await ctx.reply(welcomeBackText[lang] || welcomeBackText.en, {
           parse_mode: 'HTML',
-          reply_markup: { remove_keyboard: true },
         });
 
         // Show main menu
@@ -951,7 +961,6 @@ Let's get started! 🚀`,
 
       await ctx.reply(welcomeText[lang] || welcomeText.en, {
         parse_mode: 'HTML',
-        reply_markup: { remove_keyboard: true },
       });
 
       // Show main menu
@@ -1764,10 +1773,11 @@ Press the button below 👇`,
         en: '📱 Share phone number',
       };
       
+      // Keyboard button for phone number request (only during registration)
       const keyboard = new Keyboard()
         .requestContact(phoneButton[selectedLang] || phoneButton.en)
         .resized()
-        .oneTime();
+        .oneTime(); // Will auto-hide after use
       
       await ctx.reply(registrationText[selectedLang] || registrationText.en, {
         parse_mode: 'HTML',
