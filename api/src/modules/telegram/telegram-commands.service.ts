@@ -239,10 +239,36 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
 /help - ❓ Help`,
     };
 
-    // Send main menu WITHOUT keyboard - remove any existing keyboard
+    // Button labels for inline keyboard
+    const buttonLabels: Record<string, Record<string, string>> = {
+      interview: { uz: '🎯 Intervyu', ru: '🎯 Интервью', en: '🎯 Interview' },
+      tasks: { uz: '📋 Vazifalar', ru: '📋 Задания', en: '📋 Tasks' },
+      cv: { uz: '📄 CV Tahlil', ru: '📄 Анализ CV', en: '📄 CV Analysis' },
+      profile: { uz: '👤 Profil', ru: '👤 Профиль', en: '👤 Profile' },
+      upgrade: { uz: '💳 Tarif', ru: '💳 Тарифы', en: '💳 Plans' },
+      help: { uz: '❓ Yordam', ru: '❓ Помощь', en: '❓ Help' },
+    };
+
+    // Inline keyboard with main menu buttons
+    const inlineKeyboard = new InlineKeyboard()
+      .text(buttonLabels.interview[lang] || buttonLabels.interview.en, 'menu_interview')
+      .text(buttonLabels.tasks[lang] || buttonLabels.tasks.en, 'menu_tasks')
+      .text(buttonLabels.cv[lang] || buttonLabels.cv.en, 'menu_cv')
+      .row()
+      .text(buttonLabels.profile[lang] || buttonLabels.profile.en, 'menu_profile')
+      .text(buttonLabels.upgrade[lang] || buttonLabels.upgrade.en, 'menu_upgrade')
+      .row()
+      .text(buttonLabels.help[lang] || buttonLabels.help.en, 'menu_help');
+
+    // STEP 1: Remove persistent keyboard (ReplyKeyboard) first
+    await ctx.reply('🔄', {
+      reply_markup: { remove_keyboard: true },
+    });
+
+    // STEP 2: Send main menu with inline keyboard
     await ctx.reply(menuText[lang] || menuText['en'], {
       parse_mode: 'HTML',
-      reply_markup: { remove_keyboard: true }, // CRITICAL: Remove persistent keyboard buttons
+      reply_markup: inlineKeyboard,
     });
   }
 
