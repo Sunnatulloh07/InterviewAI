@@ -260,13 +260,23 @@ export class TelegramService implements OnModuleInit {
         }
       };
 
-      // Set global commands
+      // Set global commands - organized by category
       await this.bot.api.setMyCommands([
-        { command: 'start', description: '🏠 Menu / Start' },
-        { command: 'interview', description: '🎯 Interview' },
-        { command: 'upgrade', description: '💳 Tariflar / Plans' },
-        { command: 'profile', description: '👤 Profile' },
-        { command: 'help', description: '❓ Help' },
+        // Main Features
+        { command: 'start', description: '🏠 Main Menu' },
+        { command: 'interview', description: '🎯 Start Interview' },
+        { command: 'tasks', description: '📋 Daily Tasks' },
+        { command: 'analyze_cv', description: '📄 CV Analysis' },
+        
+        // User Info
+        { command: 'profile', description: '👤 My Profile' },
+        { command: 'stats', description: '📊 My Statistics' },
+        { command: 'voice', description: '🎤 Voice Quota' },
+        
+        // Settings & Help
+        { command: 'upgrade', description: '💳 Plans & Pricing' },
+        { command: 'settings', description: '⚙️ Settings' },
+        { command: 'help', description: '❓ Help & Commands' },
       ]);
 
       // Setup Bot Menu Button (appears in bottom left corner of input field)
