@@ -182,17 +182,7 @@ ${planEmoji[plan]} Tarif: <b>${planNames[plan]?.uz || plan}</b>
 • 🎤 Ovozli: Mock ${mockVoiceRemaining} | Live ${realVoiceRemaining} daqiqa
 
 ━━━━━━━━━━━━━━━━━━
-<b>📋 Asosiy buyruqlar:</b>
-
-/interview - 🎯 Mock intervyu boshlash
-/live - 🔴 Live intervyu yordami
-/tasks - 📋 Kunlik vazifalar
-/analyze_cv - 📄 CV tahlil qilish
-/profile - 👤 Profil sozlamalari
-/voice - 🎤 Ovozli kvota
-/upgrade - 💎 Tariflarni ko'rish
-/stats - 📊 To'liq statistika
-/help - ❓ Yordam`,
+<b>Quyidagi tugmalardan birini tanlang:</b>👇`,
 
       ru: `👋 <b>Добро пожаловать, ${user.firstName}!</b>
 
@@ -204,17 +194,7 @@ ${planEmoji[plan]} Тариф: <b>${planNames[plan]?.ru || plan}</b>
 • 🎤 Голосовые: Mock ${mockVoiceRemaining} | Live ${realVoiceRemaining} мин
 
 ━━━━━━━━━━━━━━━━━━
-<b>📋 Основные команды:</b>
-
-/interview - 🎯 Начать mock интервью
-/live - 🔴 Помощь в реальном интервью
-/tasks - 📋 Ежедневные задания
-/analyze_cv - 📄 Анализ резюме
-/profile - 👤 Настройки профиля
-/voice - 🎤 Голосовая квота
-/upgrade - 💎 Посмотреть тарифы
-/stats - 📊 Полная статистика
-/help - ❓ Помощь`,
+<b>Выберите действие:</b>👇`,
 
       en: `👋 <b>Welcome, ${user.firstName}!</b>
 
@@ -226,17 +206,7 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
 • 🎤 Voice: Mock ${mockVoiceRemaining} | Live ${realVoiceRemaining} min
 
 ━━━━━━━━━━━━━━━━━━
-<b>📋 Main Commands:</b>
-
-/interview - 🎯 Start mock interview
-/live - 🔴 Real interview help
-/tasks - 📋 Daily tasks
-/analyze_cv - 📄 Analyze resume
-/profile - 👤 Profile settings
-/voice - 🎤 Voice quota
-/upgrade - 💎 View plans
-/stats - 📊 Full statistics
-/help - ❓ Help`,
+<b>Choose an option:</b>👇`,
     };
 
     // Button labels for inline keyboard

@@ -112,6 +112,12 @@ export class EngagementService implements OnModuleInit {
       const context = await this.buildUserContext(user, trigger);
       const generated = await this.engagementAiService.generateMessage(trigger, context);
 
+      // Skip if message content is empty (e.g., trial notifications handled by cron job)
+      if (!generated.content || generated.content.trim() === '') {
+        this.logger.debug(`Skipping empty engagement message for trigger=${trigger}, user=${userId}`);
+        return null;
+      }
+
       return await this.sendNotification(user, trigger, generated.content, {
         aiGenerated: generated.model !== 'fallback-template',
         aiModel: generated.model,

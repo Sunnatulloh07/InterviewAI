@@ -73,6 +73,7 @@ export class TrialNotificationService {
 
   /**
    * Find users whose trial expires in 1, 2, or 3 days
+   * CRITICAL: Only properly registered users with active trials
    */
   private async findUsersWithExpiringTrials(now: Date): Promise<UserDocument[]> {
     const today = new Date(now);
@@ -91,20 +92,29 @@ export class TrialNotificationService {
     const fourDaysLater = new Date(today);
     fourDaysLater.setDate(fourDaysLater.getDate() + 4);
 
-    // Find users with trial ending in 1, 2, or 3 days
+    // CRITICAL: Find only properly registered users with ACTIVE trials
     return this.userModel.find({
+      // Must have active trial (not expired, not cancelled)
       'subscription.plan': 'free_trial',
+      'subscription.status': 'trialing', // ⭐ CRITICAL: Only active trials!
       'subscription.trialEndsAt': {
         $gte: oneDayLater,
         $lt: fourDaysLater,
       },
+      // Must be properly registered user
       telegramId: { $exists: true, $ne: null },
+      firstName: { $exists: true, $ne: null }, // Has completed registration
+      phoneNumber: { $exists: true, $ne: null }, // Has phone number
+      phoneVerified: true, // Phone is verified
+      // Must not be deleted or blocked
       isDeleted: { $ne: true },
+      'engagement.isBotBlocked': { $ne: true },
     }).exec();
   }
 
   /**
    * Send trial expiry notification to a user
+   * PERSONALIZED: Based on user activity during trial
    */
   private async sendTrialExpiryNotification(user: UserDocument): Promise<void> {
     if (!user.telegramId || !this.bot || !user.subscription?.trialEndsAt) return;
@@ -117,7 +127,7 @@ export class TrialNotificationService {
       // Skip if not 1, 2, or 3 days remaining
       if (daysRemaining < 1 || daysRemaining > 3) return;
 
-      // Check if we already sent notification today (using lastNotificationDate field)
+      // Check if we already sent notification today
       const lastNotif = (user as any).lastTrialNotificationDate;
       if (lastNotif) {
         const lastNotifDate = new Date(lastNotif);
@@ -127,7 +137,22 @@ export class TrialNotificationService {
       }
 
       const lang = user.language || user.preferences?.language || 'uz';
-      const message = this.getNotificationMessage(lang, daysRemaining);
+      
+      // Get user activity metrics for personalization
+      const mockInterviews = user.usage?.mockInterviewsThisMonth || 0;
+      const cvAnalyses = user.usage?.cvAnalysesThisMonth || 0;
+      const hasActivity = mockInterviews > 0 || cvAnalyses > 0;
+      
+      // Generate personalized message based on activity
+      const message = this.getPersonalizedNotificationMessage(
+        lang, 
+        daysRemaining, 
+        user.firstName || 'Foydalanuvchi',
+        mockInterviews,
+        cvAnalyses,
+        hasActivity
+      );
+      
       const keyboard = this.getUpgradeKeyboard(lang);
 
       await this.bot.api.sendMessage(user.telegramId, message, {
@@ -141,7 +166,7 @@ export class TrialNotificationService {
         { $set: { lastTrialNotificationDate: now } }
       );
 
-      this.logger.log(`Sent trial notification to user ${user.telegramId} (${daysRemaining} days left)`);
+      this.logger.log(`Sent trial notification to user ${user.telegramId} (${daysRemaining} days left, activity: ${hasActivity ? 'active' : 'inactive'})`);
     } catch (error: any) {
       // User may have blocked the bot or deleted account
       if (error?.error_code === 403 || error?.error_code === 400) {
@@ -158,85 +183,409 @@ export class TrialNotificationService {
   private getNotificationMessage(lang: string, daysRemaining: number): string {
     const messages: Record<string, Record<number, string>> = {
       uz: {
-        3: `⏰ <b>Sinov muddati tugashiga 3 kun qoldi!</b>
+        3: `⏰ <b>3 kun qoldi!</b>
 
-Sizning 7 kunlik bepul sinov muddatingiz 3 kun ichida tugaydi.
+Sizning bepul sinov muddatingiz tugaydi. Yetarlicha mashq qildingizmi?
 
-🔥 <b>Hoziroq yangilang va chegirmalardan foydalaning!</b>
+💡 <b>Hoziroq yangilang va o'z yo'lingizni davom ettiring:</b>
 
-💼 STARTER - $4.99/oy
-🚀 PRO - $14.99/oy  
-👑 ELITE - $29.99/oy
+💎 STARTER — $9.99/oy
+🚀 PRO — $19.99/oy  
+👑 ELITE — $29.99/oy
 
-📞 Yangilash uchun @interviewai_support_bot ga murojaat qiling.`,
-        2: `⚠️ <b>Sinov muddati tugashiga 2 kun qoldi!</b>
+📞 @interviewai_support_bot`,
+        2: `⏰ <b>2 kun qoldi!</b>
 
-Sizning bepul sinov muddatingiz ertaga tugaydi!
+Ertaga sinov muddatingiz tugaydi. Tayyorgarligingizni uzatmang.
 
-⚡ <b>Hoziroq yangilang va intervyu tayyorgarligingizni davom ettiring!</b>
+💡 <b>Hoziroq yangilang:</b>
+💎 STARTER — $9.99 | 🚀 PRO — $19.99 | 👑 ELITE — $29.99
 
-💡 /upgrade - Tariflarni ko'rish`,
-        1: `🚨 <b>Sinov muddati bugun tugaydi!</b>
+📞 @interviewai_support_bot`,
+        1: `🚨 <b>Bugun so'ngi kun!</b>
 
-Sizning bepul sinov muddatingiz bugun tugaydi!
+Sinov muddatingiz bugun tugaydi. Yangilashni unutmang!
 
-❗ <b>Intervyu tayyorgarligini to'xtatmaslik uchun hoziroq yangilang!</b>
+⚡ <b>Hoziroq yangilang va davom eting:</b>
+💎 STARTER — $9.99 | 🚀 PRO — $19.99 | 👑 ELITE — $29.99
 
-📞 @interviewai_support_bot - Tez yangilash uchun`,
+📞 @interviewai_support_bot`,
       },
       ru: {
-        3: `⏰ <b>До конца пробного периода 3 дня!</b>
+        3: `⏰ <b>Осталось 3 дня!</b>
 
-Ваш 7-дневный бесплатный период заканчивается через 3 дня.
+Ваш пробный период заканчивается. Достаточно ли вы потренировались?
 
-🔥 <b>Обновитесь сейчас и получите скидку!</b>
+💡 <b>Обновитесь сейчас и продолжайте свой путь:</b>
 
-💼 STARTER - $4.99/мес
-🚀 PRO - $14.99/мес
-👑 ELITE - $29.99/мес
+💎 STARTER — $9.99/мес
+🚀 PRO — $19.99/мес
+👑 ELITE — $29.99/мес
 
-📞 Для обновления: @interviewai_support_bot`,
-        2: `⚠️ <b>До конца пробного периода 2 дня!</b>
+📞 @interviewai_support_bot`,
+        2: `⏰ <b>Осталось 2 дня!</b>
 
-Ваш бесплатный период заканчивается завтра!
+Завтра заканчивается пробный период. Не прерывайте подготовку.
 
-⚡ <b>Обновитесь сейчас и продолжайте подготовку к интервью!</b>
+💡 <b>Обновитесь сейчас:</b>
+💎 STARTER — $9.99 | 🚀 PRO — $19.99 | 👑 ELITE — $29.99
 
-💡 /upgrade - Посмотреть тарифы`,
-        1: `🚨 <b>Пробный период заканчивается сегодня!</b>
+📞 @interviewai_support_bot`,
+        1: `🚨 <b>Последний день!</b>
 
-Ваш бесплатный период заканчивается сегодня!
+Пробный период заканчивается сегодня. Не забудьте обновиться!
 
-❗ <b>Обновитесь сейчас, чтобы продолжить подготовку!</b>
+⚡ <b>Обновитесь сейчас и продолжайте:</b>
+💎 STARTER — $9.99 | 🚀 PRO — $19.99 | 👑 ELITE — $29.99
 
-📞 @interviewai_support_bot - Быстрое обновление`,
+📞 @interviewai_support_bot`,
       },
       en: {
-        3: `⏰ <b>3 days left in your trial!</b>
+        3: `⏰ <b>3 days left!</b>
 
-Your 7-day free trial ends in 3 days.
+Your trial is ending. Have you practiced enough?
 
-🔥 <b>Upgrade now and get special discounts!</b>
+💡 <b>Upgrade now and continue your journey:</b>
 
-💼 STARTER - $4.99/mo
-🚀 PRO - $14.99/mo
-👑 ELITE - $29.99/mo
+💎 STARTER — $9.99/mo
+🚀 PRO — $19.99/mo
+👑 ELITE — $29.99/mo
 
-📞 To upgrade: @interviewai_support_bot`,
-        2: `⚠️ <b>2 days left in your trial!</b>
+📞 @interviewai_support_bot`,
+        2: `⏰ <b>2 days left!</b>
 
-Your free trial ends tomorrow!
+Trial ends tomorrow. Don't stop your preparation.
 
-⚡ <b>Upgrade now and continue your interview preparation!</b>
+💡 <b>Upgrade now:</b>
+💎 STARTER — $9.99 | 🚀 PRO — $19.99 | 👑 ELITE — $29.99
 
-💡 /upgrade - View plans`,
-        1: `🚨 <b>Your trial ends today!</b>
+📞 @interviewai_support_bot`,
+        1: `🚨 <b>Last day!</b>
 
-Your free trial period ends today!
+Trial ends today. Don't forget to upgrade!
 
-❗ <b>Upgrade now to keep preparing for interviews!</b>
+⚡ <b>Upgrade now and continue:</b>
+💎 STARTER — $9.99 | 🚀 PRO — $19.99 | 👑 ELITE — $29.99
 
-📞 @interviewai_support_bot - Quick upgrade`,
+📞 @interviewai_support_bot`,
+      },
+    };
+
+    return messages[lang]?.[daysRemaining] || messages['en'][daysRemaining];
+  }
+
+  /**
+   * Get PERSONALIZED notification message based on user activity
+   * Professional marketing copy for different user segments
+   */
+  private getPersonalizedNotificationMessage(
+    lang: string, 
+    daysRemaining: number, 
+    firstName: string,
+    mockInterviews: number,
+    cvAnalyses: number,
+    hasActivity: boolean
+  ): string {
+    // ACTIVE USERS - Have used the platform
+    if (hasActivity) {
+      return this.getActiveUserMessage(lang, daysRemaining, firstName, mockInterviews, cvAnalyses);
+    }
+    
+    // INACTIVE USERS - Haven't used the platform
+    return this.getInactiveUserMessage(lang, daysRemaining, firstName);
+  }
+
+  /**
+   * Message for ACTIVE users (used mock interviews or CV analysis)
+   */
+  private getActiveUserMessage(
+    lang: string, 
+    daysRemaining: number, 
+    firstName: string,
+    mockInterviews: number,
+    cvAnalyses: number
+  ): string {
+    const activityText = mockInterviews > 0 
+      ? `${mockInterviews} ta mock intervyu` 
+      : `${cvAnalyses} ta CV tahlili`;
+
+    const messages: Record<string, Record<number, string>> = {
+      uz: {
+        3: `👋 Salom ${firstName}!
+
+Siz sinov davrida ${activityText} ishlatdingiz — juda yaxshi natija! ⭐
+
+⏰ <b>Sinov muddatingiz 3 kun ichida tugaydi.</b>
+
+Agar bu imkoniyatdan to'liq foydalangan bo'lsangiz, tayyorgarligingizni uzatishni xohlamaysiz, to'g'rimi?
+
+💡 <b>STARTER tarifi bilan davom eting:</b>
+• 10 ta mock intervyu/oy
+• 10 daqiqa ovozli yordam
+• CV tahlili va kunlik vazifalar
+
+💎 Faqat <b>$9.99/oy</b> — bir kofe narxi!
+
+👇 Tariflarni ko'rish uchun tugmani bosing:`,
+        2: `⚡ ${firstName}, sinov muddatingiz ertaga tugaydi!
+
+Siz allaqachon platformadan foydalanyapsiz — ${activityText} ishlatdingiz.
+
+🔥 <b>O'z natijangizni uzatmang!</b>
+
+Yangilash orqali:
+✅ Cheksiz intervyu imkoniyatlari
+✅ Professional AI yordamchisi
+✅ Karyerangizda yangi bosqich
+
+💎 STARTER — $9.99/oy
+🚀 PRO — $19.99/oy  
+
+👇 Hoziroq yangilang:`,
+        1: `🚨 ${firstName}, BUGUN so'ngi kun!
+
+Sinov muddatingiz bugun soat 23:59 da tugaydi.
+
+⏰ <b>Oxirgi imkoniyat!</b>
+
+Siz allaqachon ${activityText} ishlatdingiz — endi bu imkoniyatlarni yo'qotishni xohlamaysiz.
+
+⚡ <b>Hoziroq yangilang:</b>
+• STARTER — $9.99
+• PRO — $19.99
+• ELITE — $29.99
+
+📞 Savollar bormi? @interviewai_support_bot
+
+👇 Hoziroq tugmani bosing:`,
+      },
+      ru: {
+        3: `👋 Привет ${firstName}!
+
+За пробный период вы использовали ${activityText} — отличный результат! ⭐
+
+⏰ <b>Пробный период заканчивается через 3 дня.</b>
+
+Если вы уже ощутили пользу платформы, не хотите же прерывать подготовку?
+
+💡 <b>Продолжите с тарифом STARTER:</b>
+• 10 mock-интервью/мес
+• 10 минут голосовой помощи
+• Анализ резюме и ежедневные задания
+
+💎 Всего <b>$9.99/мес</b> — цена одного кофе!
+
+👇 Нажмите кнопку для просмотра тарифов:`,
+        2: `⚡ ${firstName}, пробный период заканчивается завтра!
+
+Вы уже активно используете платформу — ${activityText}.
+
+🔥 <b>Не останавливайтесь на пути к цели!</b>
+
+С обновлением:
+✅ Безлимитные возможности
+✅ Профессиональный AI-помощник
+✅ Новый уровень карьеры
+
+💎 STARTER — $9.99/мес
+🚀 PRO — $19.99/мес
+
+👇 Обновитесь сейчас:`,
+        1: `🚨 ${firstName}, СЕГОДНЯ последний день!
+
+Пробный период заканчивается сегодня в 23:59.
+
+⏰ <b>Последний шанс!</b>
+
+Вы уже использовали ${activityText} — не теряйте эти возможности.
+
+⚡ <b>Обновитесь сейчас:</b>
+• STARTER — $9.99
+• PRO — $19.99
+• ELITE — $29.99
+
+📞 Вопросы? @interviewai_support_bot
+
+👇 Нажмите кнопку:`,
+      },
+      en: {
+        3: `👋 Hi ${firstName}!
+
+During your trial, you used ${activityText} — great progress! ⭐
+
+⏰ <b>Your trial ends in 3 days.</b>
+
+If you've already experienced the value, you don't want to stop your preparation, right?
+
+💡 <b>Continue with STARTER:</b>
+• 10 mock interviews/month
+• 10 minutes voice assistance
+• CV analysis & daily tasks
+
+💎 Only <b>$9.99/mo</b> — price of a coffee!
+
+👇 Click to view plans:`,
+        2: `⚡ ${firstName}, your trial ends tomorrow!
+
+You're already actively using the platform — ${activityText} completed.
+
+🔥 <b>Don't stop on your way to success!</b>
+
+With upgrade:
+✅ Unlimited opportunities
+✅ Professional AI assistant
+✅ New career level
+
+💎 STARTER — $9.99/mo
+🚀 PRO — $19.99/mo
+
+👇 Upgrade now:`,
+        1: `🚨 ${firstName}, TODAY is the last day!
+
+Your trial ends today at 23:59.
+
+⏰ <b>Final chance!</b>
+
+You've already used ${activityText} — don't lose these opportunities.
+
+⚡ <b>Upgrade now:</b>
+• STARTER — $9.99
+• PRO — $19.99
+• ELITE — $29.99
+
+📞 Questions? @interviewai_support_bot
+
+👇 Click the button:`,
+      },
+    };
+
+    return messages[lang]?.[daysRemaining] || messages['en'][daysRemaining];
+  }
+
+  /**
+   * Message for INACTIVE users (haven't used the platform)
+   */
+  private getInactiveUserMessage(lang: string, daysRemaining: number, firstName: string): string {
+    const messages: Record<string, Record<number, string>> = {
+      uz: {
+        3: `👋 Salom ${firstName}!
+
+Sinov muddatingiz 3 kun ichida tugaydi, lekin siz hali platformadan to'liq foydalanmadingiz.
+
+🎯 <b>Imkoniyatni qo'ldan boy bermang!</b>
+
+Bepul sinov davrida siz:
+✅ 5 ta mock intervyu
+✅ 5 daqiqa ovozli yordam
+✅ CV tahlili
+✅ Kunlik vazifalar
+
+💡 Hoziroq boshlang va karyerangizni o'zgartiring!
+
+👇 Intervyu boshlash: /interview`,
+        2: `⏰ ${firstName}, sinov muddatingiz ertaga tugaydi!
+
+Siz hali platformadan foydalanmadingiz — imkoniyatni boy bermang.
+
+🔥 <b>Oxirgi imkoniyat!</b>
+
+Bepul sinov imkoniyatlaridan foydalanib qoling:
+• Mock intervyular
+• AI yordamchisi
+• CV tahlili
+
+👇 Hoziroq sinab ko'ring: /interview`,
+        1: `🚨 ${firstName}, BUGUN so'ngi kun!
+
+Sinov muddatingiz bugun tugaydi va siz hali platformadan foydalanmadingiz.
+
+⏰ <b>Oxirgi 24 soat!</b>
+
+Hoziroq sinab ko'ring — bu sizning karyerangizni o'zgartirishi mumkin!
+
+👇 Boshlash: /interview
+
+💡 Yoki yangilang va cheksiz imkoniyatlarga ega bo'ling!`,
+      },
+      ru: {
+        3: `👋 Привет ${firstName}!
+
+Пробный период заканчивается через 3 дня, но вы ещё не использовали платформу.
+
+🎯 <b>Не упустите возможность!</b>
+
+В пробный период доступно:
+✅ 5 mock-интервью
+✅ 5 минут голосовой помощи
+✅ Анализ резюме
+✅ Ежедневные задания
+
+💡 Начните сейчас и измените свою карьеру!
+
+👇 Начать интервью: /interview`,
+        2: `⏰ ${firstName}, пробный период заканчивается завтра!
+
+Вы ещё не пробовали платформу — не упустите шанс.
+
+🔥 <b>Последний шанс!</b>
+
+Воспользуйтесь бесплатным пробным периодом:
+• Mock-интервью
+• AI-помощник
+• Анализ резюме
+
+👇 Попробуйте сейчас: /interview`,
+        1: `🚨 ${firstName}, СЕГОДНЯ последний день!
+
+Пробный период заканчивается сегодня, а вы ещё не попробовали платформу.
+
+⏰ <b>Последние 24 часа!</b>
+
+Попробуйте сейчас — это может изменить вашу карьеру!
+
+👇 Начать: /interview
+
+💡 Или обновитесь и получите безлимитные возможности!`,
+      },
+      en: {
+        3: `👋 Hi ${firstName}!
+
+Your trial ends in 3 days, but you haven't fully used the platform yet.
+
+🎯 <b>Don't miss this opportunity!</b>
+
+During free trial you get:
+✅ 5 mock interviews
+✅ 5 minutes voice assistance
+✅ CV analysis
+✅ Daily tasks
+
+💡 Start now and transform your career!
+
+👇 Start interview: /interview`,
+        2: `⏰ ${firstName}, your trial ends tomorrow!
+
+You haven't tried the platform yet — don't miss this chance.
+
+🔥 <b>Last chance!</b>
+
+Use your free trial opportunities:
+• Mock interviews
+• AI assistant
+• CV analysis
+
+👇 Try now: /interview`,
+        1: `🚨 ${firstName}, TODAY is the last day!
+
+Your trial ends today and you haven't tried the platform yet.
+
+⏰ <b>Final 24 hours!</b>
+
+Try now — it could transform your career!
+
+👇 Start: /interview
+
+💡 Or upgrade for unlimited features!`,
       },
     };
 
