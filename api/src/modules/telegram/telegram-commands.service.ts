@@ -1209,10 +1209,16 @@ Let's get started! 🚀`,
 <i>We'll notify you when results are ready.</i>`,
         };
 
+        const buttonLabels = {
+          uz: { view: '📊 CV tahlilini ko\'rish', back: '🔙 Menyuga qaytish' },
+          ru: { view: '📊 Анализ CV', back: '🔙 В меню' },
+          en: { view: '📊 View CV Analysis', back: '🔙 Back to Menu' },
+        };
+
         const viewKeyboard = new InlineKeyboard()
-          .text('📊 View CV Analysis', 'cv_view')
+          .text(buttonLabels[lang]?.view || buttonLabels['en'].view, 'cv_view')
           .row()
-          .text('🔙 Back to Menu', 'back_to_menu');
+          .text(buttonLabels[lang]?.back || buttonLabels['en'].back, 'back_to_menu');
 
         await ctx.reply(successText[lang] || successText['en'], {
           parse_mode: 'HTML',
@@ -1314,10 +1320,16 @@ Send a document to upload your CV (PDF, DOCX)
 💡 Send the file to this chat`,
         };
 
+        const noCvButtonLabels = {
+          uz: { upload: '📤 CV yuklash', back: '🔙 Menyuga qaytish' },
+          ru: { upload: '📤 Загрузить CV', back: '🔙 В меню' },
+          en: { upload: '📤 Upload CV', back: '🔙 Back to Menu' },
+        };
+
         const uploadKeyboard = new InlineKeyboard()
-          .text('📤 Upload CV', 'cv_upload')
+          .text(noCvButtonLabels[lang]?.upload || noCvButtonLabels['en'].upload, 'cv_upload')
           .row()
-          .text('🔙 Back to Menu', 'back_to_menu');
+          .text(noCvButtonLabels[lang]?.back || noCvButtonLabels['en'].back, 'back_to_menu');
 
         await ctx.reply(noCvText[lang] || noCvText['en'], {
           parse_mode: 'HTML',
@@ -1353,10 +1365,19 @@ Send a document to upload your CV (PDF, DOCX)
 <i>Please wait. We'll notify you when the analysis is complete.</i>`,
         };
 
+        const pendingButtonLabels = {
+          uz: { checkStatus: '🔄 Statusni tekshirish', back: '🔙 Menyuga qaytish' },
+          ru: { checkStatus: '🔄 Проверить статус', back: '🔙 В меню' },
+          en: { checkStatus: '🔄 Check Status', back: '🔙 Back to Menu' },
+        };
+
         const pendingKeyboard = new InlineKeyboard()
-          .text('🔄 Check Status', 'cv_view')
+          .text(
+            pendingButtonLabels[lang]?.checkStatus || pendingButtonLabels['en'].checkStatus,
+            'cv_view',
+          )
           .row()
-          .text('🔙 Back to Menu', 'back_to_menu');
+          .text(pendingButtonLabels[lang]?.back || pendingButtonLabels['en'].back, 'back_to_menu');
 
         await ctx.reply(pendingText[lang] || pendingText['en'], {
           parse_mode: 'HTML',
@@ -1396,12 +1417,38 @@ Send a document to upload your CV (PDF, DOCX)
           false,
         );
 
+        const failedButtonLabels = {
+          uz: {
+            reanalyze: '🔄 Qayta tahlil qilish',
+            upload: '📤 Yangi CV yuklash',
+            back: '🔙 Menyuga qaytish',
+          },
+          ru: {
+            reanalyze: '🔄 Повторный анализ',
+            upload: '📤 Загрузить новое CV',
+            back: '🔙 В меню',
+          },
+          en: {
+            reanalyze: '🔄 Re-analyze',
+            upload: '📤 Upload New CV',
+            back: '🔙 Back to Menu',
+          },
+        };
+
         const failedKeyboard = new InlineKeyboard();
         if (canReanalyze) {
-          failedKeyboard.text('🔄 Re-analyze', 'cv_reanalyze');
+          failedKeyboard.text(
+            failedButtonLabels[lang]?.reanalyze || failedButtonLabels['en'].reanalyze,
+            'cv_reanalyze',
+          );
         }
-        failedKeyboard.text('📤 Upload New CV', 'cv_upload');
-        failedKeyboard.row().text('🔙 Back to Menu', 'back_to_menu');
+        failedKeyboard.text(
+          failedButtonLabels[lang]?.upload || failedButtonLabels['en'].upload,
+          'cv_upload',
+        );
+        failedKeyboard
+          .row()
+          .text(failedButtonLabels[lang]?.back || failedButtonLabels['en'].back, 'back_to_menu');
 
         await ctx.reply(failedText[lang] || failedText['en'], {
           parse_mode: 'HTML',
@@ -1410,33 +1457,47 @@ Send a document to upload your CV (PDF, DOCX)
         return;
       }
 
-      // Analysis completed - show results
+      // Analysis completed - show results (SUMMARY VIEW)
       const analysis = cv.analysis;
-      const overallScore = analysis?.overallScore || 0;
+
+      // ✅ FIX: Use correct field names from schema
+      const atsScore = analysis?.atsScore || 0;
+      const overallRating = analysis?.overallRating || 0; // ✅ NOT overallScore
       const strengths = analysis?.strengths || [];
-      const improvements = analysis?.improvements || [];
-      const recommendations = analysis?.recommendations || [];
+      const weaknesses = analysis?.weaknesses || analysis?.criticalWeaknesses || []; // ✅ NOT improvements
+      const quickWins = analysis?.quickWins || [];
+
+      // Convert overallRating (1-5) to percentage for display
+      const displayScore = Math.round((overallRating / 5) * 100);
 
       // Format score with emoji
-      const scoreEmoji = overallScore >= 80 ? '🟢' : overallScore >= 60 ? '🟡' : '🔴';
+      const scoreEmoji = displayScore >= 80 ? '🟢' : displayScore >= 60 ? '🟡' : '🔴';
 
-      // Format strengths
+      // Format strengths (top 3 for summary)
       const strengthsText =
         strengths.length > 0
           ? strengths
               .slice(0, 3)
               .map((s: string, i: number) => `${i + 1}. ${s}`)
               .join('\n')
-          : 'No specific strengths identified';
+          : {
+              uz: 'Kuchli tomonlar aniqlanmadi',
+              ru: 'Сильные стороны не определены',
+              en: 'No specific strengths identified',
+            }[lang] || 'No specific strengths identified';
 
-      // Format improvements
-      const improvementsText =
-        improvements.length > 0
-          ? improvements
+      // Format weaknesses (top 3 for summary)
+      const weaknessesText =
+        weaknesses.length > 0
+          ? weaknesses
               .slice(0, 3)
-              .map((imp: string, i: number) => `${i + 1}. ${imp}`)
+              .map((w: string, i: number) => `${i + 1}. ${w}`)
               .join('\n')
-          : 'No specific improvements identified';
+          : {
+              uz: 'Kamchiliklar topilmadi',
+              ru: 'Слабости не найдены',
+              en: 'No weaknesses identified',
+            }[lang] || 'No weaknesses identified';
 
       const resultsText: Record<string, string> = {
         uz: `📊 <b>CV Tahlili Natijalari</b>
@@ -1444,43 +1505,46 @@ Send a document to upload your CV (PDF, DOCX)
 📄 Fayl: <code>${cv.fileName}</code>
 📅 Sana: ${new Date(cv.analyzedAt || cv.updatedAt).toLocaleDateString(lang)}
 
-${scoreEmoji} <b>Umumiy baho:</b> ${overallScore}/100
+${scoreEmoji} <b>Umumiy baho:</b> ${displayScore}/100
+📊 <b>ATS Ball:</b> ${atsScore}/100
 
 💪 <b>Kuchli tomonlar:</b>
 ${strengthsText}
 
 ⚠️ <b>Yaxshilash kerak:</b>
-${improvementsText}
+${weaknessesText}
 
-<i>To'liq tahlilni ko'rish uchun "Full Analysis" tugmasini bosing</i>`,
+<i>To'liq tahlilni ko'rish uchun "📋 To'liq tahlil" tugmasini bosing</i>`,
         ru: `📊 <b>Результаты Анализа CV</b>
 
 📄 Файл: <code>${cv.fileName}</code>
 📅 Дата: ${new Date(cv.analyzedAt || cv.updatedAt).toLocaleDateString(lang)}
 
-${scoreEmoji} <b>Общая оценка:</b> ${overallScore}/100
+${scoreEmoji} <b>Общая оценка:</b> ${displayScore}/100
+📊 <b>ATS Балл:</b> ${atsScore}/100
 
 💪 <b>Сильные стороны:</b>
 ${strengthsText}
 
 ⚠️ <b>Требует улучшения:</b>
-${improvementsText}
+${weaknessesText}
 
-<i>Нажмите "Full Analysis" для просмотра полного анализа</i>`,
+<i>Нажмите "📋 Полный анализ" для просмотра полного анализа</i>`,
         en: `📊 <b>CV Analysis Results</b>
 
 📄 File: <code>${cv.fileName}</code>
 📅 Date: ${new Date(cv.analyzedAt || cv.updatedAt).toLocaleDateString(lang)}
 
-${scoreEmoji} <b>Overall Score:</b> ${overallScore}/100
+${scoreEmoji} <b>Overall Score:</b> ${displayScore}/100
+📊 <b>ATS Score:</b> ${atsScore}/100
 
 💪 <b>Strengths:</b>
 ${strengthsText}
 
 ⚠️ <b>Areas for Improvement:</b>
-${improvementsText}
+${weaknessesText}
 
-<i>Click "Full Analysis" to view the complete analysis</i>`,
+<i>Click "📋 Full Analysis" to view the complete analysis</i>`,
       };
 
       // Check if re-analysis is allowed
@@ -1491,14 +1555,46 @@ ${improvementsText}
         false,
       );
 
+      const summaryButtonLabels = {
+        uz: {
+          fullAnalysis: '📋 To\'liq tahlil',
+          reanalyze: '🔄 Qayta tahlil',
+          uploadNew: '📤 Yangi CV yuklash',
+          back: '🔙 Menyuga qaytish',
+        },
+        ru: {
+          fullAnalysis: '📋 Полный анализ',
+          reanalyze: '🔄 Повторный анализ',
+          uploadNew: '📤 Загрузить новое CV',
+          back: '🔙 В меню',
+        },
+        en: {
+          fullAnalysis: '📋 Full Analysis',
+          reanalyze: '🔄 Re-analyze',
+          uploadNew: '📤 Upload New CV',
+          back: '🔙 Back to Menu',
+        },
+      };
+
       const resultsKeyboard = new InlineKeyboard();
-      resultsKeyboard.text('📋 Full Analysis', `cv_full_${cv.id}`);
+      resultsKeyboard.text(
+        summaryButtonLabels[lang]?.fullAnalysis || summaryButtonLabels['en'].fullAnalysis,
+        `cv_full_${cv.id}`,
+      );
       resultsKeyboard.row();
       if (canReanalyze) {
-        resultsKeyboard.text('🔄 Re-analyze', 'cv_reanalyze');
+        resultsKeyboard.text(
+          summaryButtonLabels[lang]?.reanalyze || summaryButtonLabels['en'].reanalyze,
+          'cv_reanalyze',
+        );
       }
-      resultsKeyboard.text('📤 Upload New CV', 'cv_upload');
-      resultsKeyboard.row().text('🔙 Back to Menu', 'back_to_menu');
+      resultsKeyboard.text(
+        summaryButtonLabels[lang]?.uploadNew || summaryButtonLabels['en'].uploadNew,
+        'cv_upload',
+      );
+      resultsKeyboard
+        .row()
+        .text(summaryButtonLabels[lang]?.back || summaryButtonLabels['en'].back, 'back_to_menu');
 
       await ctx.reply(resultsText[lang] || resultsText['en'], {
         parse_mode: 'HTML',
@@ -1681,10 +1777,22 @@ Send a document (PDF, DOCX, DOC, TXT)
               en: `✅ <b>CV re-analyzed successfully!</b>\n\nClick "View Analysis" to see the updated results.`,
             };
 
+            const reanalyzeButtonLabels = {
+              uz: { view: '📊 Tahlilni ko\'rish', back: '🔙 Menyuga qaytish' },
+              ru: { view: '📊 Смотреть анализ', back: '🔙 В меню' },
+              en: { view: '📊 View Analysis', back: '🔙 Back to Menu' },
+            };
+
             const keyboard = new InlineKeyboard()
-              .text('📊 View Analysis', 'cv_view')
+              .text(
+                reanalyzeButtonLabels[userLang]?.view || reanalyzeButtonLabels['en'].view,
+                'cv_view',
+              )
               .row()
-              .text('🔙 Back to Menu', 'back_to_menu');
+              .text(
+                reanalyzeButtonLabels[userLang]?.back || reanalyzeButtonLabels['en'].back,
+                'back_to_menu',
+              );
 
             await ctx.reply(successText[userLang] || successText['en'], {
               parse_mode: 'HTML',
@@ -1743,65 +1851,106 @@ Send a document (PDF, DOCX, DOC, TXT)
             return;
           }
 
-          // Format full analysis
-          const overallScore = analysis.overallScore || 0;
+          // CRITICAL FIX: Use correct field names from schema
+          const atsScore = analysis.atsScore || 0;
+          const overallRating = analysis.overallRating || 0;
           const strengths = analysis.strengths || [];
-          const improvements = analysis.improvements || [];
-          const recommendations = analysis.recommendations || [];
-          const summary = analysis.summary || '';
+          const weaknesses = analysis.weaknesses || analysis.criticalWeaknesses || [];
+          const transformationRoadmap = analysis.transformationRoadmap || [];
+          const quickWins = analysis.quickWins || [];
+          const aiRejectionRisk = analysis.aiRejectionRisk || 'unknown';
+          const sixSecondVerdict = analysis.sixSecondVerdict || 'unknown';
+
+          // Calculate display score (use atsScore as primary)
+          const displayScore = atsScore || (overallRating * 20); // Convert 1-5 to 0-100 if needed
+
+          this.logger.debug(
+            `Displaying CV analysis - atsScore: ${atsScore}, overallRating: ${overallRating}, strengths: ${strengths.length}, weaknesses: ${weaknesses.length}`,
+          );
 
           const fullAnalysisText: Record<string, string> = {
-            uz: `📋 <b>To'liq CV Tahlili</b>
+            uz: `━━━━━━━━━━━━━━━━━━
+📋 <b>TO'LIQ CV TAHLILI</b>
 
-📊 <b>Umumiy baho:</b> ${overallScore}/100
-
-📝 <b>Xulosa:</b>
-${summary}
+📊 <b>ATS Ball:</b> ${displayScore}/100
+⭐ <b>Umumiy baho:</b> ${overallRating}/5
+⚠️ <b>AI Rad etish riski:</b> ${aiRejectionRisk}
+👁 <b>6-soniya test:</b> ${sixSecondVerdict}
 
 💪 <b>Kuchli tomonlar:</b>
-${strengths.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n') || 'Aniqlanmagan'}
+${strengths.length > 0 ? strengths.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n') : 'Tahlil davom etmoqda...'}
 
-⚠️ <b>Yaxshilash kerak:</b>
-${improvements.map((imp: string, i: number) => `${i + 1}. ${imp}`).join('\n') || 'Aniqlanmagan'}
+⚠️ <b>Muhim kamchiliklar:</b>
+${weaknesses.length > 0 ? weaknesses.slice(0, 5).map((w: string, i: number) => `${i + 1}. ${w}`).join('\n') : 'Kamchilik topilmadi'}
 
-💡 <b>Tavsiyalar:</b>
-${recommendations.map((r: string, i: number) => `${i + 1}. ${r}`).join('\n') || 'Tavsiyalar mavjud emas'}`,
-            ru: `📋 <b>Полный Анализ CV</b>
+🚀 <b>Tezkor yaxshilashlar (Quick Wins):</b>
+${quickWins.length > 0 ? quickWins.map((q: string, i: number) => `${i + 1}. ${q}`).join('\n') : 'Tavsiyalar tayyorlanmoqda...'}
 
-📊 <b>Общая оценка:</b> ${overallScore}/100
+💡 <b>Transformation Roadmap:</b>
+${transformationRoadmap.length > 0 ? transformationRoadmap.slice(0, 3).map((t: any, i: number) => `${i + 1}. [Priority ${t.priority}] ${t.problem}`).join('\n') : 'Roadmap tayyorlanmoqda...'}
 
-📝 <b>Резюме:</b>
-${summary}
+━━━━━━━━━━━━━━━━━━`,
+            ru: `━━━━━━━━━━━━━━━━━━
+📋 <b>ПОЛНЫЙ АНАЛИЗ CV</b>
+
+📊 <b>ATS Балл:</b> ${displayScore}/100
+⭐ <b>Общая оценка:</b> ${overallRating}/5
+⚠️ <b>Риск отказа AI:</b> ${aiRejectionRisk}
+👁 <b>6-секундный тест:</b> ${sixSecondVerdict}
 
 💪 <b>Сильные стороны:</b>
-${strengths.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n') || 'Не определено'}
+${strengths.length > 0 ? strengths.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n') : 'Анализ продолжается...'}
 
-⚠️ <b>Требует улучшения:</b>
-${improvements.map((imp: string, i: number) => `${i + 1}. ${imp}`).join('\n') || 'Не определено'}
+⚠️ <b>Критические слабости:</b>
+${weaknesses.length > 0 ? weaknesses.slice(0, 5).map((w: string, i: number) => `${i + 1}. ${w}`).join('\n') : 'Слабостей не найдено'}
 
-💡 <b>Рекомендации:</b>
-${recommendations.map((r: string, i: number) => `${i + 1}. ${r}`).join('\n') || 'Нет рекомендаций'}`,
-            en: `📋 <b>Full CV Analysis</b>
+🚀 <b>Быстрые улучшения (Quick Wins):</b>
+${quickWins.length > 0 ? quickWins.map((q: string, i: number) => `${i + 1}. ${q}`).join('\n') : 'Рекомендации готовятся...'}
 
-📊 <b>Overall Score:</b> ${overallScore}/100
+💡 <b>Transformation Roadmap:</b>
+${transformationRoadmap.length > 0 ? transformationRoadmap.slice(0, 3).map((t: any, i: number) => `${i + 1}. [Приоритет ${t.priority}] ${t.problem}`).join('\n') : 'Roadmap готовится...'}
 
-📝 <b>Summary:</b>
-${summary}
+━━━━━━━━━━━━━━━━━━`,
+            en: `━━━━━━━━━━━━━━━━━━
+📋 <b>FULL CV ANALYSIS</b>
+
+📊 <b>ATS Score:</b> ${displayScore}/100
+⭐ <b>Overall Rating:</b> ${overallRating}/5
+⚠️ <b>AI Rejection Risk:</b> ${aiRejectionRisk}
+👁 <b>6-Second Test:</b> ${sixSecondVerdict}
 
 💪 <b>Strengths:</b>
-${strengths.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n') || 'Not identified'}
+${strengths.length > 0 ? strengths.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n') : 'Analysis in progress...'}
 
-⚠️ <b>Areas for Improvement:</b>
-${improvements.map((imp: string, i: number) => `${i + 1}. ${imp}`).join('\n') || 'Not identified'}
+⚠️ <b>Critical Weaknesses:</b>
+${weaknesses.length > 0 ? weaknesses.slice(0, 5).map((w: string, i: number) => `${i + 1}. ${w}`).join('\n') : 'No weaknesses found'}
 
-💡 <b>Recommendations:</b>
-${recommendations.map((r: string, i: number) => `${i + 1}. ${r}`).join('\n') || 'No recommendations'}`,
+🚀 <b>Quick Wins:</b>
+${quickWins.length > 0 ? quickWins.map((q: string, i: number) => `${i + 1}. ${q}`).join('\n') : 'Recommendations preparing...'}
+
+💡 <b>Transformation Roadmap:</b>
+${transformationRoadmap.length > 0 ? transformationRoadmap.slice(0, 3).map((t: any, i: number) => `${i + 1}. [Priority ${t.priority}] ${t.problem}`).join('\n') : 'Roadmap preparing...'}
+
+━━━━━━━━━━━━━━━━━━`,
+          };
+
+          const fullAnalysisButtonLabels = {
+            uz: { backToSummary: '🔙 Qisqa tahlilga', mainMenu: '🏠 Asosiy menyu' },
+            ru: { backToSummary: '🔙 Краткий анализ', mainMenu: '🏠 Главное меню' },
+            en: { backToSummary: '🔙 Back to Summary', mainMenu: '🏠 Main Menu' },
           };
 
           const keyboard = new InlineKeyboard()
-            .text('🔙 Back to Summary', 'cv_view')
+            .text(
+              fullAnalysisButtonLabels[userLang]?.backToSummary ||
+                fullAnalysisButtonLabels['en'].backToSummary,
+              'cv_view',
+            )
             .row()
-            .text('🏠 Main Menu', 'back_to_menu');
+            .text(
+              fullAnalysisButtonLabels[userLang]?.mainMenu || fullAnalysisButtonLabels['en'].mainMenu,
+              'back_to_menu',
+            );
 
           await ctx.reply(fullAnalysisText[userLang] || fullAnalysisText['en'], {
             parse_mode: 'HTML',
