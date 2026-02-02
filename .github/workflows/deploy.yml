@@ -12,6 +12,7 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
@@ -19,6 +20,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Debug workflow info
+        run: |
+          echo "🔍 Workflow triggered by: ${{ github.event_name }}"
+          echo "🌿 Branch: ${{ github.ref_name }}"
+          echo "📦 Commit: ${{ github.sha }}"
+          echo "👤 Actor: ${{ github.actor }}"
+          echo "⏰ Started at: $(date)"
 
       - name: Log in to the Container registry
         uses: docker/login-action@v3
@@ -36,17 +45,41 @@ jobs:
             type=raw,value=latest
             type=sha,prefix=sha-
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            image=moby/buildkit:latest
+            network=host
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
+        timeout-minutes: 25
         with:
           context: ./api
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+          
+      - name: Verify build success
+        if: success()
+        run: echo "✅ Docker image built and pushed successfully"
+        
+      - name: Build failed notification
+        if: failure()
+        run: |
+          echo "❌ Docker build failed!"
+          echo "Check the build logs above for errors"
+          exit 1
 
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Checkout repository
