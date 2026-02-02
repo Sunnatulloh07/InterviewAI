@@ -8,6 +8,8 @@ import {
 } from './schemas/failed-notification.schema';
 import { TelegramService } from '../telegram/telegram.service';
 import { UsersService } from '../users/users.service';
+import { PositionPromptService } from './position-prompt.service';
+import { SurveyHandlerService } from './survey-handler.service';
 
 @Injectable()
 export class FailedNotificationRetryService {
@@ -22,6 +24,10 @@ export class FailedNotificationRetryService {
     private readonly telegramService: TelegramService,
     @Inject(forwardRef(() => UsersService))
     private readonly usersService: UsersService,
+    @Inject(forwardRef(() => PositionPromptService))
+    private readonly positionPromptService: PositionPromptService,
+    @Inject(forwardRef(() => SurveyHandlerService))
+    private readonly surveyHandlerService: SurveyHandlerService,
   ) {}
 
   async trackFailedNotification(
@@ -127,6 +133,8 @@ export class FailedNotificationRetryService {
           }
 
           let message: string;
+          let retrySuccess = false;
+
           switch (notification.notificationType) {
             case 'daily_task_delivery':
               message = 'Your daily tasks are ready! Use /tasks to see them.';
@@ -153,6 +161,56 @@ export class FailedNotificationRetryService {
                 notification.metadata?.messageContent ||
                 'Your free trial limits have been reached!';
               break;
+            // 🔧 NEW: Handle position prompt retry
+            case 'position_prompt':
+              try {
+                this.logger.debug(`Retrying position prompt for user ${notification.userId}`);
+                const lang = notification.metadata?.userLanguage || user.language || 'uz';
+                const result = await this.positionPromptService.sendPositionPrompt(
+                  notification.userId.toString(),
+                  notification.telegramChatId,
+                  lang,
+                );
+                retrySuccess = result.success;
+                if (retrySuccess) {
+                  await this.markAsCompleted((notification as any)._id.toString());
+                  success++;
+                } else {
+                  await this.incrementRetryCount((notification as any)._id.toString());
+                  failed++;
+                }
+                continue;
+              } catch (error: any) {
+                this.logger.error(`Position prompt retry failed: ${error.message}`);
+                await this.incrementRetryCount((notification as any)._id.toString());
+                failed++;
+                continue;
+              }
+            // 🔧 NEW: Handle employment survey retry  
+            case 'employment_survey':
+              try {
+                this.logger.debug(`Retrying employment survey for user ${notification.userId}`);
+                const lang = notification.metadata?.userLanguage || user.language || 'uz';
+                const result = await this.surveyHandlerService.sendSurvey(
+                  notification.userId.toString(),
+                  notification.telegramChatId,
+                  lang,
+                );
+                retrySuccess = result;
+                if (retrySuccess) {
+                  await this.markAsCompleted((notification as any)._id.toString());
+                  success++;
+                } else {
+                  await this.incrementRetryCount((notification as any)._id.toString());
+                  failed++;
+                }
+                continue;
+              } catch (error: any) {
+                this.logger.error(`Employment survey retry failed: ${error.message}`);
+                await this.incrementRetryCount((notification as any)._id.toString());
+                failed++;
+                continue;
+              }
             default:
               message =
                 notification.metadata?.messageContent || 'New notification from InterviewAI Pro';
@@ -218,6 +276,35 @@ export class FailedNotificationRetryService {
       $set: { isPermanentlyFailed: true, errorMessage: reason },
     });
     this.logger.warn(`Marked notification ${notificationId} as permanently failed: ${reason}`);
+  }
+
+  /**
+   * Mark notification as completed (successfully retried)
+   */
+  private async markAsCompleted(notificationId: string): Promise<void> {
+    await this.failedNotificationModel.findByIdAndDelete(notificationId);
+    this.logger.debug(`Notification ${notificationId} successfully retried and removed from queue`);
+  }
+
+  /**
+   * Increment retry count and schedule next retry
+   */
+  private async incrementRetryCount(notificationId: string): Promise<void> {
+    const notification = await this.failedNotificationModel.findById(notificationId);
+    if (!notification) return;
+
+    const nextRetryDelay = this.RETRY_DELAYS_HOURS[notification.retryCount + 1] || 24;
+    const nextRetryAt = new Date();
+    nextRetryAt.setHours(nextRetryAt.getHours() + nextRetryDelay);
+
+    await this.failedNotificationModel.findByIdAndUpdate(notificationId, {
+      $inc: { retryCount: 1 },
+      $set: { nextRetryAt },
+    });
+
+    this.logger.debug(
+      `Retry ${notification.retryCount + 1}/${this.MAX_RETRY_ATTEMPTS} scheduled for notification ${notificationId} (next retry in ${nextRetryDelay}h)`,
+    );
   }
 
   @Cron('0 2 * * *', {

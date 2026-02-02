@@ -197,8 +197,8 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
         .exec();
 
       // ═══════════════════════════════════════════════════════════════════════
-      // QUERY 2: Existing users WITHOUT any survey fields (backfill)
-      // These are users registered BEFORE the survey feature was deployed
+      // QUERY 2: Users with UNKNOWN employment status (null, undefined, NOT_SET)
+      // ✅ CRITICAL FIX: Include ALL users without proper employment status
       // ═══════════════════════════════════════════════════════════════════════
       const remainingSlots = BATCH_SIZE - scheduledUsers.length;
       let existingUsers: any[] = [];
@@ -206,12 +206,33 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
       if (remainingSlots > 0) {
         existingUsers = await this.userModel
           .find({
-            // No scheduledSurveyAt (pre-feature users)
-            'engagement.scheduledSurveyAt': { $exists: false },
-            // Not completed
-            'engagement.surveyCompletedAt': null,
-            // Not NOT_SET (exclude users who explicitly declined or were reset)
-            'engagement.jobSeekingStatus': { $exists: false },
+            createdAt: { $lte: new Date(now.getTime() - 3 * 60 * 60 * 1000) }, // 3+ hours old
+            // ✅ FIX: Check for ALL unknown states
+            $or: [
+              // Case 1: No scheduledSurveyAt (pre-feature users)
+              {
+                'engagement.scheduledSurveyAt': { $exists: false },
+                'engagement.surveyCompletedAt': null,
+                'engagement.jobSeekingStatus': { $exists: false },
+              },
+              // Case 2: jobSeekingStatus is null
+              {
+                'engagement.jobSeekingStatus': null,
+                'engagement.surveyCompletedAt': null,
+              },
+              // Case 3: jobSeekingStatus is NOT_SET (re-ask after 7 days)
+              {
+                'engagement.jobSeekingStatus': 'NOT_SET',
+                $or: [
+                  { 'engagement.lastNotificationSentAt': { $exists: false } },
+                  { 
+                    'engagement.lastNotificationSentAt': { 
+                      $lte: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) 
+                    } 
+                  },
+                ],
+              },
+            ],
             // Active filters
             'engagement.isBotBlocked': { $ne: true },
             'engagement.notificationsPaused': { $ne: true },
@@ -219,7 +240,7 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
             telegramId: { $exists: true, $ne: null },
             deletedAt: null,
           })
-          .select('_id telegramId language')
+          .select('_id telegramId language engagement')
           .limit(remainingSlots)
           .lean()
           .exec();

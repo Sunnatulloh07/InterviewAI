@@ -57,6 +57,8 @@ export class TelegramDailyTaskService {
    */
   async startDailyTaskSession(ctx: BotContext, userId: string): Promise<void> {
     try {
+      this.logger.debug(`Starting daily task session for userId: ${userId}`);
+      
       // Get today's tasks
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -64,6 +66,7 @@ export class TelegramDailyTaskService {
       const dailyTask = await this.dailyTasksService.getTodayTasks(userId, today);
 
       if (!dailyTask) {
+        this.logger.warn(`No tasks found for userId: ${userId} on ${today.toISOString()}`);
         const noTasksText = {
           uz: '❌ Bugun uchun vazifalar topilmadi.\n\nErtalab 09:00 da yangi vazifalar yuboriladi.',
           ru: '❌ Задачи на сегодня не найдены.\n\nНовые задачи будут отправлены в 09:00 утра.',
@@ -74,10 +77,13 @@ export class TelegramDailyTaskService {
         return;
       }
 
+      this.logger.debug(`Found daily task for userId: ${userId}, tasks count: ${dailyTask.tasks.length}`);
+
       // Find first incomplete task
       const currentTaskIndex = dailyTask.tasks.findIndex((t) => !t.completed);
 
       if (currentTaskIndex === -1) {
+        this.logger.log(`All tasks completed for userId: ${userId}`);
         // All tasks completed
         const completedText = {
           uz: `✅ Bugun barcha vazifalar bajarilgan!\n\n🔥 Joriy ketma-ketlik: ${dailyTask.tasks.length} kun`,
@@ -88,6 +94,8 @@ export class TelegramDailyTaskService {
         await ctx.reply(completedText[lang as keyof typeof completedText] || completedText.uz);
         return;
       }
+
+      this.logger.debug(`Current task index: ${currentTaskIndex} for userId: ${userId}`);
 
       // Update session
       const chatId = ctx.chat?.id;
@@ -108,12 +116,14 @@ export class TelegramDailyTaskService {
           },
           { upsert: true },
         );
+        this.logger.debug(`Session updated for chatId: ${chatId}`);
       }
 
       // Show current task
       await this.showCurrentTask(ctx, dailyTask, currentTaskIndex);
+      this.logger.log(`Successfully started daily task session for userId: ${userId}`);
     } catch (error: any) {
-      this.logger.error(`Failed to start daily task session: ${error.message}`);
+      this.logger.error(`Failed to start daily task session: ${error.message}`, error.stack);
       await ctx.reply("❌ Xatolik yuz berdi. Iltimos, qayta urinib ko'ring.");
     }
   }

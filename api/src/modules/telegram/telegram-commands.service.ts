@@ -56,23 +56,34 @@ export class TelegramCommandsService {
 
   /**
    * Get user language with proper fallback chain and session sync
-   * Priority: session > user.preferences.language > user.language > 'en'
+   * Priority: user.preferences.language > user.language > session.language > 'uz'
+   * ALWAYS sync the user's database language to session
    */
   private getUserLanguage(ctx: BotContext, user: any): string {
-    let lang = ctx.session?.language;
-    if (!lang && user?.preferences?.language) {
-      lang = user.preferences.language;
-    }
+    // Priority 1: User preferences language (most reliable)
+    let lang = user?.preferences?.language;
+    
+    // Priority 2: User language field
     if (!lang && user?.language) {
       lang = user.language;
     }
-    if (!lang) {
-      lang = 'en';
+    
+    // Priority 3: Session language (fallback)
+    if (!lang && ctx.session?.language) {
+      lang = ctx.session.language;
     }
-    // Sync to session for future use
-    if (ctx.session && !ctx.session.language) {
+    
+    // Priority 4: Default to Uzbek
+    if (!lang) {
+      lang = 'uz';
+    }
+    
+    // CRITICAL: Always sync user's language to session
+    // This ensures menu and messages are always in correct language
+    if (ctx.session) {
       ctx.session.language = lang;
     }
+    
     return lang;
   }
 
@@ -249,35 +260,40 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
   async handleTasks(ctx: BotContext) {
     try {
       const telegramId = ctx.from?.id as number;
+      this.logger.debug(`/tasks command received from telegramId: ${telegramId}`);
+      
       const user = await this.usersService.findByTelegramId(telegramId);
 
       if (!user) {
-        const lang = ctx.session?.language || 'en';
+        this.logger.warn(`User not found for telegramId: ${telegramId}`);
+        const lang = ctx.session?.language || 'uz';
         const notRegisteredText: Record<string, string> = {
           uz: `Iltimos avval /start buyrug'i bilan ro'yxatdan o'ting`,
           ru: `Пожалуйста, сначала зарегистрируйтесь используя /start`,
           en: `Please register first using /start`,
         };
-        await ctx.reply(notRegisteredText[lang] || notRegisteredText['en']);
+        await ctx.reply(notRegisteredText[lang] || notRegisteredText['uz']);
         return;
       }
 
       const lang = this.getUserLanguage(ctx, user);
       const userId = (user as any)._id?.toString() || (user as any).id?.toString();
 
+      this.logger.log(`Starting daily task session for user ${userId}, language: ${lang}`);
+
       // ✅ STEP 5 FIX: Auto-start daily task session
       await this.dailyTaskService.startDailyTaskSession(ctx, userId);
 
-      this.logger.log(`Daily task session started for user ${userId}`);
+      this.logger.log(`Daily task session successfully started for user ${userId}`);
     } catch (error: any) {
       this.logger.error(`Failed to handle tasks: ${error.message}`, error.stack);
-      const lang = ctx.session?.language || 'en';
+      const lang = ctx.session?.language || 'uz';
       const errorText: Record<string, string> = {
         uz: `❌ Xatolik yuz berdi. Iltimos qayta urinib ko'ring.`,
         ru: `❌ Произошла ошибка. Пожалуйста, попробуйте снова.`,
         en: `❌ Error occurred. Please try again.`,
       };
-      await ctx.reply(errorText[lang] || errorText['en']);
+      await ctx.reply(errorText[lang] || errorText['uz']);
     }
   }
 
