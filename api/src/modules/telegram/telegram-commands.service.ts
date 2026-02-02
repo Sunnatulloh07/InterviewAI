@@ -128,7 +128,7 @@ Iltimos, tilni tanlang:`;
 
       await ctx.reply(welcomeText, {
         parse_mode: 'HTML',
-        reply_markup: langKeyboard,
+        reply_markup: langKeyboard, // InlineKeyboard for language selection only
       });
 
       this.logger.log(`New user started registration: ${telegramId}`);
@@ -239,9 +239,10 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
 /help - ❓ Help`,
     };
 
-    // Send main menu WITHOUT inline keyboard - use commands only
+    // Send main menu WITHOUT keyboard - remove any existing keyboard
     await ctx.reply(menuText[lang] || menuText['en'], {
       parse_mode: 'HTML',
+      reply_markup: { remove_keyboard: true }, // CRITICAL: Remove persistent keyboard buttons
     });
   }
 
