@@ -429,7 +429,8 @@ export class TaskReminderService {
   }
 
   /**
-   * Send reminder with AI-generated learning tips
+   * Send SIMPLE task reminder (NO AI, clean format)
+   * Shows only task titles with professional messaging
    */
   private async sendReminderWithTips(
     user: any,
@@ -445,8 +446,8 @@ export class TaskReminderService {
         return;
       }
 
-      // Generate AI learning tips for the incomplete tasks
-      const learningTips = await this.generateLearningTips(
+      // Generate SIMPLE reminder (no AI, no full descriptions)
+      const reminderMessage = this.generateTaskReminder(
         incompleteTasks,
         user.profile?.position || 'junior',
         language,
@@ -456,7 +457,7 @@ export class TaskReminderService {
       const bot = this.telegramService.getBot();
       if (bot && user.telegramId) {
         try {
-          await bot.api.sendMessage(user.telegramId, learningTips, {
+          await bot.api.sendMessage(user.telegramId, reminderMessage, {
             parse_mode: 'HTML',
           });
 
@@ -496,7 +497,7 @@ export class TaskReminderService {
               errorCode,
               {
                 taskId: task._id.toString(),
-                messageContent: learningTips,
+                messageContent: reminderMessage,
                 incompleteTasks: incompleteTasks.length,
               },
             );
@@ -512,103 +513,111 @@ export class TaskReminderService {
   }
 
   /**
-   * Generate AI-powered learning tips
-   * IMPORTANT: This should NOT give answers, but rather:
-   * - Where to learn about the topic
-   * - How to approach learning it
-   * - What resources to use
-   * - Best practices for gaining experience
+   * Generate SIMPLE task reminder (NO AI, NO full descriptions)
+   * Only shows task titles with professional PM/TechLead messaging
    */
-  private async generateLearningTips(
+  private generateTaskReminder(
     tasks: any[],
     position: string,
     language: string,
     reminderType: 'first' | 'second' | 'third',
-  ): Promise<string> {
-    if (!this.openai) {
-      return this.getFallbackMessage(tasks.length, language, reminderType);
-    }
+  ): string {
+    // Extract only task titles (questions)
+    const taskTitles = tasks.map((t, i) => `${i + 1}. ${t.question}`).join('\n');
 
-    try {
-      const taskQuestions = tasks.map((t, i) => `${i + 1}. ${t.question}`).join('\n');
+    // Professional PM/TechLead messaging based on reminder type
+    const messages: Record<string, Record<string, string>> = {
+      uz: {
+        first: `👋 <b>Eslatma</b>
 
-      const prompts = {
-        uz: `Siz professional IT mentor va career coachsiz. Foydalanuvchi quyidagi ${tasks.length} ta kunlik topshiriqni hali yopmagan:
+Sizda tugallanmagan topshiriqlar mavjud:
 
-${taskQuestions}
+${taskTitles}
 
-MUHIM: Javoblarni BERMANG! Faqat o'rganish bo'yicha maslahatlar bering:
-- Qayerdan o'rganishi mumkin (manbalar, veb-saytlar, kurslar)
-- Qanday yondashuv qo'llash kerak
-- Qanday amaliy tajriba to'plash kerak
-- Eng yaxshi practice'lar
+⏰ ${tasks.length} ta topshiriq kutilmoqda
 
-Foydalanuvchi darajasi: ${position}
-Bu ${reminderType === 'first' ? '1-chi' : reminderType === 'second' ? '2-chi' : '3-chi'} eslatma.
+💡 Vaqtingizni samarali o'tkazing!`,
+        second: `⏰ <b>Kunning o'rtasi</b>
 
-3-4 ta konkret, amaliy maslahat bering. Qisqa va motivatsion yozing (max 500 belgi).`,
+Hali topshirilmagan vazifalar:
 
-        ru: `Вы профессиональный IT ментор и карьерный коуч. Пользователь еще не завершил ${tasks.length} ежедневных заданий:
+${taskTitles}
 
-${taskQuestions}
+📊 ${tasks.length} ta topshiriq qoldi
 
-ВАЖНО: НЕ давайте ответы! Только советы по обучению:
-- Где можно изучить (ресурсы, сайты, курсы)
-- Какой подход использовать
-- Как получить практический опыт
-- Лучшие практики
+⚡ Tezroq bajaring va kunning qolgan qismini rejalashtiring!`,
+        third: `🌆 <b>Kun yakunlanmoqda</b>
 
-Уровень пользователя: ${position}
-Это ${reminderType === 'first' ? '1-е' : reminderType === 'second' ? '2-е' : '3-е'} напоминание.
+Oxirgi eslatma - topshirilmagan vazifalar:
 
-Дайте 3-4 конкретных практических совета. Пишите коротко и мотивационно (макс 500 символов).`,
+${taskTitles}
 
-        en: `You are a professional IT mentor and career coach. The user hasn't completed ${tasks.length} daily tasks yet:
+🚨 ${tasks.length} ta topshiriq - kechga qoldirmang!
 
-${taskQuestions}
+🎯 Bugun oxirgi imkoniyat!`,
+      },
+      ru: {
+        first: `👋 <b>Напоминание</b>
 
-IMPORTANT: Do NOT give answers! Only provide learning advice:
-- Where to learn (resources, websites, courses)
-- What approach to take
-- How to gain practical experience
-- Best practices
+У вас есть невыполненные задания:
 
-User level: ${position}
-This is the ${reminderType === 'first' ? '1st' : reminderType === 'second' ? '2nd' : '3rd'} reminder.
+${taskTitles}
 
-Give 3-4 specific practical tips. Keep it short and motivational (max 500 chars).`,
-      };
+⏰ ${tasks.length} заданий ожидает
 
-      const prompt = prompts[language as keyof typeof prompts] || prompts.uz;
+💡 Используйте время эффективно!`,
+        second: `⏰ <b>Середина дня</b>
 
-      const completion = await this.openai.chat.completions.create({
-        model: 'gpt-3.5-turbo',
-        messages: [
-          {
-            role: 'system',
-            content:
-              'You are a supportive IT mentor who provides learning guidance, not answers. Be encouraging and practical.',
-          },
-          { role: 'user', content: prompt },
-        ],
-        temperature: 0.8,
-        max_tokens: 500,
-      });
+Еще не выполненные задачи:
 
-      const aiTips = completion.choices[0]?.message?.content || '';
+${taskTitles}
 
-      // Add header and footer
-      const headers = {
-        uz: `📚 <b>Kunlik topshiriqlar eslatmasi</b>\n\n⏰ Tugallanmagan: ${tasks.length} ta topshiriq\n\n${aiTips}\n\n💡 Topshiriqlarni ko'rish: /tasks`,
-        ru: `📚 <b>Напоминание о ежедневных заданиях</b>\n\n⏰ Не завершено: ${tasks.length} заданий\n\n${aiTips}\n\n💡 Посмотреть задания: /tasks`,
-        en: `📚 <b>Daily Tasks Reminder</b>\n\n⏰ Incomplete: ${tasks.length} tasks\n\n${aiTips}\n\n💡 View tasks: /tasks`,
-      };
+📊 ${tasks.length} заданий осталось
 
-      return headers[language as keyof typeof headers] || headers.uz;
-    } catch (error: any) {
-      this.logger.error(`Failed to generate AI tips: ${error.message}`);
-      return this.getFallbackMessage(tasks.length, language, reminderType);
-    }
+⚡ Выполните быстрее и спланируйте оставшуюся часть дня!`,
+        third: `🌆 <b>День подходит к концу</b>
+
+Последнее напоминание - невыполненные задачи:
+
+${taskTitles}
+
+🚨 ${tasks.length} заданий - не откладывайте на вечер!
+
+🎯 Последний шанс сегодня!`,
+      },
+      en: {
+        first: `👋 <b>Reminder</b>
+
+You have pending tasks:
+
+${taskTitles}
+
+⏰ ${tasks.length} tasks waiting
+
+💡 Use your time effectively!`,
+        second: `⏰ <b>Mid-day check</b>
+
+Tasks still pending:
+
+${taskTitles}
+
+📊 ${tasks.length} tasks remaining
+
+⚡ Complete them quickly and plan the rest of your day!`,
+        third: `🌆 <b>Day is ending</b>
+
+Final reminder - pending tasks:
+
+${taskTitles}
+
+🚨 ${tasks.length} tasks - don't leave them for tonight!
+
+🎯 Last chance today!`,
+      },
+    };
+
+    const langMessages = messages[language] || messages.uz;
+    return langMessages[reminderType] || langMessages.first;
   }
 
   /**
