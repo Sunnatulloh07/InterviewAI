@@ -256,6 +256,14 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
 
   /**
    * Handle /tasks command - show daily tasks
+   * Routes users based on their subscription plan:
+   * - Free users: Show upgrade prompt
+   * - Premium users (starter/pro/elite): Show monthly stats and today's tasks
+   * 
+   * SENIOR LOGIC:
+   * 1. Validate subscription status (active, not expired)
+   * 2. Check plan-specific permissions from COMPLETE_PLAN_LIMITS
+   * 3. Route based on actual feature access, not hard-coded plan name
    */
   async handleTasks(ctx: BotContext) {
     try {
@@ -278,13 +286,40 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
 
       const lang = this.getUserLanguage(ctx, user);
       const userId = (user as any)._id?.toString() || (user as any).id?.toString();
+      
+      // CRITICAL FIX: Check subscription status and expiry
+      const subscription = user.subscription;
+      const plan = subscription?.plan || 'free_trial';
+      const subscriptionStatus = subscription?.status || 'inactive';
+      const endDate = subscription?.endDate;
+      const now = new Date();
 
-      this.logger.log(`Starting daily task session for user ${userId}, language: ${lang}`);
+      // Check if subscription is expired
+      const isExpired = endDate && new Date(endDate) < now;
+      const isActive = subscriptionStatus === 'active' && !isExpired;
 
-      // ✅ STEP 5 FIX: Auto-start daily task session
-      await this.dailyTaskService.startDailyTaskSession(ctx, userId);
+      this.logger.log(
+        `/tasks command - user: ${userId}, plan: ${plan}, status: ${subscriptionStatus}, active: ${isActive}`,
+      );
 
-      this.logger.log(`Daily task session successfully started for user ${userId}`);
+      // SENIOR LOGIC: Use COMPLETE_PLAN_LIMITS to check feature access
+      const planLimits = COMPLETE_PLAN_LIMITS[plan] || COMPLETE_PLAN_LIMITS.free_trial;
+      const hasPremiumAccess = planLimits.dailyTasks.enabled && 
+                               (plan === 'starter' || plan === 'pro' || plan === 'elite') &&
+                               isActive;
+
+      // Show upgrade prompt for free users OR expired premium users
+      if (!hasPremiumAccess) {
+        this.logger.log(
+          `User ${userId} (plan: ${plan}, active: ${isActive}) lacks premium access - showing upgrade prompt`,
+        );
+        await this.dailyTaskService.showUpgradePrompt(ctx, user);
+        return;
+      }
+
+      // Premium users with active subscription see monthly stats and tasks
+      this.logger.log(`Premium user ${userId} (plan: ${plan}) accessing /tasks - showing monthly overview`);
+      await this.dailyTaskService.showMonthlyStats(ctx, userId);
     } catch (error: any) {
       this.logger.error(`Failed to handle tasks: ${error.message}`, error.stack);
       const lang = ctx.session?.language || 'uz';
@@ -1778,6 +1813,181 @@ ${recommendations.map((r: string, i: number) => `${i + 1}. ${r}`).join('\n') || 
         }
         return;
       }
+    }
+
+    // ============================================================
+    // DAILY TASK CALLBACKS
+    // ============================================================
+    if (callbackData.startsWith('daily_task_')) {
+      const telegramId = ctx.from?.id as number;
+      const user = await this.usersService.findByTelegramId(telegramId);
+
+      if (!user) {
+        await ctx.reply('Please register first using /start');
+        return;
+      }
+
+      const userLang = this.getUserLanguage(ctx, user);
+      const userId = (user as any)._id?.toString() || (user as any).id?.toString();
+
+      // Handle "Show Today's Tasks" button
+      if (callbackData === 'daily_task_today') {
+        this.logger.log(`Showing today's tasks for user ${userId}`);
+        await this.dailyTaskService.startDailyTaskSession(ctx, userId);
+        return;
+      }
+
+      // Handle "Upgrade to Premium" button
+      if (callbackData === 'daily_task_upgrade') {
+        this.logger.log(`Free user ${userId} clicked upgrade from daily tasks`);
+        await this.handleUpgrade(ctx);
+        return;
+      }
+
+      // Handle "Answer Task N" buttons (daily_task_answer_0, daily_task_answer_1, etc.)
+      if (callbackData.startsWith('daily_task_answer_')) {
+        const taskIndexStr = callbackData.replace('daily_task_answer_', '');
+        const taskIndex = parseInt(taskIndexStr, 10);
+
+        // SENIOR VALIDATION: Strict input validation with security checks
+        if (isNaN(taskIndex)) {
+          this.logger.warn(`Invalid task index (NaN): ${taskIndexStr} from user ${userId}`);
+          return;
+        }
+
+        // SECURITY: Prevent negative indices and unreasonably large indices (max 100 tasks per day)
+        if (taskIndex < 0 || taskIndex > 100) {
+          this.logger.warn(
+            `Suspicious task index out of bounds: ${taskIndex} from user ${userId} - possible attack`,
+          );
+          return;
+        }
+
+        this.logger.log(`User ${userId} starting to answer task ${taskIndex}`);
+
+        // Get today's tasks
+        const dailyTask = await this.dailyTasksService.getTodayTasks(userId);
+
+        if (!dailyTask) {
+          this.logger.warn(`No daily tasks found for user ${userId}`);
+          const noTasksText = {
+            uz: '❌ Bugungi vazifalar topilmadi.',
+            ru: '❌ Задания на сегодня не найдены.',
+            en: '❌ No tasks found for today.',
+          };
+          await ctx.reply(noTasksText[userLang] || noTasksText.uz);
+          return;
+        }
+
+        // SENIOR VALIDATION: Bounds check against actual array length
+        if (taskIndex < 0 || taskIndex >= dailyTask.tasks.length) {
+          this.logger.warn(
+            `Task index ${taskIndex} out of bounds for user ${userId} (total: ${dailyTask.tasks.length})`,
+          );
+          const invalidTaskText = {
+            uz: '❌ Noto\'g\'ri vazifa raqami.',
+            ru: '❌ Неверный номер задания.',
+            en: '❌ Invalid task number.',
+          };
+          await ctx.reply(invalidTaskText[userLang] || invalidTaskText.uz);
+          return;
+        }
+
+        const task = dailyTask.tasks[taskIndex];
+
+        if (task.completed) {
+          const alreadyCompletedText = {
+            uz: '✅ Bu vazifa allaqachon bajarilgan!',
+            ru: '✅ Это задание уже выполнено!',
+            en: '✅ This task is already completed!',
+          };
+          await ctx.reply(alreadyCompletedText[userLang] || alreadyCompletedText.uz);
+          return;
+        }
+
+        // SENIOR FIX: Use public method instead of private property access
+        const chatId = ctx.chat?.id;
+        if (!chatId) {
+          this.logger.error(`No chat ID available for user ${userId}`);
+          return;
+        }
+
+        try {
+          await this.dailyTaskService.setDailyTaskSession(
+            chatId,
+            userId,
+            (dailyTask as any)._id.toString(),
+            taskIndex,
+            dailyTask.tasks.length,
+            dailyTask.date,
+          );
+        } catch (sessionError: any) {
+          this.logger.error(`Failed to set daily task session: ${sessionError.message}`);
+          const errorText = {
+            uz: '❌ Xatolik yuz berdi. Iltimos, qayta urinib ko\'ring.',
+            ru: '❌ Произошла ошибка. Попробуйте снова.',
+            en: '❌ Error occurred. Please try again.',
+          };
+          await ctx.reply(errorText[userLang] || errorText.uz);
+          return;
+        }
+
+        // Show the specific task with answer instructions
+        const plan = user.subscription?.plan || 'free_trial';
+        const planLimits = COMPLETE_PLAN_LIMITS[plan] || COMPLETE_PLAN_LIMITS.free_trial;
+
+        let answerInstructions = '';
+        if (planLimits.dailyTasks.textAnswer) {
+          answerInstructions += userLang === 'uz' ? '✍️ Matn yozing' : userLang === 'ru' ? '✍️ Напишите текст' : '✍️ Type your answer';
+        }
+        if (planLimits.dailyTasks.voiceAnswer) {
+          answerInstructions += answerInstructions ? '\n' : '';
+          answerInstructions += userLang === 'uz' ? '🎙️ Ovozli xabar yuboring' : userLang === 'ru' ? '🎙️ Отправьте голосовое' : '🎙️ Send voice message';
+        }
+        if (planLimits.dailyTasks.imageAnswer) {
+          answerInstructions += answerInstructions ? '\n' : '';
+          answerInstructions += userLang === 'uz' ? '📸 Rasm yuboring' : userLang === 'ru' ? '📸 Отправьте фото' : '📸 Send image';
+        }
+
+        const taskPromptText = {
+          uz: `📝 <b>Vazifa ${taskIndex + 1}:</b>
+
+${task.question}
+
+━━━━━━━━━━━━━━━━━━
+<b>Javob berish usullari:</b>
+${answerInstructions}
+
+💡 Javobingizni yuboring!`,
+          ru: `📝 <b>Задание ${taskIndex + 1}:</b>
+
+${task.question}
+
+━━━━━━━━━━━━━━━━━━
+<b>Способы ответа:</b>
+${answerInstructions}
+
+💡 Отправьте ваш ответ!`,
+          en: `📝 <b>Task ${taskIndex + 1}:</b>
+
+${task.question}
+
+━━━━━━━━━━━━━━━━━━
+<b>Answer methods:</b>
+${answerInstructions}
+
+💡 Send your answer!`,
+        };
+
+        await ctx.reply(taskPromptText[userLang] || taskPromptText.uz, {
+          parse_mode: 'HTML',
+        });
+
+        this.logger.log(`Task ${taskIndex} prompt shown to user ${userId}`);
+        return;
+      }
+
+      return;
     }
 
     // ============================================================

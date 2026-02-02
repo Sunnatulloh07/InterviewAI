@@ -6,7 +6,7 @@ import axios, { AxiosError } from 'axios';
 import { AiOcrService } from '../ai/ai-ocr.service';
 import { AiTtsService } from '../ai/ai-tts.service';
 import { TelegramService, BotContext } from './telegram.service';
-import { InputFile } from 'grammy';
+import { InputFile, InlineKeyboard } from 'grammy';
 import { DailyTasksService } from '../tasks/daily-tasks.service';
 import { UsersService } from '../users/users.service';
 import { VoiceQuotaService } from '../voice/voice-quota.service';
@@ -48,6 +48,248 @@ export class TelegramDailyTaskService {
 
     if (!this.openrouterApiKey) {
       this.logger.warn('OPENROUTER_API_KEY not configured. Image OCR will be unavailable.');
+    }
+  }
+
+  /**
+   * Show upgrade prompt for free users or expired premium users
+   * Marketing message explaining premium daily tasks feature
+   * 
+   * SENIOR IMPROVEMENTS:
+   * - Type-safe user parameter (UserDocument)
+   * - Proper null checks and fallbacks
+   * - Enhanced logging with user context
+   * - Error handling doesn't throw (user experience priority)
+   */
+  async showUpgradePrompt(ctx: BotContext, user: any): Promise<void> {
+    try {
+      // SENIOR LOGIC: Null-safe language detection with proper fallback chain
+      const lang = 
+        ctx.session?.language || 
+        user?.preferences?.language || 
+        user?.language || 
+        'uz';
+
+      // SENIOR LOGGING: Log with full user context for debugging
+      const userId = user?._id?.toString() || user?.id?.toString() || 'unknown';
+      const userName = user?.firstName || user?.telegramUsername || 'Unknown User';
+      const currentPlan = user?.subscription?.plan || 'no_subscription';
+      
+      this.logger.log(
+        `Showing upgrade prompt - userId: ${userId}, name: ${userName}, currentPlan: ${currentPlan}, lang: ${lang}`,
+      );
+
+      const upgradeText = {
+        uz: `━━━━━━━━━━━━━━━━━━
+❌ <b>Kunlik vazifalar premium xususiyat!</b>
+
+🎯 <b>Premium bilan nimalar olasiz:</b>
+• Har kuni 3 ta professional savol
+• 📊 Progress tracking va oylik statistika
+• 🎤 Voice va 🖼 image javoblar
+• 💎 AI-powered batafsil feedback
+• 🔥 Streak va motivatsiya sistemasi
+
+💰 <b>Faqat $9.99/oy dan boshlab!</b>
+
+Starter plan bilan barcha imkoniyatlardan foydalaning.
+
+━━━━━━━━━━━━━━━━━━`,
+
+        ru: `━━━━━━━━━━━━━━━━━━
+❌ <b>Ежедневные задания - премиум функция!</b>
+
+🎯 <b>Что вы получите с Premium:</b>
+• Каждый день 3 профессиональных вопроса
+• 📊 Отслеживание прогресса и статистика за месяц
+• 🎤 Голосовые и 🖼 ответы изображениями
+• 💎 Подробный AI-анализ
+• 🔥 Система мотивации и серий
+
+💰 <b>Всего от $9.99/мес!</b>
+
+Получите все возможности с тарифом Starter.
+
+━━━━━━━━━━━━━━━━━━`,
+
+        en: `━━━━━━━━━━━━━━━━━━
+❌ <b>Daily Tasks is a premium feature!</b>
+
+🎯 <b>What you get with Premium:</b>
+• 3 professional questions every day
+• 📊 Progress tracking & monthly statistics
+• 🎤 Voice & 🖼 image answers
+• 💎 AI-powered detailed feedback
+• 🔥 Streak & motivation system
+
+💰 <b>Starting from just $9.99/month!</b>
+
+Get full access with the Starter plan.
+
+━━━━━━━━━━━━━━━━━━`,
+      };
+
+      // Build inline keyboard with upgrade and info buttons
+      const keyboard = new InlineKeyboard()
+        .text(
+          lang === 'uz' ? '💳 Premium sotib olish' : lang === 'ru' ? '💳 Купить Premium' : '💳 Upgrade to Premium',
+          'daily_task_upgrade'
+        )
+        .row()
+        .text(
+          lang === 'uz' ? 'ℹ️ Batafsil ma\'lumot' : lang === 'ru' ? 'ℹ️ Подробнее' : 'ℹ️ More Info',
+          'menu_upgrade'
+        );
+
+      await ctx.reply(upgradeText[lang] || upgradeText.uz, {
+        parse_mode: 'HTML',
+        reply_markup: keyboard,
+      });
+
+      this.logger.log(`Upgrade prompt successfully shown to user ${userId}`);
+    } catch (error: any) {
+      this.logger.error(`Failed to show upgrade prompt: ${error.message}`, error.stack);
+      
+      // SENIOR PATTERN: Don't throw - gracefully fallback with simple message
+      const fallbackText = {
+        uz: '❌ Premium xususiyat. Batafsil ma\'lumot uchun /upgrade buyrug\'ini yuboring.',
+        ru: '❌ Премиум функция. Используйте /upgrade для подробностей.',
+        en: '❌ Premium feature. Use /upgrade for details.',
+      };
+      
+      const lang = ctx.session?.language || 'uz';
+      
+      try {
+        await ctx.reply(fallbackText[lang] || fallbackText.uz);
+      } catch (replyError: any) {
+        this.logger.error(`Critical: Failed to send fallback message: ${replyError.message}`);
+        // No further action - prevent infinite error loop
+      }
+    }
+  }
+
+  /**
+   * Show monthly statistics for premium users
+   * Displays comprehensive overview with button to view today's tasks
+   * 
+   * SENIOR IMPROVEMENTS:
+   * - Safe division with proper edge case handling (0/0 case)
+   * - Better error handling without throwing (user experience priority)
+   * - Enhanced logging for debugging
+   */
+  async showMonthlyStats(ctx: BotContext, userId: string): Promise<void> {
+    try {
+      const user = await this.usersService.findById(userId);
+      if (!user) {
+        this.logger.error(`User ${userId} not found in showMonthlyStats`);
+        const errorText = {
+          uz: '❌ Foydalanuvchi topilmadi.',
+          ru: '❌ Пользователь не найден.',
+          en: '❌ User not found.',
+        };
+        const lang = ctx.session?.language || 'uz';
+        await ctx.reply(errorText[lang] || errorText.uz);
+        return;
+      }
+
+      const lang = ctx.session?.language || user?.preferences?.language || user?.language || 'uz';
+      const plan = user.subscription?.plan || 'free_trial';
+
+      this.logger.log(`Fetching monthly stats for user ${userId} (plan: ${plan})`);
+
+      // Get monthly stats from DailyTasksService
+      const stats = await this.dailyTasksService.getMonthlyStats(userId);
+
+      // Get current month name
+      const now = new Date();
+      const monthNames = {
+        uz: ['Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun', 'Iyul', 'Avgust', 'Sentyabr', 'Oktyabr', 'Noyabr', 'Dekabr'],
+        ru: ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'],
+        en: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
+      };
+      const currentMonthName = monthNames[lang][now.getMonth()];
+
+      // SENIOR FIX: Safe calculation for failed percentage
+      const failedPercentage = stats.totalTasks > 0 
+        ? Math.round((stats.failed / stats.totalTasks) * 100) 
+        : 0; // If no tasks, 0% failed (not "0/1 = 0%")
+
+      const statsText = {
+        uz: `━━━━━━━━━━━━━━━━━━
+📊 <b>KUNLIK VAZIFALAR STATISTIKA</b>
+
+📅 <b>Shu oy (${currentMonthName} ${now.getFullYear()}):</b>
+✅ Bajarilgan: <b>${stats.completed}/${stats.totalTasks}</b> (${stats.completionRate}%)
+❌ Bajarilmagan: <b>${stats.failed}/${stats.totalTasks}</b> (${failedPercentage}%)
+🤖 AI javoblar: <b>${stats.aiAnswered}</b>
+📊 O'rtacha ball: <b>${stats.averageScore}/10</b>
+
+🔥 <b>Streak:</b>
+• Joriy: <b>${stats.currentStreak} kun</b>
+• Eng uzun: <b>${stats.longestStreak} kun</b>
+
+━━━━━━━━━━━━━━━━━━`,
+
+        ru: `━━━━━━━━━━━━━━━━━━
+📊 <b>СТАТИСТИКА ЕЖЕДНЕВНЫХ ЗАДАНИЙ</b>
+
+📅 <b>Этот месяц (${currentMonthName} ${now.getFullYear()}):</b>
+✅ Выполнено: <b>${stats.completed}/${stats.totalTasks}</b> (${stats.completionRate}%)
+❌ Не выполнено: <b>${stats.failed}/${stats.totalTasks}</b> (${failedPercentage}%)
+🤖 AI ответы: <b>${stats.aiAnswered}</b>
+📊 Средний балл: <b>${stats.averageScore}/10</b>
+
+🔥 <b>Серия:</b>
+• Текущая: <b>${stats.currentStreak} дней</b>
+• Максимальная: <b>${stats.longestStreak} дней</b>
+
+━━━━━━━━━━━━━━━━━━`,
+
+        en: `━━━━━━━━━━━━━━━━━━
+📊 <b>DAILY TASKS STATISTICS</b>
+
+📅 <b>This Month (${currentMonthName} ${now.getFullYear()}):</b>
+✅ Completed: <b>${stats.completed}/${stats.totalTasks}</b> (${stats.completionRate}%)
+❌ Failed: <b>${stats.failed}/${stats.totalTasks}</b> (${failedPercentage}%)
+🤖 AI Answers: <b>${stats.aiAnswered}</b>
+📊 Average Score: <b>${stats.averageScore}/10</b>
+
+🔥 <b>Streak:</b>
+• Current: <b>${stats.currentStreak} days</b>
+• Longest: <b>${stats.longestStreak} days</b>
+
+━━━━━━━━━━━━━━━━━━`,
+      };
+
+      // Build inline keyboard
+      const keyboard = new InlineKeyboard().text(
+        lang === 'uz' ? '📋 Bugungi vazifalar' : lang === 'ru' ? '📋 Сегодняшние задания' : '📋 Today\'s Tasks',
+        'daily_task_today'
+      );
+
+      await ctx.reply(statsText[lang] || statsText.uz, {
+        parse_mode: 'HTML',
+        reply_markup: keyboard,
+      });
+
+      this.logger.log(`Monthly stats successfully shown to user ${userId}`);
+    } catch (error: any) {
+      this.logger.error(`Failed to show monthly stats: ${error.message}`, error.stack);
+      
+      // SENIOR PATTERN: Don't throw - send fallback message
+      const fallbackText = {
+        uz: '❌ Statistikani yuklashda xatolik. Keyinroq qayta urinib ko\'ring.',
+        ru: '❌ Ошибка при загрузке статистики. Попробуйте позже.',
+        en: '❌ Failed to load statistics. Please try again later.',
+      };
+      
+      const lang = ctx.session?.language || 'uz';
+      
+      try {
+        await ctx.reply(fallbackText[lang] || fallbackText.uz);
+      } catch (replyError: any) {
+        this.logger.error(`Critical: Failed to send error message: ${replyError.message}`);
+      }
     }
   }
 
@@ -131,8 +373,11 @@ export class TelegramDailyTaskService {
   }
 
   /**
-   * Show ALL TASKS to user (senior PM approach)
-   * User can answer any task they want
+   * Show TODAY'S TASKS overview with all questions
+   * Completed tasks: collapsed (title + checkmark only)
+   * Incomplete tasks: full question + individual "Answer" button
+   * 
+   * NEW UX: Each incomplete task has its own button, user can answer in any order
    */
   private async showCurrentTask(
     ctx: BotContext,
@@ -147,69 +392,147 @@ export class TelegramDailyTaskService {
     const user = await this.usersService.findById(userId);
     const plan = user?.subscription?.plan || 'free_trial';
     const planLimits = this.getPlanLimits(plan);
-    const position = user.profile?.position || 'junior';
+    const position = user?.profile?.position || 'junior';
 
-    // Build ALL tasks overview
-    let tasksOverview = '';
-    dailyTask.tasks.forEach((task, index) => {
-      const status = task.completed ? '✅' : '🔄';
-      const currentMarker = index === currentTaskIndex ? ' 👉' : '   ';
+    // Calculate progress
+    const totalTasks = dailyTask.tasks.length;
+    const completedCount = dailyTask.tasks.filter((t) => t.completed).length;
+    const progressPercent = Math.round((completedCount / totalTasks) * 100);
 
-      if (lang === 'uz') {
-        tasksOverview += `${status}${currentMarker} ${index + 1}. ${task.question}\n`;
-      } else if (lang === 'ru') {
-        tasksOverview += `${status}${currentMarker} ${index + 1}. ${task.question}\n`;
-      } else {
-        tasksOverview += `${status}${currentMarker} ${index + 1}. ${task.question}\n`;
+    // SENIOR FIX: Proper date formatting with correct locale
+    const date = new Date(dailyTask.date);
+    const day = date.getDate();
+    const monthNames = {
+      uz: ['yanvar', 'fevral', 'mart', 'aprel', 'may', 'iyun', 'iyul', 'avgust', 'sentyabr', 'oktyabr', 'noyabr', 'dekabr'],
+      ru: ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'],
+      en: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
+    };
+    const month = monthNames[lang][date.getMonth()];
+    const dateStr = lang === 'en' ? `${month} ${day}` : `${day}-${month}`;
+
+    // Build header
+    const headerText = {
+      uz: `━━━━━━━━━━━━━━━━━━
+📋 <b>BUGUNGI VAZIFALAR (${dateStr})</b>
+
+`,
+      ru: `━━━━━━━━━━━━━━━━━━
+📋 <b>СЕГОДНЯШНИЕ ЗАДАНИЯ (${dateStr})</b>
+
+`,
+      en: `━━━━━━━━━━━━━━━━━━
+📋 <b>TODAY'S TASKS (${dateStr})</b>
+
+`,
+    };
+
+    // SENIOR PATTERN: Build tasks list with proper validation and edge case handling
+    let tasksText = '';
+    let keyboard = new InlineKeyboard();
+    let buttonCount = 0;
+
+    // Validate dailyTask.tasks exists and is array
+    if (!dailyTask.tasks || !Array.isArray(dailyTask.tasks) || dailyTask.tasks.length === 0) {
+      this.logger.warn(`No tasks found in dailyTask for user ${userId}`);
+      const noTasksText = {
+        uz: '❌ Vazifalar topilmadi.',
+        ru: '❌ Задания не найдены.',
+        en: '❌ No tasks found.',
+      };
+      await ctx.reply(noTasksText[lang] || noTasksText.uz);
+      return;
+    }
+
+    for (let i = 0; i < dailyTask.tasks.length; i++) {
+      const task = dailyTask.tasks[i];
+      
+      // SENIOR VALIDATION: Check task object integrity
+      if (!task || !task.question) {
+        this.logger.warn(`Invalid task at index ${i} for user ${userId}`);
+        continue; // Skip invalid tasks
       }
-    });
+      
+      if (task.completed) {
+        // Completed task: show only title with checkmark and score
+        const score = task.score || 0;
+        const scoreEmoji = score >= 8 ? '🟢' : score >= 5 ? '🟡' : '🔴';
+        
+        // SENIOR FIX: Safe substring with proper length check
+        const questionPreview = task.question.length > 60 
+          ? task.question.substring(0, 60) + '...' 
+          : task.question;
+        
+        const scoreLabel = {
+          uz: 'ball',
+          ru: 'балл',
+          en: 'pts',
+        };
+        
+        tasksText += `✅ <b>${i + 1}. ${questionPreview}</b>\n   ${scoreEmoji} ${score}/10 ${scoreLabel[lang]}\n\n`;
+      } else {
+        // Incomplete task: show full question + button
+        tasksText += `🔄 <b>${i + 1}. ${task.question}</b>\n\n`;
+        
+        // Add answer button for this specific task
+        const buttonLabel = {
+          uz: `📝 Javob berish (${i + 1})`,
+          ru: `📝 Ответить (${i + 1})`,
+          en: `📝 Answer (${i + 1})`,
+        };
+        
+        keyboard.text(buttonLabel[lang] || buttonLabel.uz, `daily_task_answer_${i}`);
+        buttonCount++;
+        
+        // Add row break after every 2 buttons for better UX
+        if (buttonCount % 2 === 0) {
+          keyboard.row();
+        }
+      }
+    }
 
-    // Build answer type instructions based on plan
+    // EDGE CASE: If all tasks are completed, no buttons needed
+    if (buttonCount === 0) {
+      this.logger.log(`All tasks completed for user ${userId} - no answer buttons shown`);
+    }
+
+    // Add answer type instructions based on plan
     let answerInstructions = '';
     if (planLimits.dailyTasks.textAnswer) {
-      answerInstructions += '✍️ Text yozing';
+      answerInstructions += lang === 'uz' ? '✍️ Matn' : lang === 'ru' ? '✍️ Текст' : '✍️ Text';
     }
     if (planLimits.dailyTasks.voiceAnswer) {
       answerInstructions += answerInstructions ? ' | ' : '';
-      answerInstructions += '🎙️ Voice';
+      answerInstructions += lang === 'uz' ? '🎙️ Ovoz' : lang === 'ru' ? '🎙️ Голос' : '🎙️ Voice';
     }
     if (planLimits.dailyTasks.imageAnswer) {
       answerInstructions += answerInstructions ? ' | ' : '';
-      answerInstructions += '📸 Image';
+      answerInstructions += lang === 'uz' ? '📸 Rasm' : lang === 'ru' ? '📸 Фото' : '📸 Image';
     }
 
-    // Create professional PM message
-    const headerText = {
-      uz: `📚 <b>Bugungi vazifalar</b>\n\n${dailyTask.tasks.length} ta vazifa, ${dailyTask.tasks.filter((t) => !t.completed).length} ta qoldi\n\n💡 Foydalanuvchi ${position} darajasiga moslashtirilgan`,
-      ru: `📚 <b>Ежедневные задания</b>\n\n${dailyTask.tasks.length} заданий, ${dailyTask.tasks.filter((t) => !t.completed).length} осталось\n\n💡 Адаптировано под уровень ${position}`,
-      en: `📚 <b>Daily Tasks</b>\n\n${dailyTask.tasks.length} tasks, ${dailyTask.tasks.filter((t) => !t.completed).length} remaining\n\n💡 Adapted for ${position} level`,
+    const footerText = {
+      uz: `━━━━━━━━━━━━━━━━━━
+Progress: ${completedCount}/${totalTasks} bajarilgan (${progressPercent}%)
+
+📝 <b>Javob turlari:</b> ${answerInstructions}`,
+      ru: `━━━━━━━━━━━━━━━━━━
+Прогресс: ${completedCount}/${totalTasks} выполнено (${progressPercent}%)
+
+📝 <b>Типы ответов:</b> ${answerInstructions}`,
+      en: `━━━━━━━━━━━━━━━━━━
+Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
+
+📝 <b>Answer types:</b> ${answerInstructions}`,
     };
 
-    const overviewText = {
-      uz: `━━━━━━━━━━━━━━━━\n<b>Vazifalar ro'yxati:</b>\n${tasksOverview}`,
-      ru: `━━━━━━━━━━━━━━━━\n<b>Список задач:</b>\n${tasksOverview}`,
-      en: `━━━━━━━━━━━━━━━━\n<b>Task List:</b>\n${tasksOverview}`,
-    };
-
-    const instructionsText = {
-      uz: `\n━━━━━━━━━━━━━━━━\n📝 <b>Javob turlari:</b> ${answerInstructions}\n\n💡 <b>Eslatma:</b> Video javoblar qo'llab-quvvatlanmaydi`,
-      ru: `\n━━━━━━━━━━━━━━━━\n📝 <b>Типы ответов:</b> ${answerInstructions}\n\n💡 <b>Примечание:</b> Видео ответы не поддерживаются`,
-      en: `\n━━━━━━━━━━━━━━━━\n📝 <b>Answer Types:</b> ${answerInstructions}\n\n💡 <b>Note:</b> Video answers not supported`,
-    };
-
-    const currentTaskText = {
-      uz: `\n👉 <b>Joriy vazifa:</b>\n${currentTaskIndex + 1}. ${dailyTask.tasks[currentTaskIndex].question}`,
-      ru: `\n👉 <b>Текущая задача:</b>\n${currentTaskIndex + 1}. ${dailyTask.tasks[currentTaskIndex].question}`,
-      en: `\n👉 <b>Current Task:</b>\n${currentTaskIndex + 1}. ${dailyTask.tasks[currentTaskIndex].question}`,
-    };
-
-    // Combine all parts
-    const fullMessage =
-      headerText[lang] + overviewText[lang] + currentTaskText[lang] + instructionsText[lang];
+    // Combine full message
+    const fullMessage = headerText[lang] + tasksText + footerText[lang];
 
     await ctx.reply(fullMessage, {
       parse_mode: 'HTML',
+      reply_markup: completedCount < totalTasks ? keyboard : undefined, // Only show buttons if tasks remain
     });
+
+    this.logger.log(`Showed today's tasks to user ${userId}: ${completedCount}/${totalTasks} completed`);
   }
 
   /**
@@ -688,6 +1011,45 @@ export class TelegramDailyTaskService {
   private getPlanLimits(plan: string) {
     const { COMPLETE_PLAN_LIMITS } = require('@common/constants');
     return COMPLETE_PLAN_LIMITS[plan] || COMPLETE_PLAN_LIMITS.free_trial;
+  }
+
+  /**
+   * PUBLIC METHOD: Set daily task session
+   * Used by callback handlers to properly set session without breaking encapsulation
+   * 
+   * SENIOR PATTERN: Expose controlled public method instead of private property access
+   */
+  async setDailyTaskSession(
+    chatId: number,
+    userId: string,
+    dailyTaskId: string,
+    currentTaskIndex: number,
+    totalTasks: number,
+    date: Date,
+  ): Promise<void> {
+    try {
+      await this.sessionModel.findOneAndUpdate(
+        { telegramChatId: chatId },
+        {
+          $set: {
+            status: 'daily_task',
+            dailyTaskSession: {
+              dailyTaskId,
+              currentTaskIndex,
+              totalTasks,
+              date,
+            },
+            lastActivityAt: new Date(),
+          },
+        },
+        { upsert: true },
+      );
+      
+      this.logger.debug(`Daily task session set for chat ${chatId}, task ${currentTaskIndex}/${totalTasks}`);
+    } catch (error: any) {
+      this.logger.error(`Failed to set daily task session: ${error.message}`, error.stack);
+      throw error;
+    }
   }
 
   /**

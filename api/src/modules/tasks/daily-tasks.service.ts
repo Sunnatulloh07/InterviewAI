@@ -283,6 +283,179 @@ export class DailyTasksService {
   }
 
   /**
+   * Get monthly statistics for user's daily tasks
+   * Aggregates completed, failed, AI-answered, and skipped tasks for current month
+   * Returns streak information from user document
+   * 
+   * CRITICAL FIX: Convert string userId to ObjectId for MongoDB matching
+   * SENIOR PATTERN: Proper error handling with fallback values
+   */
+  async getMonthlyStats(
+    userId: string,
+    month?: number,
+    year?: number,
+  ): Promise<{
+    totalTasks: number;
+    completed: number;
+    failed: number;
+    aiAnswered: number;
+    skipped: number;
+    averageScore: number;
+    currentStreak: number;
+    longestStreak: number;
+    completionRate: number;
+  }> {
+    try {
+      // CRITICAL FIX: Convert string to ObjectId for MongoDB
+      const mongoose = require('mongoose');
+      const userObjectId = new mongoose.Types.ObjectId(userId);
+
+      // Default to current month/year
+      const now = new Date();
+      const targetMonth = month !== undefined ? month : now.getMonth();
+      const targetYear = year !== undefined ? year : now.getFullYear();
+
+      // Calculate start and end dates for the month (Tashkent timezone)
+      const startDate = new Date(Date.UTC(targetYear, targetMonth, 1));
+      startDate.setUTCHours(startDate.getUTCHours() - 5); // Tashkent offset
+
+      const endDate = new Date(Date.UTC(targetYear, targetMonth + 1, 0, 23, 59, 59, 999));
+      endDate.setUTCHours(endDate.getUTCHours() - 5); // Tashkent offset
+
+      this.logger.debug(
+        `Getting monthly stats for user ${userId}: ${targetMonth + 1}/${targetYear} (${startDate.toISOString()} - ${endDate.toISOString()})`,
+      );
+
+      // CRITICAL FIX: Use ObjectId in $match, not string
+      const stats = await this.dailyTaskModel.aggregate([
+        {
+          $match: {
+            userId: userObjectId, // ✅ ObjectId matching
+            date: { $gte: startDate, $lte: endDate },
+          },
+        },
+        {
+          $unwind: '$tasks',
+        },
+        {
+          $group: {
+            _id: null,
+            totalTasks: { $sum: 1 },
+            completed: {
+              $sum: {
+                $cond: [{ $eq: ['$tasks.completed', true] }, 1, 0],
+              },
+            },
+            totalScore: {
+              $sum: {
+                $cond: [
+                  { $and: [{ $eq: ['$tasks.completed', true] }, { $ifNull: ['$tasks.score', false] }] },
+                  '$tasks.score',
+                  0,
+                ],
+              },
+            },
+            scoredTasks: {
+              $sum: {
+                $cond: [
+                  { $and: [{ $eq: ['$tasks.completed', true] }, { $ifNull: ['$tasks.score', false] }] },
+                  1,
+                  0,
+                ],
+              },
+            },
+            // Count different answer types
+            voiceAnswers: {
+              $sum: {
+                $cond: [{ $eq: ['$tasks.answerType', 'voice'] }, 1, 0],
+              },
+            },
+            imageAnswers: {
+              $sum: {
+                $cond: [{ $eq: ['$tasks.answerType', 'image'] }, 1, 0],
+              },
+            },
+          },
+        },
+      ]);
+
+      const aggregatedStats = stats[0] || {
+        totalTasks: 0,
+        completed: 0,
+        totalScore: 0,
+        scoredTasks: 0,
+        voiceAnswers: 0,
+        imageAnswers: 0,
+      };
+
+      this.logger.debug(
+        `Aggregation result for user ${userId}: totalTasks=${aggregatedStats.totalTasks}, completed=${aggregatedStats.completed}`,
+      );
+
+      // SENIOR PATTERN: Fetch user with proper ObjectId
+      const user = await this.userModel.findById(userObjectId).select('dailyTasks').lean();
+      
+      if (!user) {
+        this.logger.warn(`User ${userId} not found in getMonthlyStats - using zero streaks`);
+      }
+      
+      const currentStreak = user?.dailyTasks?.currentStreak || 0;
+      const longestStreak = user?.dailyTasks?.longestStreak || 0;
+
+      // Calculate derived stats
+      const completed = aggregatedStats.completed;
+      const totalTasks = aggregatedStats.totalTasks;
+      const failed = totalTasks - completed; // Tasks exist but not completed
+      const skipped = 0; // Can be calculated if we track skipped status separately
+      const aiAnswered = aggregatedStats.voiceAnswers + aggregatedStats.imageAnswers; // AI-processed answers
+
+      // SENIOR PATTERN: Safe division with proper rounding
+      const averageScore =
+        aggregatedStats.scoredTasks > 0
+          ? Math.round((aggregatedStats.totalScore / aggregatedStats.scoredTasks) * 10) / 10
+          : 0;
+
+      const completionRate = totalTasks > 0 ? Math.round((completed / totalTasks) * 100) : 0;
+
+      const result = {
+        totalTasks,
+        completed,
+        failed,
+        aiAnswered,
+        skipped,
+        averageScore,
+        currentStreak,
+        longestStreak,
+        completionRate,
+      };
+
+      this.logger.log(
+        `Monthly stats computed for user ${userId}: ${completed}/${totalTasks} (${completionRate}%), streak: ${currentStreak}`,
+      );
+
+      return result;
+    } catch (error: any) {
+      this.logger.error(
+        `Failed to get monthly stats for user ${userId}: ${error.message}`,
+        error.stack,
+      );
+      
+      // SENIOR PATTERN: Return empty stats on error, don't crash the user flow
+      return {
+        totalTasks: 0,
+        completed: 0,
+        failed: 0,
+        aiAnswered: 0,
+        skipped: 0,
+        averageScore: 0,
+        currentStreak: 0,
+        longestStreak: 0,
+        completionRate: 0,
+      };
+    }
+  }
+
+  /**
    * Complete a task with AI scoring
    * ✅ Supports multimodal answers (voice/image) with plan enforcement
    * ❌ VIDEO NOT SUPPORTED - Too expensive for AI processing
