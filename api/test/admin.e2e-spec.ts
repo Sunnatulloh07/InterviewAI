@@ -13,7 +13,7 @@ describe('AdminController (e2e)', () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
-    
+
 
     app = moduleFixture.createNestApplication();
     jwtService = moduleFixture.get<JwtService>(JwtService);
@@ -183,7 +183,7 @@ describe('AdminController (e2e)', () => {
 
       if (usersResponse.body.users && usersResponse.body.users.length > 0) {
         const userId = usersResponse.body.users[0].id;
-        
+
         return request(app.getHttpServer())
           .get(`/admin/users/${userId}`)
           .set('Authorization', `Bearer ${adminToken}`)
