@@ -333,7 +333,9 @@ export class TelegramDailyTaskService {
       // Delete processing message
       try {
         await ctx.api.deleteMessage(chatId, processingMsg.message_id);
-      } catch (deleteError) {}
+      } catch (deleteError) {
+        // Message might already be deleted or expired - safe to ignore
+      }
 
       // Submit transcribed answer
       const { dailyTaskId, currentTaskIndex, date } = session.dailyTaskSession;
@@ -439,7 +441,9 @@ export class TelegramDailyTaskService {
 
         try {
           await ctx.api.deleteMessage(chatId, processingMsg.message_id);
-        } catch (deleteError) {}
+        } catch (deleteError) {
+          // Message might already be deleted or expired - safe to ignore
+        }
 
         await ctx.reply(tooLargeText[lang] || tooLargeText.uz);
         return;
@@ -465,7 +469,9 @@ export class TelegramDailyTaskService {
       // Delete processing message
       try {
         await ctx.api.deleteMessage(chatId, processingMsg.message_id);
-      } catch (deleteError) {}
+      } catch (deleteError) {
+        // Message might already be deleted or expired - safe to ignore
+      }
 
       // If OCR failed, ask for text answer
       if (!extractedText || confidence < 0.5) {

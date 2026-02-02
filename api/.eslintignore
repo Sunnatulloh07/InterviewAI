@@ -1,0 +1,13 @@
+# Dependencies
+node_modules/
+dist/
+
+# Config files
+.eslintrc.js
+
+# Test files
+*.spec.ts
+*.test.ts
+
+# Cache
+.eslintcache
