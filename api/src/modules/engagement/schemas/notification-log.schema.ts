@@ -23,6 +23,8 @@ export enum NotificationTrigger {
   TRIAL_ENDING = 'trial_ending',
   /** Onboarding survey for new users (3-4h after registration) */
   ONBOARDING_SURVEY = 'onboarding_survey',
+  /** Profile incomplete - ask for position after 4h if still default */
+  PROFILE_INCOMPLETE = 'profile_incomplete',
   /** Active job-seeker inactive for 24h - motivational nudge */
   JOBSEEKER_INACTIVE = 'jobseeker_inactive',
 }

@@ -36,9 +36,9 @@ export class TaskReminderService {
     private readonly dailyTaskModel: Model<DailyTaskDocument>,
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
-    @Inject(() => TelegramService) // ✅ FIXED: Remove forwardRef
+    @Inject(forwardRef(() => TelegramService))
     private readonly telegramService: TelegramService,
-    @Inject(() => FailedNotificationRetryService) // ✅ FIXED: Remove forwardRef
+    @Inject(forwardRef(() => FailedNotificationRetryService))
     private readonly retryService: FailedNotificationRetryService,
     private readonly configService: ConfigService,
     @InjectRedis() private readonly redis: Redis,

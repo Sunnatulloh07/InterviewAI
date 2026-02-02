@@ -5,6 +5,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { EngagementService } from './engagement.service';
 import { SurveyHandlerService } from './survey-handler.service';
+import { PositionPromptService } from './position-prompt.service';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { JobSeekingStatus } from './dto/job-seeking-status.enum';
 
@@ -65,6 +66,7 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
   constructor(
     private readonly engagementService: EngagementService,
     private readonly surveyHandlerService: SurveyHandlerService,
+    private readonly positionPromptService: PositionPromptService,
     private readonly configService: ConfigService,
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
   ) {}
@@ -323,6 +325,108 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
       }
     } catch (error) {
       this.logger.error(`Job-seeker inactivity check failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * 🔧 FIX: Position prompt handler - runs every 15 minutes between 09:00-21:00 (Tashkent time)
+   * Prompts users to confirm their position if:
+   * - 4+ hours have passed since registration
+   * - Still have default 'junior' position
+   * - Haven't manually confirmed their position
+   */
+  @Cron('*/15 9-21 * * *', { name: 'position-prompts', timeZone: 'Asia/Tashkent' })
+  async handlePositionPrompts(): Promise<void> {
+    if (!this.isEnabled) {
+      return;
+    }
+
+    this.logger.debug('Processing scheduled position prompts');
+
+    try {
+      const now = new Date();
+
+      // Query 1: Users with scheduled position prompt time that has passed
+      const scheduledUsers = await this.userModel
+        .find({
+          'engagement.scheduledPositionPromptAt': {
+            $lte: now,
+            $ne: null,
+          },
+          'engagement.positionConfirmed': false, // Not yet confirmed
+          'profile.position': 'junior', // Still default
+          'engagement.isBotBlocked': { $ne: true },
+          deletedAt: null,
+        })
+        .select('_id telegramId language profile engagement')
+        .limit(50)
+        .lean()
+        .exec();
+
+      // Query 2: Backfill for existing users without scheduled time (created before this feature)
+      const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60 * 1000);
+      const backfillUsers = await this.userModel
+        .find({
+          createdAt: { $lte: fourHoursAgo },
+          'profile.position': 'junior',
+          'engagement.positionConfirmed': { $ne: true },
+          'engagement.scheduledPositionPromptAt': null, // No schedule set
+          'engagement.isBotBlocked': { $ne: true },
+          deletedAt: null,
+        })
+        .select('_id telegramId language profile engagement')
+        .limit(20)
+        .lean()
+        .exec();
+
+      const allUsers = [...scheduledUsers, ...backfillUsers];
+
+      if (allUsers.length === 0) {
+        return;
+      }
+
+      this.logger.log(
+        `Found ${allUsers.length} users needing position prompts ` +
+        `(${scheduledUsers.length} scheduled, ${backfillUsers.length} backfill)`,
+      );
+
+      let sent = 0;
+      let failed = 0;
+
+      for (const user of allUsers) {
+        if (this.shouldStop) break;
+
+        try {
+          const result = await this.positionPromptService.sendPositionPrompt(
+            user._id.toString(),
+            user.telegramId,
+            user.language || 'uz',
+          );
+
+          if (result.success) {
+            sent++;
+            
+            // Clear scheduled time after sending (prevent re-sending)
+            await this.userModel.findByIdAndUpdate(user._id, {
+              $set: { 'engagement.scheduledPositionPromptAt': null },
+            });
+          } else {
+            failed++;
+          }
+
+          // Rate limiting delay
+          await this.delay(200);
+        } catch (error) {
+          this.logger.error(
+            `Failed to send position prompt to user ${user._id}: ${error.message}`,
+          );
+          failed++;
+        }
+      }
+
+      this.logger.log(`Position prompts processed: sent=${sent}, failed=${failed}`);
+    } catch (error) {
+      this.logger.error(`Position prompts job failed: ${error.message}`);
     }
   }
 

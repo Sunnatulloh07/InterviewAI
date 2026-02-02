@@ -9,6 +9,7 @@ import { EngagementAiService } from './engagement-ai.service';
 import { EngagementService } from './engagement.service';
 import { EngagementSchedulerService } from './engagement-scheduler.service';
 import { SurveyHandlerService } from './survey-handler.service';
+import { PositionPromptService } from './position-prompt.service';
 import { TaskReminderService } from './task-reminder.service';
 import { UserActivationService } from './user-activation.service';
 import { InactivityTrackerService } from './inactivity-tracker.service';
@@ -52,6 +53,7 @@ import {
     EngagementService,
     EngagementSchedulerService,
     SurveyHandlerService,
+    PositionPromptService,
     TaskReminderService,
     UserActivationService,
     InactivityTrackerService,
@@ -67,6 +69,7 @@ import {
     EngagementService,
     EngagementSchedulerService,
     SurveyHandlerService,
+    PositionPromptService,
     TaskReminderService,
     UserActivationService,
     InactivityTrackerService,

@@ -1,6 +1,7 @@
 import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { UsersService } from '../users/users.service';
+import { UsersRepository } from '../users/users.repository';
 import { BotContext } from './telegram.service';
 import { InlineKeyboard, Keyboard } from 'grammy';
 import { InterviewsService } from '../interviews/interviews.service';
@@ -29,6 +30,7 @@ export class TelegramCommandsService {
 
   constructor(
     private readonly usersService: UsersService,
+    private readonly usersRepository: UsersRepository,
     private readonly interviewsService: InterviewsService,
     private readonly interviewsFeedbackService: InterviewsFeedbackService,
     private readonly configService: ConfigService,
@@ -1932,7 +1934,7 @@ Which domain would you like to practice?
     }
 
     // ============================================================
-    // POSITION SELECTION
+    // POSITION SELECTION (from /set_position command)
     // ============================================================
     if (callbackData.startsWith('position_')) {
       const position = callbackData.replace('position_', '');
@@ -1961,6 +1963,48 @@ Which domain would you like to practice?
         this.logger.log(`User ${telegramId} updated position to: ${position}`);
       } catch (error: any) {
         this.logger.error(`Failed to update position: ${error.message}`);
+        await ctx.reply('❌ Failed to update position');
+      }
+
+      return;
+    }
+
+    // ============================================================
+    // 🔧 FIX: POSITION CONFIRMATION (from automated position prompt)
+    // ============================================================
+    if (callbackData.startsWith('confirm_position_')) {
+      const position = callbackData.replace('confirm_position_', '') as 'junior' | 'middle' | 'senior' | 'lead';
+      const telegramId = ctx.from?.id as number;
+      const user = await this.usersService.findByTelegramId(telegramId);
+
+      if (!user) {
+        await ctx.reply('Please register first using /start');
+        return;
+      }
+
+      try {
+        // Update user profile with confirmed position
+        await this.usersRepository.updateRaw(
+          (user as any).id || (user as any)._id?.toString(),
+          {
+            $set: {
+              'profile.position': position,
+              'engagement.positionConfirmed': true,
+            },
+          },
+        );
+
+        const confirmText: Record<string, string> = {
+          uz: `✅ Rahmat! Lavozimingiz saqlandi: <b>${position}</b>\n\nEndi sizga mos savollar jo'natiladi.`,
+          ru: `✅ Спасибо! Ваша должность сохранена: <b>${position}</b>\n\nТеперь вы получите соответствующие вопросы.`,
+          en: `✅ Thank you! Your position has been saved: <b>${position}</b>\n\nYou will now receive appropriate questions.`,
+        };
+
+        await ctx.editMessageText(confirmText[lang] || confirmText.uz, { parse_mode: 'HTML' });
+
+        this.logger.log(`User ${telegramId} confirmed position: ${position}`);
+      } catch (error: any) {
+        this.logger.error(`Failed to confirm position: ${error.message}`);
         await ctx.reply('❌ Failed to update position');
       }
 

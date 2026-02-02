@@ -50,7 +50,8 @@ export class UnregisteredUser {
 
 export const UnregisteredUserSchema = SchemaFactory.createForClass(UnregisteredUser);
 
-UnregisteredUserSchema.index({ telegramChatId: 1 });
+// Note: telegramChatId already has index: true in @Prop (line 8)
+// Only add other indexes here to avoid duplicates
 UnregisteredUserSchema.index({ registrationStatus: 1 });
 UnregisteredUserSchema.index({ lastEngagementSentAt: 1 });
 UnregisteredUserSchema.index({ isBotBlocked: 1 });

@@ -74,6 +74,11 @@ Yangi foydalanuvchiga sodda savol ber: hozirda qaysi bosqichda?
 Variantlar: faol ish izlash, tayyorgarlik, bilim oshirish.
 Juda qisqa (1 jumla), do'stona, samimiy ohangda.`,
 
+  [NotificationTrigger.PROFILE_INCOMPLETE]: `
+Foydalanuvchi default "junior" lavozimida qolgan. 
+Ularning haqiqiy lavozimini aniqlash kerak (hozirgi, oldingi yoki o'qigan joydagi).
+Qisqa, samimiy: 1-2 jumla. Bosim o'tkazmasdan so'ra.`,
+
   [NotificationTrigger.JOBSEEKER_INACTIVE]: `
 Faol ish izlayotgan foydalanuvchi 1 kun botga kirmagan.
 Qisqa motivatsiya ber: mock interview yoki skill oshirishga undov.
@@ -313,6 +318,7 @@ Shaxsiylashtirilgan, qisqa (2-3 jumla) xabar yoz:`;
         [NotificationTrigger.FIRST_INTERVIEW]: `Ajoyib, ${context.firstName}! 🚀 Birinchi intervyungizni muvaffaqiyatli tugatdingiz!`,
         [NotificationTrigger.TRIAL_ENDING]: '', // Disabled: handled by trial-notification.service.ts
         [NotificationTrigger.ONBOARDING_SURVEY]: `Salom, ${context.firstName}! 🎯 Sizga bir savol: hozirda faol ish izlayapsizmi, tayyorgarlik ko'rayapsizmi yoki bilimlaringizni oshirayapsizmi?`,
+        [NotificationTrigger.PROFILE_INCOMPLETE]: `${context.firstName}, lavozimingizni aniqlaymizmi? 🎯 Hozirgi, oldingi yoki o'qigan joyingizdagi lavozim qaysi edi?`,
         [NotificationTrigger.JOBSEEKER_INACTIVE]: `${context.firstName}, ish izlash jarayonida doimiy mashq muhim! 💪 Bugun bir mock intervyu o'tkazib ko'ring.`,
       },
       ru: {
@@ -324,6 +330,7 @@ Shaxsiylashtirilgan, qisqa (2-3 jumla) xabar yoz:`;
         [NotificationTrigger.FIRST_INTERVIEW]: `Отлично, ${context.firstName}! 🚀 Первое интервью пройдено!`,
         [NotificationTrigger.TRIAL_ENDING]: '', // Disabled: handled by trial-notification.service.ts
         [NotificationTrigger.ONBOARDING_SURVEY]: `Привет, ${context.firstName}! 🎯 Один вопрос: вы сейчас активно ищете работу, готовитесь к собеседованиям или учитесь?`,
+        [NotificationTrigger.PROFILE_INCOMPLETE]: `${context.firstName}, давайте уточним вашу должность? 🎯 На какой позиции вы работаете/работали или учились?`,
         [NotificationTrigger.JOBSEEKER_INACTIVE]: `${context.firstName}, в поиске работы важна регулярная практика! 💪 Попробуйте mock-интервью сегодня.`,
       },
       en: {
@@ -335,6 +342,7 @@ Shaxsiylashtirilgan, qisqa (2-3 jumla) xabar yoz:`;
         [NotificationTrigger.FIRST_INTERVIEW]: `Awesome, ${context.firstName}! 🚀 First interview completed!`,
         [NotificationTrigger.TRIAL_ENDING]: '', // Disabled: handled by trial-notification.service.ts
         [NotificationTrigger.ONBOARDING_SURVEY]: `Hey ${context.firstName}! 🎯 Quick question: are you actively job hunting, preparing for interviews, or learning?`,
+        [NotificationTrigger.PROFILE_INCOMPLETE]: `${context.firstName}, let's clarify your position? 🎯 What position do you have/had at your current or previous job (or learned)?`,
         [NotificationTrigger.JOBSEEKER_INACTIVE]: `${context.firstName}, consistent practice is key in job search! 💪 Try a mock interview today.`,
       },
     };
