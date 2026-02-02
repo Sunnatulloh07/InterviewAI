@@ -21,7 +21,7 @@ import { InterviewsModule } from '../interviews/interviews.module';
     ConfigModule,
     CacheModule.register(),
     UsersModule,
-    CvModule,
+    forwardRef(() => CvModule),
     forwardRef(() => InterviewsModule),
   ],
   controllers: [AiController],

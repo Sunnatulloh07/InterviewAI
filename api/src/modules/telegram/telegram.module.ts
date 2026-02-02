@@ -33,7 +33,7 @@ import { TasksModule } from '../tasks/tasks.module';
     AiModule,
     InterviewsModule,
     OtpModule,
-    CvModule,
+    forwardRef(() => CvModule), // ✅ Circular dependency fix
     AnalyticsModule,
     PaymentsModule, // For SubscriptionService
     forwardRef(() => EngagementModule),
