@@ -227,38 +227,11 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
       .row()
       .text(buttonLabels.help[lang] || buttonLabels.help.en, 'menu_help');
 
-    // Reply keyboard (persistent bottom keyboard) - SAME buttons as inline
-    const replyKeyboard = new Keyboard()
-      .text(buttonLabels.interview[lang] || buttonLabels.interview.en)
-      .text(buttonLabels.tasks[lang] || buttonLabels.tasks.en)
-      .text(buttonLabels.cv[lang] || buttonLabels.cv.en)
-      .row()
-      .text(buttonLabels.profile[lang] || buttonLabels.profile.en)
-      .text(buttonLabels.upgrade[lang] || buttonLabels.upgrade.en)
-      .row()
-      .text(buttonLabels.help[lang] || buttonLabels.help.en)
-      .resized()
-      .persistent();
-
-    // Send main menu with inline keyboard (primary interaction method)
+    // Send main menu with inline keyboard (clean UI without persistent bottom buttons)
     await ctx.reply(menuText[lang] || menuText['en'], {
       parse_mode: 'HTML',
       reply_markup: inlineKeyboard,
     });
-    
-    // Send reply keyboard as a separate message for persistent bottom buttons
-    // This allows users to type button names or click them
-    try {
-      const chatId = ctx.chat?.id;
-      if (chatId) {
-        await ctx.reply('┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅', {
-          reply_markup: replyKeyboard,
-        });
-      }
-    } catch (error) {
-      // Silent fail - reply keyboard is optional
-      this.logger.debug('Could not set reply keyboard:', error.message);
-    }
   }
 
   /**
@@ -844,15 +817,11 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
 
   /**
    * Handle /analyze_cv command
+   * Shows existing CV or prompts to upload new one
    */
   async handleAnalyzeCv(ctx: BotContext) {
-    const lang = ctx.session?.language || 'en';
-    const cvText: Record<string, string> = {
-      uz: '📄 CV yuklash uchun hujjatni yuboring (PDF, DOCX)',
-      ru: '📄 Отправьте документ для анализа CV (PDF, DOCX)',
-      en: '📄 Send your CV document for analysis (PDF, DOCX)',
-    };
-    await ctx.reply(cvText[lang] || cvText['en']);
+    // Call handleViewCv to show existing CV analysis or upload prompt
+    await this.handleViewCv(ctx);
   }
 
   /**
@@ -1019,15 +988,446 @@ Let's get started! 🚀`,
 
   /**
    * Handle document message (CV upload)
+   * Complete implementation with file download, validation, and processing
    */
   async handleDocumentMessage(ctx: BotContext) {
     const lang = ctx.session?.language || 'en';
-    const docText: Record<string, string> = {
-      uz: '📄 Hujjat qabul qilindi. Tahlil qilinmoqda...',
-      ru: '📄 Документ получен. Анализируется...',
-      en: '📄 Document received. Analyzing...',
-    };
-    await ctx.reply(docText[lang] || docText['en']);
+
+    try {
+      const telegramId = ctx.from?.id as number;
+      const user = await this.usersService.findByTelegramId(telegramId);
+
+      if (!user) {
+        const notRegisteredText: Record<string, string> = {
+          uz: `❌ Iltimos avval /start buyrug'i bilan ro'yxatdan o'ting`,
+          ru: `❌ Пожалуйста, сначала зарегистрируйтесь используя /start`,
+          en: `❌ Please register first using /start`,
+        };
+        await ctx.reply(notRegisteredText[lang] || notRegisteredText['en']);
+        return;
+      }
+
+      const document = ctx.message?.document;
+      if (!document) {
+        const noDocText: Record<string, string> = {
+          uz: '❌ Hujjat topilmadi. Iltimos, qayta yuboring.',
+          ru: '❌ Документ не найден. Пожалуйста, отправьте снова.',
+          en: '❌ Document not found. Please send again.',
+        };
+        await ctx.reply(noDocText[lang] || noDocText['en']);
+        return;
+      }
+
+      // Validate file size (max 20MB for Telegram)
+      const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
+      if (document.file_size && document.file_size > MAX_FILE_SIZE) {
+        const sizeErrorText: Record<string, string> = {
+          uz: '❌ Hujjat hajmi juda katta. Maksimal hajm: 20MB',
+          ru: '❌ Размер документа слишком большой. Максимум: 20MB',
+          en: '❌ File size is too large. Maximum: 20MB',
+        };
+        await ctx.reply(sizeErrorText[lang] || sizeErrorText['en']);
+        return;
+      }
+
+      // Check plan limits
+      const canProceed = await this.subscriptionService.checkCvAnalysisLimit(ctx, user, lang);
+      if (!canProceed) {
+        return; // Limit reached, error message already sent
+      }
+
+      // Check file type
+      const allowedMimeTypes = [
+        'application/pdf',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/msword',
+        'text/plain',
+      ];
+      
+      const fileName = document.file_name || '';
+      const mimeType = document.mime_type || '';
+      const fileExtension = fileName.split('.').pop()?.toLowerCase();
+      
+      const allowedExtensions = ['pdf', 'docx', 'doc', 'txt'];
+      
+      if (!allowedExtensions.includes(fileExtension || '') && !allowedMimeTypes.includes(mimeType)) {
+        const invalidFileText: Record<string, string> = {
+          uz: '❌ Noto\'g\'ri fayl formati. Faqat PDF, DOCX, DOC yoki TXT fayllar qabul qilinadi.',
+          ru: '❌ Неверный формат файла. Принимаются только PDF, DOCX, DOC или TXT файлы.',
+          en: '❌ Invalid file format. Only PDF, DOCX, DOC, or TXT files are accepted.',
+        };
+        await ctx.reply(invalidFileText[lang] || invalidFileText['en']);
+        return;
+      }
+
+      // Send processing message
+      const processingText: Record<string, string> = {
+        uz: '⏳ CV yuklanmoqda va tahlil qilinmoqda... Iltimos, kuting.',
+        ru: '⏳ CV загружается и анализируется... Пожалуйста, подождите.',
+        en: '⏳ CV is being uploaded and analyzed... Please wait.',
+      };
+      const processingMsg = await ctx.reply(processingText[lang] || processingText['en']);
+
+      try {
+        // Get file from Telegram servers
+        const file = await ctx.api.getFile(document.file_id);
+        
+        if (!file.file_path) {
+          throw new Error('File path not available');
+        }
+
+        // Download file using Telegram bot API
+        const fileUrl = `https://api.telegram.org/file/bot${this.configService.get('TELEGRAM_BOT_TOKEN')}/${file.file_path}`;
+        const response = await fetch(fileUrl);
+        
+        if (!response.ok) {
+          throw new Error(`Failed to download file: ${response.statusText}`);
+        }
+
+        const fileBuffer = Buffer.from(await response.arrayBuffer());
+
+        // Create file object compatible with cvService.uploadCv
+        const fileObject = {
+          buffer: fileBuffer,
+          originalname: fileName,
+          mimetype: mimeType || 'application/octet-stream',
+          size: document.file_size || fileBuffer.length,
+          fieldname: 'file',
+        } as Express.Multer.File;
+
+        const userId = (user as any)._id?.toString() || (user as any).id?.toString();
+
+        // Upload CV
+        const cv = await this.cvService.uploadCv(userId, fileObject, {
+          jobDescription: '',
+        });
+
+        // Delete processing message
+        try {
+          if (ctx.chat?.id) {
+            await ctx.api.deleteMessage(ctx.chat.id, processingMsg.message_id);
+          }
+        } catch (deleteError) {
+          // Silent fail
+        }
+
+        // Send success message
+        const fileSizeKB = document.file_size ? (document.file_size / 1024).toFixed(1) : 'Unknown';
+        
+        const successText: Record<string, string> = {
+          uz: `✅ <b>CV muvaffaqiyatli yuklandi!</b>
+
+📄 Fayl: <code>${fileName}</code>
+📊 Hajm: ${fileSizeKB} KB
+🔄 Status: Tahlil qilinmoqda...
+
+<i>Natijalar tayyor bo'lganda sizga xabar beramiz.</i>`,
+          ru: `✅ <b>CV успешно загружен!</b>
+
+📄 Файл: <code>${fileName}</code>
+📊 Размер: ${fileSizeKB} KB
+🔄 Статус: Анализируется...
+
+<i>Мы сообщим, когда результаты будут готовы.</i>`,
+          en: `✅ <b>CV uploaded successfully!</b>
+
+📄 File: <code>${fileName}</code>
+📊 Size: ${fileSizeKB} KB
+🔄 Status: Analyzing...
+
+<i>We'll notify you when results are ready.</i>`,
+        };
+
+        const viewKeyboard = new InlineKeyboard()
+          .text('📊 View CV Analysis', 'cv_view')
+          .row()
+          .text('🔙 Back to Menu', 'back_to_menu');
+
+        await ctx.reply(successText[lang] || successText['en'], {
+          parse_mode: 'HTML',
+          reply_markup: viewKeyboard,
+        });
+
+        this.logger.log(`CV uploaded successfully for user ${telegramId}: ${cv.id}`);
+
+      } catch (uploadError: any) {
+        // Delete processing message
+        try {
+          if (ctx.chat?.id) {
+            await ctx.api.deleteMessage(ctx.chat.id, processingMsg.message_id);
+          }
+        } catch (deleteError) {
+          // Silent fail
+        }
+
+        this.logger.error(`Failed to upload CV: ${uploadError.message}`, uploadError.stack);
+        
+        const uploadErrorText: Record<string, string> = {
+          uz: `❌ <b>CV yuklashda xatolik yuz berdi</b>
+
+${uploadError.message || 'Noma\'lum xatolik'}
+
+Iltimos, qayta urinib ko'ring yoki boshqa fayl yuboring.`,
+          ru: `❌ <b>Ошибка при загрузке CV</b>
+
+${uploadError.message || 'Неизвестная ошибка'}
+
+Пожалуйста, попробуйте снова или отправьте другой файл.`,
+          en: `❌ <b>Error uploading CV</b>
+
+${uploadError.message || 'Unknown error'}
+
+Please try again or send a different file.`,
+        };
+
+        await ctx.reply(uploadErrorText[lang] || uploadErrorText['en'], {
+          parse_mode: 'HTML',
+        });
+      }
+
+    } catch (error: any) {
+      this.logger.error(`Failed to handle document message: ${error.message}`, error.stack);
+      
+      const errorText: Record<string, string> = {
+        uz: '❌ Xatolik yuz berdi. Iltimos, qaytadan urinib ko\'ring.',
+        ru: '❌ Произошла ошибка. Пожалуйста, попробуйте снова.',
+        en: '❌ Error occurred. Please try again.',
+      };
+      
+      await ctx.reply(errorText[lang] || errorText['en']);
+    }
+  }
+
+  /**
+   * Handle view CV - shows user's CV analysis results or prompts to upload
+   */
+  async handleViewCv(ctx: BotContext) {
+    try {
+      const telegramId = ctx.from?.id as number;
+      const user = await this.usersService.findByTelegramId(telegramId);
+
+      if (!user) {
+        const notRegisteredText: Record<string, string> = {
+          uz: `❌ Iltimos avval /start buyrug'i bilan ro'yxatdan o'ting`,
+          ru: `❌ Пожалуйста, сначала зарегистрируйтесь используя /start`,
+          en: `❌ Please register first using /start`,
+        };
+        await ctx.reply(notRegisteredText[ctx.session?.language || 'en'] || notRegisteredText['en']);
+        return;
+      }
+
+      const lang = this.getUserLanguage(ctx, user);
+      const userId = (user as any)._id?.toString() || (user as any).id?.toString();
+
+      // Get user's latest CV
+      const userCvs = await this.cvService.getUserCvs(userId, 1, 0);
+      const latestCv = userCvs.length > 0 ? userCvs[0] : null;
+
+      if (!latestCv) {
+        // No CV found - prompt to upload
+        const noCvText: Record<string, string> = {
+          uz: `📄 <b>Sizda hali CV yo'q</b>
+
+CV yuklash uchun hujjatni yuboring (PDF, DOCX)
+
+💡 Faylni shu chatga yuboring`,
+          ru: `📄 <b>У вас пока нет CV</b>
+
+Отправьте документ для загрузки CV (PDF, DOCX)
+
+💡 Отправьте файл в этот чат`,
+          en: `📄 <b>You don't have a CV yet</b>
+
+Send a document to upload your CV (PDF, DOCX)
+
+💡 Send the file to this chat`,
+        };
+
+        const uploadKeyboard = new InlineKeyboard()
+          .text('📤 Upload CV', 'cv_upload')
+          .row()
+          .text('🔙 Back to Menu', 'back_to_menu');
+
+        await ctx.reply(noCvText[lang] || noCvText['en'], {
+          parse_mode: 'HTML',
+          reply_markup: uploadKeyboard,
+        });
+        return;
+      }
+
+      // CV exists - check analysis status
+      const cv = latestCv as any;
+      const analysisStatus = cv.analysisStatus || 'pending';
+
+      if (analysisStatus === 'pending') {
+        // Analysis pending
+        const pendingText: Record<string, string> = {
+          uz: `⏳ <b>CV tahlili kutilmoqda</b>
+
+📄 Fayl: <code>${cv.fileName}</code>
+🔄 Status: Tahlil qilinmoqda...
+
+<i>Iltimos, biroz kuting. Tahlil tugaganda sizga xabar beramiz.</i>`,
+          ru: `⏳ <b>Ожидание анализа CV</b>
+
+📄 Файл: <code>${cv.fileName}</code>
+🔄 Статус: Анализируется...
+
+<i>Пожалуйста, подождите. Мы сообщим, когда анализ будет завершен.</i>`,
+          en: `⏳ <b>CV Analysis Pending</b>
+
+📄 File: <code>${cv.fileName}</code>
+🔄 Status: Analyzing...
+
+<i>Please wait. We'll notify you when the analysis is complete.</i>`,
+        };
+
+        const pendingKeyboard = new InlineKeyboard()
+          .text('🔄 Check Status', 'cv_view')
+          .row()
+          .text('🔙 Back to Menu', 'back_to_menu');
+
+        await ctx.reply(pendingText[lang] || pendingText['en'], {
+          parse_mode: 'HTML',
+          reply_markup: pendingKeyboard,
+        });
+        return;
+      }
+
+      if (analysisStatus === 'failed') {
+        // Analysis failed
+        const failedText: Record<string, string> = {
+          uz: `❌ <b>CV tahlili amalga oshmadi</b>
+
+📄 Fayl: <code>${cv.fileName}</code>
+❌ Status: Xatolik yuz berdi
+
+<i>Qayta urinib ko'rishni xohlaysizmi?</i>`,
+          ru: `❌ <b>Анализ CV не удался</b>
+
+📄 Файл: <code>${cv.fileName}</code>
+❌ Статус: Произошла ошибка
+
+<i>Хотите попробовать снова?</i>`,
+          en: `❌ <b>CV Analysis Failed</b>
+
+📄 File: <code>${cv.fileName}</code>
+❌ Status: Error occurred
+
+<i>Would you like to try again?</i>`,
+        };
+
+        // Check if re-analysis is allowed (within limits)
+        const canReanalyze = await this.subscriptionService.checkCvAnalysisLimit(ctx, user, lang, false);
+
+        const failedKeyboard = new InlineKeyboard();
+        if (canReanalyze) {
+          failedKeyboard.text('🔄 Re-analyze', 'cv_reanalyze');
+        }
+        failedKeyboard.text('📤 Upload New CV', 'cv_upload');
+        failedKeyboard.row().text('🔙 Back to Menu', 'back_to_menu');
+
+        await ctx.reply(failedText[lang] || failedText['en'], {
+          parse_mode: 'HTML',
+          reply_markup: failedKeyboard,
+        });
+        return;
+      }
+
+      // Analysis completed - show results
+      const analysis = cv.analysis;
+      const overallScore = analysis?.overallScore || 0;
+      const strengths = analysis?.strengths || [];
+      const improvements = analysis?.improvements || [];
+      const recommendations = analysis?.recommendations || [];
+
+      // Format score with emoji
+      const scoreEmoji = overallScore >= 80 ? '🟢' : overallScore >= 60 ? '🟡' : '🔴';
+
+      // Format strengths
+      const strengthsText = strengths.length > 0
+        ? strengths.slice(0, 3).map((s: string, i: number) => `${i + 1}. ${s}`).join('\n')
+        : 'No specific strengths identified';
+
+      // Format improvements
+      const improvementsText = improvements.length > 0
+        ? improvements.slice(0, 3).map((imp: string, i: number) => `${i + 1}. ${imp}`).join('\n')
+        : 'No specific improvements identified';
+
+      const resultsText: Record<string, string> = {
+        uz: `📊 <b>CV Tahlili Natijalari</b>
+
+📄 Fayl: <code>${cv.fileName}</code>
+📅 Sana: ${new Date(cv.analyzedAt || cv.updatedAt).toLocaleDateString(lang)}
+
+${scoreEmoji} <b>Umumiy baho:</b> ${overallScore}/100
+
+💪 <b>Kuchli tomonlar:</b>
+${strengthsText}
+
+⚠️ <b>Yaxshilash kerak:</b>
+${improvementsText}
+
+<i>To'liq tahlilni ko'rish uchun "Full Analysis" tugmasini bosing</i>`,
+        ru: `📊 <b>Результаты Анализа CV</b>
+
+📄 Файл: <code>${cv.fileName}</code>
+📅 Дата: ${new Date(cv.analyzedAt || cv.updatedAt).toLocaleDateString(lang)}
+
+${scoreEmoji} <b>Общая оценка:</b> ${overallScore}/100
+
+💪 <b>Сильные стороны:</b>
+${strengthsText}
+
+⚠️ <b>Требует улучшения:</b>
+${improvementsText}
+
+<i>Нажмите "Full Analysis" для просмотра полного анализа</i>`,
+        en: `📊 <b>CV Analysis Results</b>
+
+📄 File: <code>${cv.fileName}</code>
+📅 Date: ${new Date(cv.analyzedAt || cv.updatedAt).toLocaleDateString(lang)}
+
+${scoreEmoji} <b>Overall Score:</b> ${overallScore}/100
+
+💪 <b>Strengths:</b>
+${strengthsText}
+
+⚠️ <b>Areas for Improvement:</b>
+${improvementsText}
+
+<i>Click "Full Analysis" to view the complete analysis</i>`,
+      };
+
+      // Check if re-analysis is allowed
+      const canReanalyze = await this.subscriptionService.checkCvAnalysisLimit(ctx, user, lang, false);
+
+      const resultsKeyboard = new InlineKeyboard();
+      resultsKeyboard.text('📋 Full Analysis', `cv_full_${cv.id}`);
+      resultsKeyboard.row();
+      if (canReanalyze) {
+        resultsKeyboard.text('🔄 Re-analyze', 'cv_reanalyze');
+      }
+      resultsKeyboard.text('📤 Upload New CV', 'cv_upload');
+      resultsKeyboard.row().text('🔙 Back to Menu', 'back_to_menu');
+
+      await ctx.reply(resultsText[lang] || resultsText['en'], {
+        parse_mode: 'HTML',
+        reply_markup: resultsKeyboard,
+      });
+
+    } catch (error: any) {
+      this.logger.error(`Failed to handle view CV: ${error.message}`, error.stack);
+      
+      const lang = ctx.session?.language || 'en';
+      const errorText: Record<string, string> = {
+        uz: '❌ Xatolik yuz berdi. Iltimos, qaytadan urinib ko\'ring.',
+        ru: '❌ Произошла ошибка. Пожалуйста, попробуйте снова.',
+        en: '❌ Error occurred. Please try again.',
+      };
+      
+      await ctx.reply(errorText[lang] || errorText['en']);
+    }
   }
 
   /**
@@ -1080,6 +1480,237 @@ Let's get started! 🚀`,
       
       const handled = await this.subscriptionService.handleSubscriptionCallback(ctx, callbackData, lang);
       if (handled) return;
+    }
+
+    // ============================================================
+    // CV ANALYSIS CALLBACKS
+    // ============================================================
+    if (callbackData.startsWith('cv_')) {
+      const telegramId = ctx.from?.id as number;
+      const user = await this.usersService.findByTelegramId(telegramId);
+      
+      if (!user) {
+        await ctx.reply('Please register first using /start');
+        return;
+      }
+
+      const userLang = this.getUserLanguage(ctx, user);
+      const userId = (user as any)._id?.toString() || (user as any).id?.toString();
+
+      if (callbackData === 'cv_view') {
+        // Show CV analysis results
+        await this.handleViewCv(ctx);
+        return;
+      }
+
+      if (callbackData === 'cv_upload') {
+        // Prompt user to upload new CV
+        const uploadText: Record<string, string> = {
+          uz: `📤 <b>Yangi CV yuklash</b>
+
+Hujjatni yuboring (PDF, DOCX, DOC, TXT)
+
+💡 Faylni shu chatga yuboring`,
+          ru: `📤 <b>Загрузить новый CV</b>
+
+Отправьте документ (PDF, DOCX, DOC, TXT)
+
+💡 Отправьте файл в этот чат`,
+          en: `📤 <b>Upload New CV</b>
+
+Send a document (PDF, DOCX, DOC, TXT)
+
+💡 Send the file to this chat`,
+        };
+
+        await ctx.reply(uploadText[userLang] || uploadText['en'], {
+          parse_mode: 'HTML',
+        });
+        return;
+      }
+
+      if (callbackData === 'cv_reanalyze') {
+        // Trigger re-analysis of existing CV
+        try {
+          // Check plan limits first
+          const canReanalyze = await this.subscriptionService.checkCvAnalysisLimit(ctx, user, userLang);
+          if (!canReanalyze) {
+            return; // Limit reached, message already sent
+          }
+
+          // Get user's latest CV
+          const userCvs = await this.cvService.getUserCvs(userId, 1, 0);
+          const latestCv = userCvs.length > 0 ? userCvs[0] : null;
+
+          if (!latestCv) {
+            const noCvText: Record<string, string> = {
+              uz: `❌ <b>CV topilmadi</b>\n\nAvval CV yuklang.`,
+              ru: `❌ <b>CV не найден</b>\n\nСначала загрузите CV.`,
+              en: `❌ <b>No CV found</b>\n\nPlease upload a CV first.`,
+            };
+            await ctx.reply(noCvText[userLang] || noCvText['en'], {
+              parse_mode: 'HTML',
+            });
+            return;
+          }
+
+          const reanalyzeText: Record<string, string> = {
+            uz: `🔄 <b>CV qayta tahlil qilinmoqda...</b>\n\nIltimos, kuting.`,
+            ru: `🔄 <b>CV повторно анализируется...</b>\n\nПожалуйста, подождите.`,
+            en: `🔄 <b>Re-analyzing CV...</b>\n\nPlease wait.`,
+          };
+          const msg = await ctx.reply(reanalyzeText[userLang] || reanalyzeText['en']);
+
+          try {
+            // Trigger re-analysis
+            await this.cvService.analyzeCv(userId, (latestCv as any).id, {
+              language: userLang,
+            });
+
+            // Delete processing message
+            try {
+              if (ctx.chat?.id) {
+                await ctx.api.deleteMessage(ctx.chat.id, msg.message_id);
+              }
+            } catch (deleteError) {
+              // Silent fail
+            }
+
+            const successText: Record<string, string> = {
+              uz: `✅ <b>CV qayta tahlil qilindi!</b>\n\nYangilangan natijalarni ko'rish uchun "View Analysis" tugmasini bosing.`,
+              ru: `✅ <b>CV повторно проанализирован!</b>\n\nНажмите "View Analysis", чтобы увидеть обновленные результаты.`,
+              en: `✅ <b>CV re-analyzed successfully!</b>\n\nClick "View Analysis" to see the updated results.`,
+            };
+
+            const keyboard = new InlineKeyboard()
+              .text('📊 View Analysis', 'cv_view')
+              .row()
+              .text('🔙 Back to Menu', 'back_to_menu');
+
+            await ctx.reply(successText[userLang] || successText['en'], {
+              parse_mode: 'HTML',
+              reply_markup: keyboard,
+            });
+
+            this.logger.log(`CV re-analyzed for user ${telegramId}: ${(latestCv as any).id}`);
+          } catch (analyzeError: any) {
+            // Delete processing message
+            try {
+              if (ctx.chat?.id) {
+                await ctx.api.deleteMessage(ctx.chat.id, msg.message_id);
+              }
+            } catch (deleteError) {
+              // Silent fail
+            }
+
+            this.logger.error(`Failed to re-analyze CV: ${analyzeError.message}`, analyzeError.stack);
+            
+            const errorText: Record<string, string> = {
+              uz: `❌ <b>Tahlilda xatolik yuz berdi</b>\n\n${analyzeError.message || 'Noma\'lum xatolik'}`,
+              ru: `❌ <b>Ошибка при анализе</b>\n\n${analyzeError.message || 'Неизвестная ошибка'}`,
+              en: `❌ <b>Error during analysis</b>\n\n${analyzeError.message || 'Unknown error'}`,
+            };
+
+            await ctx.reply(errorText[userLang] || errorText['en'], {
+              parse_mode: 'HTML',
+            });
+          }
+        } catch (error: any) {
+          this.logger.error(`Failed to handle cv_reanalyze: ${error.message}`, error.stack);
+          await ctx.reply('❌ Error occurred. Please try again.');
+        }
+        return;
+      }
+
+      // Handle cv_full_<cvId> - show full analysis
+      if (callbackData.startsWith('cv_full_')) {
+        const cvId = callbackData.replace('cv_full_', '');
+        try {
+          const cv = await this.cvService.getCvById(userId, cvId);
+          const analysis = (cv as any).analysis;
+
+          if (!analysis) {
+            const noAnalysisText: Record<string, string> = {
+              uz: `❌ <b>Tahlil mavjud emas</b>\n\nCV hali tahlil qilinmagan.`,
+              ru: `❌ <b>Анализ недоступен</b>\n\nCV еще не проанализирован.`,
+              en: `❌ <b>Analysis not available</b>\n\nCV has not been analyzed yet.`,
+            };
+            await ctx.reply(noAnalysisText[userLang] || noAnalysisText['en'], {
+              parse_mode: 'HTML',
+            });
+            return;
+          }
+
+          // Format full analysis
+          const overallScore = analysis.overallScore || 0;
+          const strengths = analysis.strengths || [];
+          const improvements = analysis.improvements || [];
+          const recommendations = analysis.recommendations || [];
+          const summary = analysis.summary || '';
+
+          const fullAnalysisText: Record<string, string> = {
+            uz: `📋 <b>To'liq CV Tahlili</b>
+
+📊 <b>Umumiy baho:</b> ${overallScore}/100
+
+📝 <b>Xulosa:</b>
+${summary}
+
+💪 <b>Kuchli tomonlar:</b>
+${strengths.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n') || 'Aniqlanmagan'}
+
+⚠️ <b>Yaxshilash kerak:</b>
+${improvements.map((imp: string, i: number) => `${i + 1}. ${imp}`).join('\n') || 'Aniqlanmagan'}
+
+💡 <b>Tavsiyalar:</b>
+${recommendations.map((r: string, i: number) => `${i + 1}. ${r}`).join('\n') || 'Tavsiyalar mavjud emas'}`,
+            ru: `📋 <b>Полный Анализ CV</b>
+
+📊 <b>Общая оценка:</b> ${overallScore}/100
+
+📝 <b>Резюме:</b>
+${summary}
+
+💪 <b>Сильные стороны:</b>
+${strengths.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n') || 'Не определено'}
+
+⚠️ <b>Требует улучшения:</b>
+${improvements.map((imp: string, i: number) => `${i + 1}. ${imp}`).join('\n') || 'Не определено'}
+
+💡 <b>Рекомендации:</b>
+${recommendations.map((r: string, i: number) => `${i + 1}. ${r}`).join('\n') || 'Нет рекомендаций'}`,
+            en: `📋 <b>Full CV Analysis</b>
+
+📊 <b>Overall Score:</b> ${overallScore}/100
+
+📝 <b>Summary:</b>
+${summary}
+
+💪 <b>Strengths:</b>
+${strengths.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n') || 'Not identified'}
+
+⚠️ <b>Areas for Improvement:</b>
+${improvements.map((imp: string, i: number) => `${i + 1}. ${imp}`).join('\n') || 'Not identified'}
+
+💡 <b>Recommendations:</b>
+${recommendations.map((r: string, i: number) => `${i + 1}. ${r}`).join('\n') || 'No recommendations'}`,
+          };
+
+          const keyboard = new InlineKeyboard()
+            .text('🔙 Back to Summary', 'cv_view')
+            .row()
+            .text('🏠 Main Menu', 'back_to_menu');
+
+          await ctx.reply(fullAnalysisText[userLang] || fullAnalysisText['en'], {
+            parse_mode: 'HTML',
+            reply_markup: keyboard,
+          });
+        } catch (error: any) {
+          this.logger.error(`Failed to show full analysis: ${error.message}`);
+          await ctx.reply('❌ Error retrieving full analysis.');
+        }
+        return;
+      }
     }
 
     // ============================================================

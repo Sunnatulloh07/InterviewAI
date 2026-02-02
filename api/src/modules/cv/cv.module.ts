@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { BullModule } from '@nestjs/bull';
 import { ConfigModule } from '@nestjs/config';
@@ -12,6 +12,7 @@ import { Cv, CvSchema } from './schemas/cv.schema';
 import { StorageModule } from '../storage/storage.module';
 import { UsersModule } from '../users/users.module';
 import { AnalyticsModule } from '../analytics/analytics.module';
+import { TelegramModule } from '../telegram/telegram.module';
 import { QUEUE_CV_ANALYSIS } from '@common/constants';
 
 @Module({
@@ -24,6 +25,7 @@ import { QUEUE_CV_ANALYSIS } from '@common/constants';
     StorageModule,
     UsersModule,
     AnalyticsModule,
+    forwardRef(() => TelegramModule),
   ],
   controllers: [CvController],
   providers: [CvService, CvRepository, CvParserService, OcrService, CvProcessor],

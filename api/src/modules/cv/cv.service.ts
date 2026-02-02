@@ -164,6 +164,14 @@ export class CvService {
   }
 
   /**
+   * Get user's latest CV (most recent)
+   */
+  async getUserLatestCv(userId: string): Promise<CvDocument | null> {
+    const cvs = await this.cvRepository.findByUserId(userId, 1, 0);
+    return cvs.length > 0 ? cvs[0] : null;
+  }
+
+  /**
    * Get CV by ID
    */
   async getCvById(userId: string, cvId: string): Promise<CvDocument> {
