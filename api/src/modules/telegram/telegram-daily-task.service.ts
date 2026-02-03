@@ -33,6 +33,7 @@ export class TelegramDailyTaskService {
   constructor(
     @Inject(forwardRef(() => TelegramService))
     private readonly telegramService: TelegramService,
+    @Inject(forwardRef(() => DailyTasksService))
     private readonly dailyTasksService: DailyTasksService,
     private readonly usersService: UsersService,
     private readonly voiceQuotaService: VoiceQuotaService,
@@ -360,9 +361,9 @@ Get full access with the Starter plan.
       if (!dailyTask) {
         this.logger.error(
           `🔥 CRITICAL: No tasks found for userId: ${userId} on ${today.toISOString()} | ` +
-            `UTC: ${today.toUTCString()} | ` +
-            `Current UTC: ${new Date().toISOString()} | ` +
-            `Tashkent hour: ${new Date(Date.now() + 5 * 60 * 60 * 1000).getUTCHours()}`,
+          `UTC: ${today.toUTCString()} | ` +
+          `Current UTC: ${new Date().toISOString()} | ` +
+          `Tashkent hour: ${new Date(Date.now() + 5 * 60 * 60 * 1000).getUTCHours()}`,
         );
         const noTasksText = {
           uz: '❌ Bugun uchun vazifalar topilmadi.\n\nErtalab 09:00 da yangi vazifalar yuboriladi.',
@@ -790,7 +791,7 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
 
       this.logger.log(
         `Voice quota reserved for daily task: user=${userId}, ` +
-          `resId=${reservationId}, minutes=${preflight.estimatedMinutes}`,
+        `resId=${reservationId}, minutes=${preflight.estimatedMinutes}`,
       );
 
       // ═══════════════════════════════════════════════════════════════════
@@ -870,7 +871,7 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
           await this.voiceQuotaGuardService.rollbackReservation(reservationId, 'ai_failed');
           this.logger.log(
             `Voice quota rolled back due to error: resId=${reservationId}, ` +
-              `error=${error.message}`,
+            `error=${error.message}`,
           );
         } catch (rollbackError: any) {
           this.logger.error(

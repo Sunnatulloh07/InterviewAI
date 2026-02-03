@@ -39,4 +39,4 @@ import { InterviewsProcessor } from './interviews.processor';
   ],
   exports: [InterviewsService, InterviewsFeedbackService, InterviewsRepository],
 })
-export class InterviewsModule {}
+export class InterviewsModule { }

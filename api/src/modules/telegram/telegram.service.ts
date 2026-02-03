@@ -23,16 +23,16 @@ export interface BotContext extends Context {
     interviewCvId?: string;
     interviewDuration?: 'quick' | 'standard' | 'deep_dive';
     interviewStep?:
-      | 'mode'
-      | 'duration'
-      | 'domain'
-      | 'technology'
-      | 'technology_custom'
-      | 'position'
-      | 'company'
-      | 'cv'
-      | 'ready'
-      | 'answering';
+    | 'mode'
+    | 'duration'
+    | 'domain'
+    | 'technology'
+    | 'technology_custom'
+    | 'position'
+    | 'company'
+    | 'cv'
+    | 'ready'
+    | 'answering';
     // CV analysis flow state
     cvUploadStep?: 'waiting' | 'analyzing' | 'complete';
     currentCvId?: string;
@@ -52,13 +52,13 @@ export interface BotContext extends Context {
     // Profile update flow
     profileUpdateStep?: 'waiting_for_description';
     liveSessionStep?:
-      | 'domain'
-      | 'technologies'
-      | 'technologies_custom'
-      | 'position'
-      | 'company'
-      | 'active'
-      | 'complete';
+    | 'domain'
+    | 'technologies'
+    | 'technologies_custom'
+    | 'position'
+    | 'company'
+    | 'active'
+    | 'complete';
   };
 }
 
@@ -71,6 +71,7 @@ export class TelegramService implements OnModuleInit {
 
   constructor(
     private readonly configService: ConfigService,
+    @Inject(forwardRef(() => TelegramCommandsService))
     private readonly commandsService: TelegramCommandsService,
     private readonly voiceService: TelegramVoiceService,
     private readonly liveService: TelegramLiveService,

@@ -343,20 +343,20 @@ export class DailyTasksService {
 
       this.logger.error(
         `🔥 getTodayTasks - NO MATCH | ` +
-          `userId: ${userId} | ` +
-          `ObjectId: ${userObjectId} | ` +
-          `Date range: ${today.toISOString()} to ${tomorrow.toISOString()} | ` +
-          `Latest task date: ${anyTask ? new Date(anyTask.date).toISOString() : 'NONE'} | ` +
-          `Latest task ID: ${anyTask ? anyTask._id : 'N/A'}`,
+        `userId: ${userId} | ` +
+        `ObjectId: ${userObjectId} | ` +
+        `Date range: ${today.toISOString()} to ${tomorrow.toISOString()} | ` +
+        `Latest task date: ${anyTask ? new Date(anyTask.date).toISOString() : 'NONE'} | ` +
+        `Latest task ID: ${anyTask ? anyTask._id : 'N/A'}`,
       );
     } else {
       this.logger.log(
         `✅ getTodayTasks - FOUND | ` +
-          `userId: ${userId} | ` +
-          `date range: ${today.toISOString()} to ${tomorrow.toISOString()} | ` +
-          `actual date: ${result.date} | ` +
-          `tasks: ${result.tasks.length} | ` +
-          `incomplete: ${result.tasks.filter((t) => !t.completed).length}`,
+        `userId: ${userId} | ` +
+        `date range: ${today.toISOString()} to ${tomorrow.toISOString()} | ` +
+        `actual date: ${result.date} | ` +
+        `tasks: ${result.tasks.length} | ` +
+        `incomplete: ${result.tasks.filter((t) => !t.completed).length}`,
       );
     }
 
@@ -559,12 +559,12 @@ export class DailyTasksService {
     answer:
       | string
       | {
-          type: 'text' | 'voice' | 'image'; // ❌ NO VIDEO
-          content: string; // Text content or transcript
-          audioUrl?: string; // For voice
-          imageUrl?: string; // For image
-          transcript?: string; // STT result for voice
-        },
+        type: 'text' | 'voice' | 'image'; // ❌ NO VIDEO
+        content: string; // Text content or transcript
+        audioUrl?: string; // For voice
+        imageUrl?: string; // For image
+        transcript?: string; // STT result for voice
+      },
   ): Promise<{ score: number; feedback: string; allCompleted: boolean }> {
     // 🛡 FIX #11: Use UTC timezone for consistency
     const today = new Date(taskDate);
@@ -599,22 +599,22 @@ export class DailyTasksService {
       if ((answer as any).videoUrl || (answer as any).type === 'video') {
         throw new ForbiddenException(
           `Video answers are not supported. ` +
-            `AI video processing is too expensive. ` +
-            `Please use text, voice, or image answers instead.`,
+          `AI video processing is too expensive. ` +
+          `Please use text, voice, or image answers instead.`,
         );
       }
 
       if (answerType === 'voice' && !canUseDailyTaskVoiceAnswer(userPlan)) {
         throw new ForbiddenException(
           `Voice answers for daily tasks require Starter plan or higher. ` +
-            `Current plan: ${userPlan}. Upgrade to use voice answers.`,
+          `Current plan: ${userPlan}. Upgrade to use voice answers.`,
         );
       }
 
       if (answerType === 'image' && !canUseDailyTaskImageAnswer(userPlan)) {
         throw new ForbiddenException(
           `Image answers for daily tasks require Starter plan or higher. ` +
-            `Current plan: ${userPlan}. Upgrade to use image answers.`,
+          `Current plan: ${userPlan}. Upgrade to use image answers.`,
         );
       }
 

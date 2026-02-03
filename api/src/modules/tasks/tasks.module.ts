@@ -7,6 +7,7 @@ import { SegmentQuestionGeneratorService } from './segment-question-generator.se
 import { DailyTask, DailyTaskSchema } from './schemas/daily-task.schema';
 import { CareerPath, CareerPathSchema } from './schemas/career-path.schema';
 import { SegmentQuestion, SegmentQuestionSchema } from './schemas/segment-question.schema';
+import { QuestionPattern, QuestionPatternSchema } from './schemas/question-pattern.schema';
 import { GeneratedQuestion, GeneratedQuestionSchema } from './schemas/generated-question.schema';
 import { User, UserSchema } from '../users/schemas/user.schema';
 import { TelegramModule } from '../telegram/telegram.module';
@@ -18,6 +19,7 @@ import { EngagementModule } from '../engagement/engagement.module';
       { name: DailyTask.name, schema: DailyTaskSchema },
       { name: CareerPath.name, schema: CareerPathSchema },
       { name: SegmentQuestion.name, schema: SegmentQuestionSchema },
+      { name: QuestionPattern.name, schema: QuestionPatternSchema },
       { name: User.name, schema: UserSchema },
       { name: GeneratedQuestion.name, schema: GeneratedQuestionSchema },
     ]),
@@ -29,4 +31,4 @@ import { EngagementModule } from '../engagement/engagement.module';
   providers: [DailyTasksService, AIQuestionGeneratorService, SegmentQuestionGeneratorService],
   exports: [DailyTasksService, AIQuestionGeneratorService, SegmentQuestionGeneratorService],
 })
-export class TasksModule {}
+export class TasksModule { }

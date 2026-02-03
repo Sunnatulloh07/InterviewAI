@@ -83,4 +83,4 @@ import {
     ProfileNormalizationService,
   ],
 })
-export class EngagementModule {}
+export class EngagementModule { }

@@ -18,7 +18,7 @@ export class CareerPath {
   @Prop({ required: true, unique: true })
   slug: string; // 'frontend-developer', 'backend-nodejs', 'devops-aws'
 
-  @Prop({ required: true })
+  @Prop({ required: true, type: Object })
   name: {
     uz: string;
     ru: string;
