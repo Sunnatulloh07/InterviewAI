@@ -299,12 +299,24 @@ export class DailyTasksService {
     });
 
     if (!result) {
-      this.logger.warn(
-        `No tasks found for user ${userId} on date ${today.toISOString()} (Tashkent midnight)`,
+      // Check if ANY task exists for this user (debug)
+      const anyTask = await this.dailyTaskModel.findOne({ userId: userObjectId }).sort({ date: -1 }).lean();
+      
+      this.logger.error(
+        `🔥 getTodayTasks - NO MATCH | ` +
+        `userId: ${userId} | ` +
+        `ObjectId: ${userObjectId} | ` +
+        `Searching date: ${today.toISOString()} | ` +
+        `Latest task date: ${anyTask ? new Date(anyTask.date).toISOString() : 'NONE'} | ` +
+        `Latest task ID: ${anyTask ? anyTask._id : 'N/A'}`,
       );
     } else {
-      this.logger.debug(
-        `Found tasks for user ${userId}: ${result.tasks.length} tasks, ${result.tasks.filter((t) => !t.completed).length} incomplete`,
+      this.logger.log(
+        `✅ getTodayTasks - FOUND | ` +
+        `userId: ${userId} | ` +
+        `date: ${today.toISOString()} | ` +
+        `tasks: ${result.tasks.length} | ` +
+        `incomplete: ${result.tasks.filter((t) => !t.completed).length}`,
       );
     }
 

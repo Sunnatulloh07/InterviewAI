@@ -316,8 +316,11 @@ Get full access with the Starter plan.
       const dailyTask = await this.dailyTasksService.getTodayTasks(userId, today);
 
       if (!dailyTask) {
-        this.logger.warn(
-          `No tasks found for userId: ${userId} on ${today.toISOString()} (Tashkent midnight)`,
+        this.logger.error(
+          `🔥 CRITICAL: No tasks found for userId: ${userId} on ${today.toISOString()} | ` +
+          `UTC: ${today.toUTCString()} | ` +
+          `Current UTC: ${new Date().toISOString()} | ` +
+          `Tashkent hour: ${new Date(Date.now() + 5 * 60 * 60 * 1000).getUTCHours()}`,
         );
         const noTasksText = {
           uz: '❌ Bugun uchun vazifalar topilmadi.\n\nErtalab 09:00 da yangi vazifalar yuboriladi.',
