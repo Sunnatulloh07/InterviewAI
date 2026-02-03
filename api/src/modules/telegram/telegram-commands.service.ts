@@ -360,6 +360,79 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
 
       const lang = this.getUserLanguage(ctx, user);
 
+      // 🔧 CRITICAL FIX: Check if position needs confirmation
+      // If user still has default 'junior' and never confirmed, show position prompt FIRST
+      const needsPositionConfirmation =
+        user.profile?.position === 'junior' && 
+        user.engagement?.positionConfirmed !== true;
+
+      if (needsPositionConfirmation) {
+        this.logger.log(
+          `User ${user._id} viewing profile - unconfirmed junior position, showing position prompt`
+        );
+        
+        // Send position selection prompt
+        const positionPromptText = {
+          uz:
+            '👋 Assalomu alaykum!\n\n' +
+            '📊 <b>Lavozimingizni aniqlashdan oldin profil ko\'rsatilmaydi.</b>\n\n' +
+            "<b>Hozirgi yoki oldingi ishingizda (yoki o'rgangan joyingizda) qaysi lavozimda edingiz?</b>\n\n" +
+            'Bu savollarga mos javoblar olishingiz uchun muhim.',
+          ru:
+            '👋 Здравствуйте!\n\n' +
+            '📊 <b>Профиль не будет показан до подтверждения должности.</b>\n\n' +
+            '<b>На какой должности вы работаете/работали (или учились)?</b>\n\n' +
+            'Это важно для подбора подходящих вопросов.',
+          en:
+            '👋 Hello!\n\n' +
+            '📊 <b>Profile won\'t be shown until position is confirmed.</b>\n\n' +
+            '<b>What position do you have/had at your current or previous job (or learned)?</b>\n\n' +
+            'This is important to provide you with appropriate questions.',
+        };
+
+        const positionButtons = {
+          uz: {
+            junior: '🌱 Junior (0-2 yil)',
+            middle: '💼 Middle (2-5 yil)',
+            senior: '🎯 Senior (5+ yil)',
+            lead: '👑 Lead/Architect',
+          },
+          ru: {
+            junior: '🌱 Junior (0-2 года)',
+            middle: '💼 Middle (2-5 лет)',
+            senior: '🎯 Senior (5+ лет)',
+            lead: '👑 Lead/Architect',
+          },
+          en: {
+            junior: '🌱 Junior (0-2 years)',
+            middle: '💼 Middle (2-5 years)',
+            senior: '🎯 Senior (5+ years)',
+            lead: '👑 Lead/Architect',
+          },
+        };
+
+        const keyboard = new InlineKeyboard()
+          .text(positionButtons[lang].junior, 'confirm_position_junior')
+          .text(positionButtons[lang].middle, 'confirm_position_middle')
+          .row()
+          .text(positionButtons[lang].senior, 'confirm_position_senior')
+          .text(positionButtons[lang].lead, 'confirm_position_lead');
+
+        await ctx.reply(positionPromptText[lang] || positionPromptText.uz, {
+          parse_mode: 'HTML',
+          reply_markup: keyboard,
+        });
+
+        // Mark as prompted (prevent spam)
+        await this.usersRepository.updateRaw((user._id as any).toString(), {
+          $set: {
+            'engagement.scheduledPositionPromptAt': null,
+          },
+        });
+
+        return; // Don't show profile until position is confirmed
+      }
+
       // Get plan and limits
       const plan = user.subscription?.plan || 'free_trial';
       const planNames: Record<string, Record<string, string>> = {
