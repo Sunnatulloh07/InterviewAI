@@ -78,7 +78,7 @@ export class SurveyHandlerService {
   constructor(
     private readonly configService: ConfigService,
     private readonly usersService: UsersService,
-  ) {}
+  ) { }
 
   /**
    * Lazy initialize bot instance
@@ -134,6 +134,7 @@ export class SurveyHandlerService {
       // Clear scheduled time on successful send (survey is now pending user response)
       await this.usersService.updateEngagement(userId, {
         scheduledSurveyAt: null,
+        lastNotificationSentAt: new Date(),
       });
 
       this.logger.log(`Survey sent to user ${userId} (telegram: ${telegramId})`);

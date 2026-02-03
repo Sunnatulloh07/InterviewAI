@@ -69,7 +69,7 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
     private readonly positionPromptService: PositionPromptService,
     private readonly configService: ConfigService,
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
-  ) {}
+  ) { }
 
   onModuleInit(): void {
     // Check if scheduler is enabled via environment
@@ -126,7 +126,7 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
 
       this.logger.log(
         `Daily notification job completed in ${durationSec}s: ` +
-          `sent=${results.sent}, failed=${results.failed}, skipped=${results.skipped}`,
+        `sent=${results.sent}, failed=${results.failed}, skipped=${results.skipped}`,
       );
     } catch (error) {
       this.logger.error(`Daily notification job failed: ${error.message}`);
@@ -168,7 +168,15 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
    *
    * SCALABILITY: Processes max 1000 users per run = 4000/hour
    */
-  @Cron('*/15 9-21 * * *', { name: 'process-pending-surveys', timeZone: 'Asia/Tashkent' })
+  /**
+   * Pending surveys job - runs once daily at 10:00 (Tashkent time)
+   * Handles two categories:
+   * 1. NEW USERS: Scheduled surveys (scheduledSurveyAt set by pre-save hook, 3-4h after registration)
+   * 2. EXISTING USERS: Backfill users who haven't completed survey
+   *
+   * SCALABILITY: Processes max 1000 users per run
+   */
+  @Cron('0 10 * * *', { name: 'process-pending-surveys', timeZone: 'Asia/Tashkent' })
   async handlePendingSurveys(): Promise<void> {
     if (!this.isEnabled) {
       return;
@@ -178,10 +186,13 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
 
     try {
       const now = new Date();
-      const BATCH_SIZE = 1000; // Scalability: 1000 per run = 4000/hour (3.3 min processing time)
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+
+      const BATCH_SIZE = 1000;
 
       // ═══════════════════════════════════════════════════════════════════════
-      // QUERY 1: New users with scheduled surveys (pre-save hook scheduled them)
+      // QUERY 1: New users with scheduled surveys
       // ═══════════════════════════════════════════════════════════════════════
       const scheduledUsers = await this.userModel
         .find({
@@ -189,6 +200,11 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
           'engagement.surveyCompletedAt': null,
           'engagement.isBotBlocked': { $ne: true },
           'engagement.notificationsPaused': { $ne: true },
+          // Safety: Don't send if already notified today
+          $or: [
+            { 'engagement.lastNotificationSentAt': null },
+            { 'engagement.lastNotificationSentAt': { $lt: startOfToday } },
+          ],
           deletedAt: null,
         })
         .select('_id telegramId language')
@@ -197,8 +213,7 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
         .exec();
 
       // ═══════════════════════════════════════════════════════════════════════
-      // QUERY 2: Users with UNKNOWN employment status (null, undefined, NOT_SET)
-      // ✅ CRITICAL FIX: Include ALL users without proper employment status
+      // QUERY 2: Users with UNKNOWN status
       // ═══════════════════════════════════════════════════════════════════════
       const remainingSlots = BATCH_SIZE - scheduledUsers.length;
       let existingUsers: any[] = [];
@@ -206,37 +221,42 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
       if (remainingSlots > 0) {
         existingUsers = await this.userModel
           .find({
-            createdAt: { $lte: new Date(now.getTime() - 3 * 60 * 60 * 1000) }, // 3+ hours old
-            // ✅ FIX: Check for ALL unknown states
-            $or: [
-              // Case 1: No scheduledSurveyAt (pre-feature users)
+            createdAt: { $lte: new Date(now.getTime() - 3 * 60 * 60 * 1000) },
+            // Safety: Don't send if already notified today
+            $and: [
               {
-                'engagement.scheduledSurveyAt': { $exists: false },
-                'engagement.surveyCompletedAt': null,
-                'engagement.jobSeekingStatus': { $exists: false },
-              },
-              // Case 2: jobSeekingStatus is null
-              {
-                'engagement.jobSeekingStatus': null,
-                'engagement.surveyCompletedAt': null,
-              },
-              // Case 3: jobSeekingStatus is NOT_SET (re-ask after 7 days)
-              {
-                'engagement.jobSeekingStatus': 'NOT_SET',
                 $or: [
-                  { 'engagement.lastNotificationSentAt': { $exists: false } },
+                  { 'engagement.lastNotificationSentAt': null },
+                  { 'engagement.lastNotificationSentAt': { $lt: startOfToday } },
+                ],
+              },
+              {
+                $or: [
                   {
-                    'engagement.lastNotificationSentAt': {
-                      $lte: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000),
-                    },
+                    'engagement.scheduledSurveyAt': { $exists: false },
+                    'engagement.surveyCompletedAt': null,
+                    'engagement.jobSeekingStatus': { $exists: false },
+                  },
+                  {
+                    'engagement.jobSeekingStatus': null,
+                    'engagement.surveyCompletedAt': null,
+                  },
+                  {
+                    'engagement.jobSeekingStatus': 'NOT_SET',
+                    $or: [
+                      { 'engagement.lastNotificationSentAt': { $exists: false } },
+                      {
+                        'engagement.lastNotificationSentAt': {
+                          $lte: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000),
+                        },
+                      },
+                    ],
                   },
                 ],
               },
             ],
-            // Active filters
             'engagement.isBotBlocked': { $ne: true },
             'engagement.notificationsPaused': { $ne: true },
-            // Has telegram ID (required for sending)
             telegramId: { $exists: true, $ne: null },
             deletedAt: null,
           })
@@ -408,7 +428,7 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
 
       this.logger.log(
         `Found ${allUsers.length} users needing position prompts ` +
-          `(${scheduledUsers.length} scheduled, ${backfillUsers.length} backfill)`,
+        `(${scheduledUsers.length} scheduled, ${backfillUsers.length} backfill)`,
       );
 
       let sent = 0;

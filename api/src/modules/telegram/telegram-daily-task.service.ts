@@ -573,8 +573,9 @@ Get full access with the Starter plan.
         const scoreEmoji = score >= 8 ? '🟢' : score >= 5 ? '🟡' : '🔴';
 
         // SENIOR FIX: Safe substring with proper length check
-        const questionPreview =
+        const rawQuestion =
           task.question.length > 60 ? task.question.substring(0, 60) + '...' : task.question;
+        const questionPreview = this.escapeHtml(rawQuestion);
 
         const scoreLabel = {
           uz: 'ball',
@@ -585,7 +586,7 @@ Get full access with the Starter plan.
         tasksText += `✅ <b>${i + 1}. ${questionPreview}</b>\n   ${scoreEmoji} ${score}/10 ${scoreLabel[lang]}\n\n`;
       } else {
         // Incomplete task: show full question + button
-        tasksText += `🔄 <b>${i + 1}. ${task.question}</b>\n\n`;
+        tasksText += `🔄 <b>${i + 1}. ${this.escapeHtml(task.question)}</b>\n\n`;
 
         // Add answer button for this specific task
         const buttonLabel = {
@@ -641,14 +642,39 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
     // Combine full message
     const fullMessage = headerText[lang] + tasksText + footerText[lang];
 
-    await ctx.reply(fullMessage, {
-      parse_mode: 'HTML',
-      reply_markup: completedCount < totalTasks ? keyboard : undefined, // Only show buttons if tasks remain
-    });
+    try {
+      await ctx.reply(fullMessage, {
+        parse_mode: 'HTML',
+        reply_markup: completedCount < totalTasks ? keyboard : undefined, // Only show buttons if tasks remain
+      });
 
-    this.logger.log(
-      `Showed today's tasks to user ${userId}: ${completedCount}/${totalTasks} completed`,
-    );
+      this.logger.log(
+        `Showed today's tasks to user ${userId}: ${completedCount}/${totalTasks} completed`,
+      );
+    } catch (error: any) {
+      this.logger.error(`Failed to send tasks message: ${error.message}`);
+      // Fallback: try sending without HTML parsing if it failed
+      try {
+        await ctx.reply(fullMessage.replace(/<[^>]*>/g, ''), {
+          reply_markup: completedCount < totalTasks ? keyboard : undefined,
+        });
+      } catch (retryError) {
+        this.logger.error(`Failed to send tasks fallback message: ${retryError}`);
+      }
+    }
+  }
+
+  /**
+   * Helper to escape HTML characters for Telegram
+   */
+  private escapeHtml(text: string): string {
+    if (!text) return '';
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
   }
 
   /**
