@@ -48,19 +48,21 @@ export class DailyTasksService {
   }
 
   /**
-   * Deliver daily tasks at 9 AM Tashkent time (UTC+5)
-   * 9 AM Tashkent = 4 AM UTC
-   * Cron: 0 4 * * * (every day at 4 AM UTC)
-   * 🛡 FIX #10: Remove timeZone to use UTC correctly
+   * Deliver daily tasks at 9 AM Tashkent time
+   * 
+   * 🔧 CRITICAL FIX: Use explicit timezone to ensure correct delivery time
+   * - timeZone: 'Asia/Tashkent' ensures cron runs at 09:00 Tashkent local time
+   * - Without timezone, cron would run at 04:00 server time (depends on server config)
+   * - Server might be in different timezone, causing wrong delivery time
    *
    * SCALABILITY FIX: Batch processing for 1M+ users
    * - Process users in batches of 100
    * - Cursor-based pagination to avoid memory overflow
    * - Progress tracking in Redis
    */
-  @Cron('0 4 * * *', {
-    // 4 AM UTC = 9 AM Tashkent
+  @Cron('0 9 * * *', {
     name: 'deliver_daily_tasks',
+    timeZone: 'Asia/Tashkent', // 🔧 CRITICAL: Ensure 09:00 Tashkent time
   })
   async deliverDailyTasks() {
     // CRITICAL FIX: Distributed lock to prevent duplicate task delivery
@@ -899,8 +901,13 @@ Provide your response in JSON format:
    * Verify and fix missed task deliveries (SCALABILITY FIX)
    * Runs 2 hours after delivery (11:00 Tashkent time)
    * Checks if all paid users received tasks and creates missing ones
+   * 
+   * 🔧 FIX: Changed from 06:00 to 11:00 Tashkent
+   * - Delivery happens at 09:00
+   * - Verification runs at 11:00 (2 hours later)
+   * - Gives enough time for main delivery cron to complete
    */
-  @Cron('0 6 * * *', {
+  @Cron('0 11 * * *', {
     name: 'verify_daily_tasks_delivery',
     timeZone: 'Asia/Tashkent',
   })
