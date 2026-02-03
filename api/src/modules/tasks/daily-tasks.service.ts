@@ -7,10 +7,12 @@ import { InjectRedis } from '@nestjs-modules/ioredis';
 import Redis from 'ioredis';
 import { OpenAI } from 'openai';
 import { DailyTask, DailyTaskDocument } from './schemas/daily-task.schema';
+import { GeneratedQuestion, GeneratedQuestionDocument } from './schemas/generated-question.schema';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { TelegramService } from '../telegram/telegram.service';
 import { FailedNotificationRetryService } from '../engagement/failed-notification-retry.service';
 import { createOpenAIClient, OPENROUTER_MODELS } from '@common/utils/openai-client.factory';
+import { AI_MODELS } from '@common/constants';
 import {
   getPlanLimits,
   canUseDailyTaskVoiceAnswer,
@@ -26,6 +28,8 @@ export class DailyTasksService {
   constructor(
     @InjectModel(DailyTask.name)
     private readonly dailyTaskModel: Model<DailyTaskDocument>,
+    @InjectModel(GeneratedQuestion.name)
+    private readonly questionModel: Model<GeneratedQuestionDocument>,
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
     @Inject(forwardRef(() => TelegramService))
@@ -49,7 +53,7 @@ export class DailyTasksService {
 
   /**
    * Deliver daily tasks at 9 AM Tashkent time
-   * 
+   *
    * 🔧 CRITICAL FIX: Use explicit timezone to ensure correct delivery time
    * - timeZone: 'Asia/Tashkent' ensures cron runs at 09:00 Tashkent local time
    * - Without timezone, cron would run at 04:00 server time (depends on server config)
@@ -136,7 +140,7 @@ export class DailyTasksService {
           .find(query)
           .sort({ _id: 1 }) // Important: consistent ordering
           .limit(BATCH_SIZE)
-          .select('_id telegramId profile subscription')
+          .select('_id telegramId profile subscription seenQuestionIds')
           .lean();
 
         if (userBatch.length === 0) {
@@ -163,20 +167,32 @@ export class DailyTasksService {
 
             // Generate 3 questions for the day
             const position = user.profile?.position || 'junior';
+            const techStack = user.profile?.techStack || [];
+            const domain = this.detectDomain(techStack);
+            // Seen IDs from user profile (added in selection)
+            const seenIds = (user as any).seenQuestionIds || [];
+
+            const [technical, behavioral, systemDesign] = await Promise.all([
+              this.findOrGenerateQuestion(position, 'technical', domain, techStack, seenIds),
+              this.findOrGenerateQuestion(position, 'behavioral', domain, techStack, seenIds),
+              position !== 'junior'
+                ? this.findOrGenerateQuestion(position, 'system_design', domain, techStack, seenIds)
+                : Promise.resolve({ question: null as any, id: null }),
+            ]);
+
             const tasks = [
-              {
-                question: this.generateQuestion(position, 'technical'),
-                completed: false,
-              },
-              {
-                question: this.generateQuestion(position, 'behavioral'),
-                completed: false,
-              },
-              {
-                question: this.generateQuestion(position, 'system_design'),
-                completed: false,
-              },
+              { question: technical.question, questionId: technical.id, completed: false },
+              { question: behavioral.question, questionId: behavioral.id, completed: false },
             ];
+
+            // Add system design only for non-juniors (or if valid question generated)
+            if (position !== 'junior' && systemDesign.question) {
+              tasks.push({
+                question: systemDesign.question,
+                questionId: systemDesign.id,
+                completed: false,
+              });
+            }
 
             // Create daily task document
             await this.dailyTaskModel.create({
@@ -185,6 +201,18 @@ export class DailyTasksService {
               tasks,
               status: 'pending',
             });
+
+            // CRITICAL: Update user's seen history to prevent duplicates
+            // SEQUENTIAL LEARNING LOGIC
+            const newIds = [technical.id, behavioral.id, systemDesign?.id].filter((id) => id);
+
+            if (newIds.length > 0) {
+              // Batch update for this user
+              await this.userModel.updateOne(
+                { _id: user._id },
+                { $addToSet: { seenQuestionIds: { $each: newIds } } },
+              );
+            }
 
             // Send Telegram notification
             try {
@@ -268,7 +296,7 @@ export class DailyTasksService {
   /**
    * PUBLIC METHOD: Get Tashkent midnight
    * Exposed for other services to use consistent timezone handling
-   * 
+   *
    * SENIOR PATTERN: Centralize timezone logic in one place
    */
   public getTashkentMidnightPublic(): Date {
@@ -277,7 +305,7 @@ export class DailyTasksService {
 
   /**
    * Get today's tasks for a user
-   * 
+   *
    * CRITICAL FIX: Remove broken date conversion logic
    * Expect caller to provide proper Tashkent midnight date
    */
@@ -308,24 +336,27 @@ export class DailyTasksService {
 
     if (!result) {
       // Check if ANY task exists for this user (debug)
-      const anyTask = await this.dailyTaskModel.findOne({ userId: userObjectId }).sort({ date: -1 }).lean();
-      
+      const anyTask = await this.dailyTaskModel
+        .findOne({ userId: userObjectId })
+        .sort({ date: -1 })
+        .lean();
+
       this.logger.error(
         `🔥 getTodayTasks - NO MATCH | ` +
-        `userId: ${userId} | ` +
-        `ObjectId: ${userObjectId} | ` +
-        `Date range: ${today.toISOString()} to ${tomorrow.toISOString()} | ` +
-        `Latest task date: ${anyTask ? new Date(anyTask.date).toISOString() : 'NONE'} | ` +
-        `Latest task ID: ${anyTask ? anyTask._id : 'N/A'}`,
+          `userId: ${userId} | ` +
+          `ObjectId: ${userObjectId} | ` +
+          `Date range: ${today.toISOString()} to ${tomorrow.toISOString()} | ` +
+          `Latest task date: ${anyTask ? new Date(anyTask.date).toISOString() : 'NONE'} | ` +
+          `Latest task ID: ${anyTask ? anyTask._id : 'N/A'}`,
       );
     } else {
       this.logger.log(
         `✅ getTodayTasks - FOUND | ` +
-        `userId: ${userId} | ` +
-        `date range: ${today.toISOString()} to ${tomorrow.toISOString()} | ` +
-        `actual date: ${result.date} | ` +
-        `tasks: ${result.tasks.length} | ` +
-        `incomplete: ${result.tasks.filter((t) => !t.completed).length}`,
+          `userId: ${userId} | ` +
+          `date range: ${today.toISOString()} to ${tomorrow.toISOString()} | ` +
+          `actual date: ${result.date} | ` +
+          `tasks: ${result.tasks.length} | ` +
+          `incomplete: ${result.tasks.filter((t) => !t.completed).length}`,
       );
     }
 
@@ -336,7 +367,7 @@ export class DailyTasksService {
    * Get monthly statistics for user's daily tasks
    * Aggregates completed, failed, AI-answered, and skipped tasks for current month
    * Returns streak information from user document
-   * 
+   *
    * CRITICAL FIX: Convert string userId to ObjectId for MongoDB matching
    * SENIOR PATTERN: Proper error handling with fallback values
    */
@@ -399,7 +430,12 @@ export class DailyTasksService {
             totalScore: {
               $sum: {
                 $cond: [
-                  { $and: [{ $eq: ['$tasks.completed', true] }, { $ifNull: ['$tasks.score', false] }] },
+                  {
+                    $and: [
+                      { $eq: ['$tasks.completed', true] },
+                      { $ifNull: ['$tasks.score', false] },
+                    ],
+                  },
                   '$tasks.score',
                   0,
                 ],
@@ -408,7 +444,12 @@ export class DailyTasksService {
             scoredTasks: {
               $sum: {
                 $cond: [
-                  { $and: [{ $eq: ['$tasks.completed', true] }, { $ifNull: ['$tasks.score', false] }] },
+                  {
+                    $and: [
+                      { $eq: ['$tasks.completed', true] },
+                      { $ifNull: ['$tasks.score', false] },
+                    ],
+                  },
                   1,
                   0,
                 ],
@@ -444,11 +485,11 @@ export class DailyTasksService {
 
       // SENIOR PATTERN: Fetch user with proper ObjectId
       const user = await this.userModel.findById(userObjectId).select('dailyTasks').lean();
-      
+
       if (!user) {
         this.logger.warn(`User ${userId} not found in getMonthlyStats - using zero streaks`);
       }
-      
+
       const currentStreak = user?.dailyTasks?.currentStreak || 0;
       const longestStreak = user?.dailyTasks?.longestStreak || 0;
 
@@ -489,7 +530,7 @@ export class DailyTasksService {
         `Failed to get monthly stats for user ${userId}: ${error.message}`,
         error.stack,
       );
-      
+
       // SENIOR PATTERN: Return empty stats on error, don't crash the user flow
       return {
         totalTasks: 0,
@@ -922,7 +963,7 @@ Provide your response in JSON format:
    * Verify and fix missed task deliveries (SCALABILITY FIX)
    * Runs 2 hours after delivery (11:00 Tashkent time)
    * Checks if all paid users received tasks and creates missing ones
-   * 
+   *
    * 🔧 FIX: Changed from 06:00 to 11:00 Tashkent
    * - Delivery happens at 09:00
    * - Verification runs at 11:00 (2 hours later)
@@ -1010,11 +1051,32 @@ Provide your response in JSON format:
         for (const user of missedUsers) {
           try {
             const position = user.profile?.position || 'junior';
+            const techStack = user.profile?.techStack || [];
+            const domain = this.detectDomain(techStack);
+
+            const userFull = await this.userModel.findById(user._id).select('seenQuestionIds');
+            const seenIds = userFull?.seenQuestionIds || [];
+
+            const [technical, behavioral, systemDesign] = await Promise.all([
+              this.findOrGenerateQuestion(position, 'technical', domain, techStack, seenIds),
+              this.findOrGenerateQuestion(position, 'behavioral', domain, techStack, seenIds),
+              position !== 'junior'
+                ? this.findOrGenerateQuestion(position, 'system_design', domain, techStack, seenIds)
+                : Promise.resolve({ question: null as any, id: null }),
+            ]);
+
             const tasks = [
-              { question: this.generateQuestion(position, 'technical'), completed: false },
-              { question: this.generateQuestion(position, 'behavioral'), completed: false },
-              { question: this.generateQuestion(position, 'system_design'), completed: false },
+              { question: technical.question, questionId: technical.id, completed: false },
+              { question: behavioral.question, questionId: behavioral.id, completed: false },
             ];
+
+            if (systemDesign.question) {
+              tasks.push({
+                question: systemDesign.question,
+                questionId: systemDesign.id,
+                completed: false,
+              });
+            }
 
             await this.dailyTaskModel.create({
               userId: user._id,
@@ -1150,84 +1212,164 @@ Provide your response in JSON format:
   }
 
   /**
-   * Generate a question based on position and type
-   * TODO: Enhance with AI generation or database lookup
+   * Find existing question in DB or generate new one via AI
    */
-  private generateQuestion(
+  private async findOrGenerateQuestion(
     position: string,
-    type: 'technical' | 'behavioral' | 'system_design',
-  ): string {
-    const questions: Record<string, Record<string, string[]>> = {
-      technical: {
-        junior: [
-          'What is the difference between let, const, and var in JavaScript?',
-          'Explain what a REST API is and give an example.',
-          'What is the purpose of Git and how do you use branches?',
-        ],
-        middle: [
-          'Explain the Event Loop in Node.js and how it handles asynchronous operations.',
-          'What are React Hooks and why are they useful?',
-          'Describe the SOLID principles in software development.',
-        ],
-        senior: [
-          'How would you design a scalable microservices architecture?',
-          'Explain database sharding and when you would use it.',
-          'Describe your approach to implementing CI/CD pipelines.',
-        ],
-        lead: [
-          'How do you balance technical debt with feature delivery?',
-          'Describe your approach to mentoring junior developers.',
-          'How do you evaluate and introduce new technologies to a team?',
-        ],
-      },
-      behavioral: {
-        junior: [
-          'Tell me about a time you learned a new technology quickly.',
-          'How do you handle feedback on your code?',
-          'Describe a challenging bug you fixed recently.',
-        ],
-        middle: [
-          'Tell me about a time you had to make a difficult technical decision.',
-          'How do you prioritize tasks when you have multiple deadlines?',
-          'Describe a situation where you helped a teammate solve a problem.',
-        ],
-        senior: [
-          'Tell me about a time you led a technical project from start to finish.',
-          'How do you handle disagreements with other senior engineers?',
-          'Describe your approach to technical documentation and knowledge sharing.',
-        ],
-        lead: [
-          'How do you build and maintain a high-performing engineering team?',
-          'Describe a time you had to make a strategic technical decision.',
-          'How do you balance hands-on coding with leadership responsibilities?',
-        ],
-      },
-      system_design: {
-        junior: [
-          'How would you design a simple TODO list application?',
-          'Explain how you would structure a basic e-commerce website.',
-          'What considerations would you have for building a blog platform?',
-        ],
-        middle: [
-          'Design a URL shortener service like bit.ly.',
-          'How would you build a real-time chat application?',
-          'Design a notification system for a mobile app.',
-        ],
-        senior: [
-          'Design a distributed caching system.',
-          'How would you build a video streaming platform like Netflix?',
-          'Design a rate limiting system for an API.',
-        ],
-        lead: [
-          'Design the architecture for a global-scale social media platform.',
-          'How would you architect a multi-region deployment with zero downtime?',
-          'Design a monitoring and alerting system for a large-scale distributed system.',
-        ],
-      },
-    };
+    type: string,
+    domain: string,
+    techStacks: string[],
+    seenIds: any[] = [],
+  ): Promise<{ question: string; id: any }> {
+    try {
+      // 1. Try to find cached question
+      const query: any = {
+        position,
+        type,
+        _id: { $nin: seenIds }, // EXCLUDE SEEN QUESTIONS (Sequential Logic)
+      };
 
-    const positionQuestions = questions[type][position] || questions[type]['junior'];
-    return positionQuestions[Math.floor(Math.random() * positionQuestions.length)];
+      if (domain) {
+        query.domain = domain;
+      }
+
+      if (techStacks && techStacks.length > 0) {
+        if (techStacks.length > 0) {
+          query.techStacks = { $in: techStacks };
+        }
+      }
+
+      // SEQUENTIAL SORT: Oldest created first (History path)
+      const count = await this.questionModel.countDocuments(query);
+
+      if (count > 0) {
+        // Instead of random skip, we take the FIRST available (oldest)
+        // This ensures every user goes through Q1 -> Q2 -> Q3...
+        const cached = await this.questionModel
+          .findOne(query)
+          .sort({ createdAt: 1 }) // First in, First out
+          .select('question timesUsed');
+
+        if (cached) {
+          // Async update stats (fire and forget)
+          this.questionModel.updateOne({ _id: cached._id }, { $inc: { timesUsed: 1 } }).exec();
+          return { question: cached.question, id: cached._id };
+        }
+      }
+
+      // 2. If not found, generate via AI
+      return await this.generateWithAI(position, type, domain, techStacks);
+    } catch (error: any) {
+      this.logger.error(`Error finding/generating question: ${error.message}`);
+      // Fallback to static if everything fails (DB + AI)
+      const fallback = this.generateFallbackQuestion(position, type);
+      return { question: fallback, id: null };
+    }
+  }
+
+  /**
+   * Generate question using OpenAI
+   */
+  private async generateWithAI(
+    position: string,
+    type: string,
+    domain: string,
+    techStacks: string[],
+  ): Promise<{ question: string; id: any }> {
+    if (!this.openai) {
+      const fallback = this.generateFallbackQuestion(position, type);
+      return { question: fallback, id: null };
+    }
+
+    const stackStr = techStacks.join(', ');
+    const roleStr = `${position} ${domain} Developer`;
+
+    // Optimized prompt for single question generation
+    const prompt = `Generate 1 unique, professional interview question.
+Role: ${roleStr}
+Tech Stack: ${stackStr}
+Type: ${type}
+Language: English
+
+Requirements:
+- Challenging and relevant to real-world scenarios.
+- For technical: Focus on concepts/implementation in ${stackStr}.
+- For behavioral: Focus on soft skills.
+- For system_design: Focus on architecture.
+
+Return ONLY the question text. Do not include quotes or surrounding text.`;
+
+    try {
+      const completion = await this.openai.chat.completions.create({
+        model: 'gpt-4o-mini', // Cost-effective model
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.7,
+        max_tokens: 150,
+      });
+
+      const text = completion.choices[0].message.content?.trim();
+
+      if (text) {
+        // Save to DB for future reuse
+        const newDoc = await this.questionModel.create({
+          position,
+          type,
+          domain: domain || 'general',
+          techStacks: techStacks, // Save EXACT user stack for this question?
+          // Or maybe we should save just the primary stack?
+          // For now, saving user's full stack context allows exact reuse logic.
+          question: text,
+          metadata: {
+            generatedBy: 'gpt-4o-mini',
+            tokensUsed: completion.usage?.total_tokens || 0,
+            generationTime: 0,
+            cost: 0,
+          },
+          timesUsed: 1,
+        });
+
+        return { question: text, id: newDoc._id };
+      }
+    } catch (e) {
+      this.logger.error(`AI generation failed: ${e.message}`);
+    }
+
+    const fallback = this.generateFallbackQuestion(position, type);
+    return { question: fallback, id: null };
+  }
+
+  /**
+   * Emergency fallback if DB and AI fail
+   */
+  private generateFallbackQuestion(position: string, type: string): string {
+    const fallbacks = {
+      technical: `Describe a challenging technical problem you solved recently as a ${position} developer.`,
+      behavioral: 'Describe a situation where you had to handle a conflict within your team.',
+      system_design: 'How would you design a scalable system for high traffic?',
+    };
+    return fallbacks[type] || fallbacks.technical;
+  }
+
+  /**
+   * Helper to detect rough domain from tech stack
+   */
+  private detectDomain(techStacks: string[]): string {
+    const lowerStacks = techStacks.map((s) => s.toLowerCase());
+    if (lowerStacks.some((s) => ['react', 'vue', 'angular', 'frontend', 'css', 'html'].includes(s)))
+      return 'frontend';
+    if (
+      lowerStacks.some((s) =>
+        ['node', 'express', 'nest', 'java', 'python', 'go', 'backend', 'sql'].includes(s),
+      )
+    )
+      return 'backend';
+    if (
+      lowerStacks.some((s) =>
+        ['ios', 'android', 'swift', 'kotlin', 'flutter', 'react-native'].includes(s),
+      )
+    )
+      return 'mobile';
+    return 'general';
   }
 
   /**

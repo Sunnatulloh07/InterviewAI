@@ -176,7 +176,7 @@ export class VoiceQuotaService {
 
   /**
    * Log voice usage to history (for VoiceQuotaGuardService)
-   * 
+   *
    * This is a public method to avoid private property access anti-pattern
    * Called by VoiceQuotaGuardService after committing a reservation
    */

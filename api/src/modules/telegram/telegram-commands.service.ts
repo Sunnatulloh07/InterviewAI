@@ -259,7 +259,7 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
    * Routes users based on their subscription plan:
    * - Free users: Show upgrade prompt
    * - Premium users (starter/pro/elite): Show monthly stats and today's tasks
-   * 
+   *
    * SENIOR LOGIC:
    * 1. Validate subscription status (active, not expired)
    * 2. Check plan-specific permissions from COMPLETE_PLAN_LIMITS
@@ -286,7 +286,7 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
 
       const lang = this.getUserLanguage(ctx, user);
       const userId = (user as any)._id?.toString() || (user as any).id?.toString();
-      
+
       // CRITICAL FIX: Check subscription status and expiry
       const subscription = user.subscription;
       const plan = subscription?.plan || 'free_trial';
@@ -304,9 +304,10 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
 
       // SENIOR LOGIC: Use COMPLETE_PLAN_LIMITS to check feature access
       const planLimits = COMPLETE_PLAN_LIMITS[plan] || COMPLETE_PLAN_LIMITS.free_trial;
-      const hasPremiumAccess = planLimits.dailyTasks.enabled && 
-                               (plan === 'starter' || plan === 'pro' || plan === 'elite') &&
-                               isActive;
+      const hasPremiumAccess =
+        planLimits.dailyTasks.enabled &&
+        (plan === 'starter' || plan === 'pro' || plan === 'elite') &&
+        isActive;
 
       // Show upgrade prompt for free users OR expired premium users
       if (!hasPremiumAccess) {
@@ -318,7 +319,9 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
       }
 
       // Premium users with active subscription see monthly stats and tasks
-      this.logger.log(`Premium user ${userId} (plan: ${plan}) accessing /tasks - showing monthly overview`);
+      this.logger.log(
+        `Premium user ${userId} (plan: ${plan}) accessing /tasks - showing monthly overview`,
+      );
       await this.dailyTaskService.showMonthlyStats(ctx, userId);
     } catch (error: any) {
       this.logger.error(`Failed to handle tasks: ${error.message}`, error.stack);
@@ -363,19 +366,18 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
       // 🔧 CRITICAL FIX: Check if position needs confirmation
       // If user still has default 'junior' and never confirmed, show position prompt FIRST
       const needsPositionConfirmation =
-        user.profile?.position === 'junior' && 
-        user.engagement?.positionConfirmed !== true;
+        user.profile?.position === 'junior' && user.engagement?.positionConfirmed !== true;
 
       if (needsPositionConfirmation) {
         this.logger.log(
-          `User ${user._id} viewing profile - unconfirmed junior position, showing position prompt`
+          `User ${user._id} viewing profile - unconfirmed junior position, showing position prompt`,
         );
-        
+
         // Send position selection prompt
         const positionPromptText = {
           uz:
             '👋 Assalomu alaykum!\n\n' +
-            '📊 <b>Lavozimingizni aniqlashdan oldin profil ko\'rsatilmaydi.</b>\n\n' +
+            "📊 <b>Lavozimingizni aniqlashdan oldin profil ko'rsatilmaydi.</b>\n\n" +
             "<b>Hozirgi yoki oldingi ishingizda (yoki o'rgangan joyingizda) qaysi lavozimda edingiz?</b>\n\n" +
             'Bu savollarga mos javoblar olishingiz uchun muhim.',
           ru:
@@ -385,7 +387,7 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
             'Это важно для подбора подходящих вопросов.',
           en:
             '👋 Hello!\n\n' +
-            '📊 <b>Profile won\'t be shown until position is confirmed.</b>\n\n' +
+            "📊 <b>Profile won't be shown until position is confirmed.</b>\n\n" +
             '<b>What position do you have/had at your current or previous job (or learned)?</b>\n\n' +
             'This is important to provide you with appropriate questions.',
         };
@@ -1313,7 +1315,7 @@ Let's get started! 🚀`,
         };
 
         const buttonLabels = {
-          uz: { view: '📊 CV tahlilini ko\'rish', back: '🔙 Menyuga qaytish' },
+          uz: { view: "📊 CV tahlilini ko'rish", back: '🔙 Menyuga qaytish' },
           ru: { view: '📊 Анализ CV', back: '🔙 В меню' },
           en: { view: '📊 View CV Analysis', back: '🔙 Back to Menu' },
         };
@@ -1660,7 +1662,7 @@ ${weaknessesText}
 
       const summaryButtonLabels = {
         uz: {
-          fullAnalysis: '📋 To\'liq tahlil',
+          fullAnalysis: "📋 To'liq tahlil",
           reanalyze: '🔄 Qayta tahlil',
           uploadNew: '📤 Yangi CV yuklash',
           back: '🔙 Menyuga qaytish',
@@ -1881,7 +1883,7 @@ Send a document (PDF, DOCX, DOC, TXT)
             };
 
             const reanalyzeButtonLabels = {
-              uz: { view: '📊 Tahlilni ko\'rish', back: '🔙 Menyuga qaytish' },
+              uz: { view: "📊 Tahlilni ko'rish", back: '🔙 Menyuga qaytish' },
               ru: { view: '📊 Смотреть анализ', back: '🔙 В меню' },
               en: { view: '📊 View Analysis', back: '🔙 Back to Menu' },
             };
@@ -1965,7 +1967,7 @@ Send a document (PDF, DOCX, DOC, TXT)
           const sixSecondVerdict = analysis.sixSecondVerdict || 'unknown';
 
           // Calculate display score (use atsScore as primary)
-          const displayScore = atsScore || (overallRating * 20); // Convert 1-5 to 0-100 if needed
+          const displayScore = atsScore || overallRating * 20; // Convert 1-5 to 0-100 if needed
 
           this.logger.debug(
             `Displaying CV analysis - atsScore: ${atsScore}, overallRating: ${overallRating}, strengths: ${strengths.length}, weaknesses: ${weaknesses.length}`,
@@ -1984,13 +1986,27 @@ Send a document (PDF, DOCX, DOC, TXT)
 ${strengths.length > 0 ? strengths.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n') : 'Tahlil davom etmoqda...'}
 
 ⚠️ <b>Muhim kamchiliklar:</b>
-${weaknesses.length > 0 ? weaknesses.slice(0, 5).map((w: string, i: number) => `${i + 1}. ${w}`).join('\n') : 'Kamchilik topilmadi'}
+${
+  weaknesses.length > 0
+    ? weaknesses
+        .slice(0, 5)
+        .map((w: string, i: number) => `${i + 1}. ${w}`)
+        .join('\n')
+    : 'Kamchilik topilmadi'
+}
 
 🚀 <b>Tezkor yaxshilashlar (Quick Wins):</b>
 ${quickWins.length > 0 ? quickWins.map((q: string, i: number) => `${i + 1}. ${q}`).join('\n') : 'Tavsiyalar tayyorlanmoqda...'}
 
 💡 <b>Transformation Roadmap:</b>
-${transformationRoadmap.length > 0 ? transformationRoadmap.slice(0, 3).map((t: any, i: number) => `${i + 1}. [Priority ${t.priority}] ${t.problem}`).join('\n') : 'Roadmap tayyorlanmoqda...'}
+${
+  transformationRoadmap.length > 0
+    ? transformationRoadmap
+        .slice(0, 3)
+        .map((t: any, i: number) => `${i + 1}. [Priority ${t.priority}] ${t.problem}`)
+        .join('\n')
+    : 'Roadmap tayyorlanmoqda...'
+}
 
 ━━━━━━━━━━━━━━━━━━`,
             ru: `━━━━━━━━━━━━━━━━━━
@@ -2005,13 +2021,27 @@ ${transformationRoadmap.length > 0 ? transformationRoadmap.slice(0, 3).map((t: a
 ${strengths.length > 0 ? strengths.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n') : 'Анализ продолжается...'}
 
 ⚠️ <b>Критические слабости:</b>
-${weaknesses.length > 0 ? weaknesses.slice(0, 5).map((w: string, i: number) => `${i + 1}. ${w}`).join('\n') : 'Слабостей не найдено'}
+${
+  weaknesses.length > 0
+    ? weaknesses
+        .slice(0, 5)
+        .map((w: string, i: number) => `${i + 1}. ${w}`)
+        .join('\n')
+    : 'Слабостей не найдено'
+}
 
 🚀 <b>Быстрые улучшения (Quick Wins):</b>
 ${quickWins.length > 0 ? quickWins.map((q: string, i: number) => `${i + 1}. ${q}`).join('\n') : 'Рекомендации готовятся...'}
 
 💡 <b>Transformation Roadmap:</b>
-${transformationRoadmap.length > 0 ? transformationRoadmap.slice(0, 3).map((t: any, i: number) => `${i + 1}. [Приоритет ${t.priority}] ${t.problem}`).join('\n') : 'Roadmap готовится...'}
+${
+  transformationRoadmap.length > 0
+    ? transformationRoadmap
+        .slice(0, 3)
+        .map((t: any, i: number) => `${i + 1}. [Приоритет ${t.priority}] ${t.problem}`)
+        .join('\n')
+    : 'Roadmap готовится...'
+}
 
 ━━━━━━━━━━━━━━━━━━`,
             en: `━━━━━━━━━━━━━━━━━━
@@ -2026,13 +2056,27 @@ ${transformationRoadmap.length > 0 ? transformationRoadmap.slice(0, 3).map((t: a
 ${strengths.length > 0 ? strengths.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n') : 'Analysis in progress...'}
 
 ⚠️ <b>Critical Weaknesses:</b>
-${weaknesses.length > 0 ? weaknesses.slice(0, 5).map((w: string, i: number) => `${i + 1}. ${w}`).join('\n') : 'No weaknesses found'}
+${
+  weaknesses.length > 0
+    ? weaknesses
+        .slice(0, 5)
+        .map((w: string, i: number) => `${i + 1}. ${w}`)
+        .join('\n')
+    : 'No weaknesses found'
+}
 
 🚀 <b>Quick Wins:</b>
 ${quickWins.length > 0 ? quickWins.map((q: string, i: number) => `${i + 1}. ${q}`).join('\n') : 'Recommendations preparing...'}
 
 💡 <b>Transformation Roadmap:</b>
-${transformationRoadmap.length > 0 ? transformationRoadmap.slice(0, 3).map((t: any, i: number) => `${i + 1}. [Priority ${t.priority}] ${t.problem}`).join('\n') : 'Roadmap preparing...'}
+${
+  transformationRoadmap.length > 0
+    ? transformationRoadmap
+        .slice(0, 3)
+        .map((t: any, i: number) => `${i + 1}. [Priority ${t.priority}] ${t.problem}`)
+        .join('\n')
+    : 'Roadmap preparing...'
+}
 
 ━━━━━━━━━━━━━━━━━━`,
           };
@@ -2051,7 +2095,8 @@ ${transformationRoadmap.length > 0 ? transformationRoadmap.slice(0, 3).map((t: a
             )
             .row()
             .text(
-              fullAnalysisButtonLabels[userLang]?.mainMenu || fullAnalysisButtonLabels['en'].mainMenu,
+              fullAnalysisButtonLabels[userLang]?.mainMenu ||
+                fullAnalysisButtonLabels['en'].mainMenu,
               'back_to_menu',
             );
 
@@ -2137,7 +2182,7 @@ ${transformationRoadmap.length > 0 ? transformationRoadmap.slice(0, 3).map((t: a
             `Task index ${taskIndex} out of bounds for user ${userId} (total: ${dailyTask.tasks.length})`,
           );
           const invalidTaskText = {
-            uz: '❌ Noto\'g\'ri vazifa raqami.',
+            uz: "❌ Noto'g'ri vazifa raqami.",
             ru: '❌ Неверный номер задания.',
             en: '❌ Invalid task number.',
           };
@@ -2176,7 +2221,7 @@ ${transformationRoadmap.length > 0 ? transformationRoadmap.slice(0, 3).map((t: a
         } catch (sessionError: any) {
           this.logger.error(`Failed to set daily task session: ${sessionError.message}`);
           const errorText = {
-            uz: '❌ Xatolik yuz berdi. Iltimos, qayta urinib ko\'ring.',
+            uz: "❌ Xatolik yuz berdi. Iltimos, qayta urinib ko'ring.",
             ru: '❌ Произошла ошибка. Попробуйте снова.',
             en: '❌ Error occurred. Please try again.',
           };
@@ -2190,15 +2235,30 @@ ${transformationRoadmap.length > 0 ? transformationRoadmap.slice(0, 3).map((t: a
 
         let answerInstructions = '';
         if (planLimits.dailyTasks.textAnswer) {
-          answerInstructions += userLang === 'uz' ? '✍️ Matn yozing' : userLang === 'ru' ? '✍️ Напишите текст' : '✍️ Type your answer';
+          answerInstructions +=
+            userLang === 'uz'
+              ? '✍️ Matn yozing'
+              : userLang === 'ru'
+                ? '✍️ Напишите текст'
+                : '✍️ Type your answer';
         }
         if (planLimits.dailyTasks.voiceAnswer) {
           answerInstructions += answerInstructions ? '\n' : '';
-          answerInstructions += userLang === 'uz' ? '🎙️ Ovozli xabar yuboring' : userLang === 'ru' ? '🎙️ Отправьте голосовое' : '🎙️ Send voice message';
+          answerInstructions +=
+            userLang === 'uz'
+              ? '🎙️ Ovozli xabar yuboring'
+              : userLang === 'ru'
+                ? '🎙️ Отправьте голосовое'
+                : '🎙️ Send voice message';
         }
         if (planLimits.dailyTasks.imageAnswer) {
           answerInstructions += answerInstructions ? '\n' : '';
-          answerInstructions += userLang === 'uz' ? '📸 Rasm yuboring' : userLang === 'ru' ? '📸 Отправьте фото' : '📸 Send image';
+          answerInstructions +=
+            userLang === 'uz'
+              ? '📸 Rasm yuboring'
+              : userLang === 'ru'
+                ? '📸 Отправьте фото'
+                : '📸 Send image';
         }
 
         const taskPromptText = {

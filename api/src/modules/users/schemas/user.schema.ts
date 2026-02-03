@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { Document, Types } from 'mongoose';
 import { UserRole } from '@common/enums/user-role.enum';
 
 export type UserDocument = User & Document;
@@ -205,6 +205,10 @@ export class User {
     longestStreak: number;
     totalCompleted: number;
   };
+
+  // HISTORY TRACKING (Sequential Learning)
+  @Prop({ type: [Types.ObjectId], ref: 'GeneratedQuestion', default: [] })
+  seenQuestionIds: Types.ObjectId[]; // Tracks questions already served to user
 
   // Account management
   @Prop()

@@ -5,15 +5,15 @@ export type VoiceReservationDocument = VoiceReservation & Document;
 
 /**
  * Voice Quota Reservation Schema
- * 
+ *
  * Purpose: Track quota reservations for transaction safety
- * 
+ *
  * Flow:
  * 1. User sends voice → Reserve quota (status: 'reserved')
  * 2. AI processing succeeds → Commit (status: 'committed')
  * 3. AI processing fails → Rollback (status: 'rolled_back')
  * 4. Auto-cleanup: Expired reservations (>5min) → Rollback
- * 
+ *
  * This prevents:
  * - Charging users for failed services
  * - Revenue loss from successful services

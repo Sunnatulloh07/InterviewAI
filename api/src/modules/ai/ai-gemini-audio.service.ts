@@ -104,7 +104,6 @@ export class AiGeminiAudioService {
     return isGeminiAudioEnabled(this.configService) && this.openai !== null;
   }
 
-  
   /**
    * Get the configured Gemini model for audio processing
    */

@@ -33,32 +33,32 @@ export interface ReservationContext {
 
 /**
  * Voice Quota Guard Service
- * 
+ *
  * Implements transaction-safe quota management with reservation pattern:
- * 
+ *
  * 1. PRE-FLIGHT CHECK: Validate quota before downloading
  * 2. RESERVE: Soft-lock quota before processing
  * 3. COMMIT: Convert reserved → used after AI success
  * 4. ROLLBACK: Return reserved → available if AI fails
- * 
+ *
  * This prevents:
  * - Charging users for failed services (user protection)
  * - Revenue loss from successful services (business protection)
  * - Race conditions (technical correctness)
- * 
+ *
  * @example
  * ```typescript
  * // 1. Pre-flight check
  * const check = await guard.preFlightCheck(userId, 'mock', 45);
  * if (!check.allowed) return;
- * 
+ *
  * // 2. Reserve quota
  * const resId = await guard.reserveQuota(userId, 'mock', check.estimatedMinutes, {...});
- * 
+ *
  * try {
  *   // 3. Process AI
  *   const result = await aiService.process(...);
- *   
+ *
  *   // 4. Commit on success
  *   await guard.commitReservation(resId);
  * } catch (error) {
@@ -84,9 +84,9 @@ export class VoiceQuotaGuardService {
 
   /**
    * PRE-FLIGHT CHECK
-   * 
+   *
    * Validates if user has enough quota BEFORE downloading/processing
-   * 
+   *
    * @param userId - User ID
    * @param type - 'mock' or 'real'
    * @param durationSeconds - Estimated duration
@@ -99,10 +99,7 @@ export class VoiceQuotaGuardService {
   ): Promise<PreFlightResult> {
     try {
       // Get user quota
-      const user = await this.userModel
-        .findById(userId)
-        .select('voiceQuota subscription')
-        .lean();
+      const user = await this.userModel.findById(userId).select('voiceQuota subscription').lean();
 
       if (!user) {
         return {
@@ -161,11 +158,11 @@ export class VoiceQuotaGuardService {
 
   /**
    * RESERVE QUOTA
-   * 
+   *
    * Soft-locks quota before processing. This prevents:
    * - Other requests from using the same quota
    * - Charging user if AI processing fails
-   * 
+   *
    * @param userId - User ID
    * @param type - 'mock' or 'real'
    * @param minutes - Minutes to reserve
@@ -214,9 +211,9 @@ export class VoiceQuotaGuardService {
 
   /**
    * COMMIT RESERVATION
-   * 
+   *
    * Converts reserved quota to used quota after AI processing succeeds
-   * 
+   *
    * @param reservationId - Reservation ID from reserveQuota()
    */
   async commitReservation(reservationId: string): Promise<void> {
@@ -265,7 +262,9 @@ export class VoiceQuotaGuardService {
         await this.voiceQuotaService.logUsage({
           userId: reservation.userId.toString(),
           type: reservation.type,
-          durationSeconds: reservation.context.actualDurationSeconds || reservation.context.estimatedDurationSeconds,
+          durationSeconds:
+            reservation.context.actualDurationSeconds ||
+            reservation.context.estimatedDurationSeconds,
           durationMinutes: reservation.minutes,
           interviewSessionId: reservation.context.sessionId,
         });
@@ -281,16 +280,19 @@ export class VoiceQuotaGuardService {
           `minutes=${reservation.minutes}, resId=${reservationId}, flow=${reservation.context.flow}`,
       );
     } catch (error: any) {
-      this.logger.error(`Failed to commit reservation ${reservationId}: ${error.message}`, error.stack);
+      this.logger.error(
+        `Failed to commit reservation ${reservationId}: ${error.message}`,
+        error.stack,
+      );
       throw error;
     }
   }
 
   /**
    * ROLLBACK RESERVATION
-   * 
+   *
    * Returns reserved quota to available pool if AI processing fails
-   * 
+   *
    * @param reservationId - Reservation ID from reserveQuota()
    * @param reason - Reason for rollback
    */
@@ -307,9 +309,7 @@ export class VoiceQuotaGuardService {
       }
 
       if (reservation.status !== 'reserved') {
-        this.logger.debug(
-          `Rollback skipped - already ${reservation.status}: ${reservationId}`,
-        );
+        this.logger.debug(`Rollback skipped - already ${reservation.status}: ${reservationId}`);
         return; // Already committed or rolled back
       }
 
@@ -325,14 +325,17 @@ export class VoiceQuotaGuardService {
           `minutes=${reservation.minutes}, resId=${reservationId}, reason=${reason}`,
       );
     } catch (error: any) {
-      this.logger.error(`Failed to rollback reservation ${reservationId}: ${error.message}`, error.stack);
+      this.logger.error(
+        `Failed to rollback reservation ${reservationId}: ${error.message}`,
+        error.stack,
+      );
       throw error;
     }
   }
 
   /**
    * AUTO-CLEANUP CRON JOB
-   * 
+   *
    * Runs every 5 minutes to rollback expired reservations
    * Prevents quota leakage from crashed/abandoned requests
    */
@@ -354,9 +357,7 @@ export class VoiceQuotaGuardService {
         return;
       }
 
-      this.logger.log(
-        `🧹 Cleaning up ${expiredReservations.length} expired voice reservations...`,
-      );
+      this.logger.log(`🧹 Cleaning up ${expiredReservations.length} expired voice reservations...`);
 
       let successCount = 0;
       let errorCount = 0;

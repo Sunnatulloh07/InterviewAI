@@ -5,9 +5,9 @@ export type DailyTaskDocument = DailyTask & Document;
 
 /**
  * DailyTask Schema - Embedded Array Approach
- * 
+ *
  * DESIGN DECISION: Use embedded array for tasks instead of separate documents
- * 
+ *
  * RATIONALE:
  * 1. Performance: 1 query gets all tasks (vs 3-10 queries for separate docs)
  * 2. Atomicity: MongoDB atomic updates with array operators
@@ -15,14 +15,14 @@ export type DailyTaskDocument = DailyTask & Document;
  * 4. Storage: Less overhead (1 doc vs 3-10 docs)
  * 5. Scalability: Bounded size (max 10 tasks/day = ~4KB doc)
  * 6. MongoDB Best Practice: Embedded docs for 1-to-few relationships
- * 
+ *
  * SCHEMA STRUCTURE:
  * - 1 document per user per day
  * - Unique index on (userId, date)
  * - Tasks stored as embedded array (max 10 items)
  * - Status tracking: pending → completed/expired
  * - Reminder tracking for engagement
- * 
+ *
  * @see https://www.mongodb.com/docs/manual/core/data-model-design/
  */
 @Schema({ timestamps: true })
@@ -36,6 +36,11 @@ export class DailyTask {
   @Prop({
     type: [
       {
+        questionId: {
+          type: MongooseSchema.Types.ObjectId,
+          ref: 'GeneratedQuestion',
+          required: false,
+        }, // Link to source
         question: { type: String, required: true },
         answer: { type: String }, // Text answer or transcript
         answerType: { type: String, enum: ['text', 'voice', 'image'] }, // ✅ NO VIDEO - Too expensive

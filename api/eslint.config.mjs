@@ -71,7 +71,7 @@ export default [
     },
   },
   {
-    ignores: ['dist/**', 'node_modules/**', 'coverage/**', '.eslintrc.js', 'test/**'],
+    ignores: ['dist/**', 'node_modules/**', 'coverage/**', '.eslintrc.js', 'test/**', '**/*.spec.ts'],
   },
 ];
 
