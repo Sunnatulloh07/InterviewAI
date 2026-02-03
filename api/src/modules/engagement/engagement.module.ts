@@ -18,6 +18,7 @@ import { FailedNotificationRetryService } from './failed-notification-retry.serv
 import { NotificationConsistencyChecker } from './notification-consistency-checker.service';
 import { TrialExpiredUserService } from './trial-expired-user.service';
 import { LimitExhaustedUserService } from './limit-exhausted-user.service';
+import { ProfileNormalizationService } from './profile-normalization.service';
 import { UsersModule } from '../users/users.module';
 import { InterviewsModule } from '../interviews/interviews.module';
 import { TelegramModule } from '../telegram/telegram.module';
@@ -62,6 +63,7 @@ import {
     NotificationConsistencyChecker,
     TrialExpiredUserService,
     LimitExhaustedUserService,
+    ProfileNormalizationService,
   ],
   exports: [
     NotificationLogRepository,
@@ -78,6 +80,7 @@ import {
     NotificationConsistencyChecker,
     TrialExpiredUserService,
     LimitExhaustedUserService,
+    ProfileNormalizationService,
   ],
 })
 export class EngagementModule {}

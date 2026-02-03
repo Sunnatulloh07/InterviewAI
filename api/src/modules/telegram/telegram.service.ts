@@ -49,6 +49,8 @@ export interface BotContext extends Context {
       jobRole?: string; // Legacy field
       interviewType?: string; // Legacy field
     };
+    // Profile update flow
+    profileUpdateStep?: 'waiting_for_description';
     liveSessionStep?:
       | 'domain'
       | 'technologies'
@@ -113,6 +115,7 @@ export class TelegramService implements OnModuleInit {
             pausedInterviewSessionId: undefined,
             // Live session metadata
             liveSessionMetadata: undefined,
+            profileUpdateStep: undefined,
           }),
         }),
       );
@@ -402,6 +405,12 @@ export class TelegramService implements OnModuleInit {
     // This handles answers during active interview sessions
     if (ctx.session.currentInterviewSessionId && ctx.session.currentQuestionIndex !== undefined) {
       await this.commandsService.handleInterviewText(ctx);
+      return;
+    }
+
+    // Check if user is updating profile (AI Normalization)
+    if (ctx.session.profileUpdateStep === 'waiting_for_description') {
+      await this.commandsService.handleProfileDescription(ctx, ctx.message?.text || '');
       return;
     }
 

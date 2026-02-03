@@ -22,6 +22,7 @@ import { DailyTasksService } from '../tasks/daily-tasks.service';
 import { OpenAI } from 'openai';
 import { createOpenAIClient, getModelName } from '@common/utils/openai-client.factory';
 import { COMPLETE_PLAN_LIMITS } from '../../common/constants/plan-limits.constant';
+import { ProfileNormalizationService } from '../engagement/profile-normalization.service';
 
 @Injectable()
 export class TelegramCommandsService {
@@ -49,6 +50,7 @@ export class TelegramCommandsService {
     @Inject(forwardRef(() => DailyTasksService))
     private readonly dailyTasksService: DailyTasksService,
     private readonly unregisteredUserService: UnregisteredUserService,
+    private readonly profileNormalizationService: ProfileNormalizationService,
   ) {
     // Initialize OpenAI client with support for both OpenAI and OpenRouter
     this.openai = createOpenAIClient(this.configService);
@@ -378,17 +380,20 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
           uz:
             '👋 Assalomu alaykum!\n\n' +
             "📊 <b>Lavozimingizni aniqlashdan oldin profil ko'rsatilmaydi.</b>\n\n" +
-            "<b>Hozirgi yoki oldingi ishingizda (yoki o'rgangan joyingizda) qaysi lavozimda edingiz?</b>\n\n" +
+            "<b>O'zingiz haqingizda qisqacha yozing yoki quyidagi tugmalardan birini tanlang.</b>\n" +
+            '<i>Masalan: "Men 3 yillik tajribaga ega React dasturchiman"</i>\n\n' +
             'Bu savollarga mos javoblar olishingiz uchun muhim.',
           ru:
             '👋 Здравствуйте!\n\n' +
             '📊 <b>Профиль не будет показан до подтверждения должности.</b>\n\n' +
-            '<b>На какой должности вы работаете/работали (или учились)?</b>\n\n' +
+            '<b>Напишите кратко о себе или выберите вариант ниже.</b>\n' +
+            '<i>Пример: "Я React разработчик с 3 годами опыта"</i>\n\n' +
             'Это важно для подбора подходящих вопросов.',
           en:
             '👋 Hello!\n\n' +
             "📊 <b>Profile won't be shown until position is confirmed.</b>\n\n" +
-            '<b>What position do you have/had at your current or previous job (or learned)?</b>\n\n' +
+            '<b>Write briefly about yourself or select an option below.</b>\n' +
+            '<i>Example: "I am a Senior React Developer with 3 years experience"</i>\n\n' +
             'This is important to provide you with appropriate questions.',
         };
 
@@ -424,6 +429,11 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
           parse_mode: 'HTML',
           reply_markup: keyboard,
         });
+
+        // Set session state to wait for description
+        if (ctx.session) {
+          ctx.session.profileUpdateStep = 'waiting_for_description';
+        }
 
         // Mark as prompted (prevent spam)
         await this.usersRepository.updateRaw((user._id as any).toString(), {
@@ -3354,5 +3364,74 @@ ${nextQuestion.codeSnippet ? `\n\`\`\`\n${nextQuestion.codeSnippet}\n\`\`\`\n` :
       (ctx.callbackQuery as any).data = data;
     }
     await this.handleCallbackQuery(ctx);
+  }
+
+  /**
+   * Handle text input for profile description (AI Normalization)
+   */
+  async handleProfileDescription(ctx: BotContext, text: string) {
+    try {
+      const telegramId = ctx.from?.id as number;
+      const user = await this.usersService.findByTelegramId(telegramId);
+      const lang = this.getUserLanguage(ctx, user);
+
+      if (!user) return;
+
+      // Send "Typing..." / "Thinking..." feedback
+      await ctx.reply(lang === 'uz' ? '🧠 AI tahlil qilmoqda...' : '🧠 AI is analyzing...', {
+        reply_to_message_id: ctx.message?.message_id,
+      });
+
+      // Call AI Service
+      const normalized = await this.profileNormalizationService.normalizeProfile(text);
+      this.logger.log(`AI Normalized Profile for ${telegramId}: ${JSON.stringify(normalized)}`);
+
+      // Update User Profile
+      await this.usersRepository.updateRaw((user._id as any).toString(), {
+        $set: {
+          'profile.position': normalized.position,
+          'profile.goal': normalized.goal,
+          'profile.techStack': normalized.techStack,
+          'engagement.positionConfirmed': true, // Auto-confirm since they typed it
+          'engagement.jobSeekingStatus':
+            normalized.goal === 'job_search' ? 'actively_looking' : 'employed',
+        },
+      });
+
+      // Clear session state
+      if (ctx.session) {
+        ctx.session.profileUpdateStep = undefined;
+      }
+
+      // Confirmation Message
+      const successText = {
+        uz:
+          `✅ <b>Profil yangilandi!</b>\n\n` +
+          `🔹 Lavozim: <b>${normalized.position.toUpperCase()}</b>\n` +
+          `🔹 Yo'nalish: <b>${normalized.goal}</b>\n` +
+          `🔹 Texnologiyalar: ${normalized.techStack.join(', ') || 'Aniqlanmadi'}\n\n` +
+          `Endi intervyu savollari sizga moslashtiriladi.`,
+        ru:
+          `✅ <b>Профиль обновлен!</b>\n\n` +
+          `🔹 Должность: <b>${normalized.position.toUpperCase()}</b>\n` +
+          `🔹 Цель: <b>${normalized.goal}</b>\n` +
+          `🔹 Технологии: ${normalized.techStack.join(', ') || 'Не определено'}\n\n` +
+          `Теперь вопросы будут подобраны под вас.`,
+        en:
+          `✅ <b>Profile updated!</b>\n\n` +
+          `🔹 Position: <b>${normalized.position.toUpperCase()}</b>\n` +
+          `🔹 Goal: <b>${normalized.goal}</b>\n` +
+          `🔹 Stack: ${normalized.techStack.join(', ') || 'Not detected'}\n\n` +
+          `Questions will now be tailored to your profile.`,
+      };
+
+      await ctx.reply(successText[lang] || successText.en, { parse_mode: 'HTML' });
+
+      // Show main menu
+      await this.showMainMenu(ctx, user);
+    } catch (error: any) {
+      this.logger.error(`Failed to handle profile description: ${error.message}`);
+      await ctx.reply('❌ Error updating profile. Please try selecting from buttons.');
+    }
   }
 }
