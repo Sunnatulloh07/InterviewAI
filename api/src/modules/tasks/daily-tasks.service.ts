@@ -293,9 +293,17 @@ export class DailyTasksService {
     const mongoose = require('mongoose');
     const userObjectId = new mongoose.Types.ObjectId(userId);
 
+    // 🔧 CRITICAL FIX: Use date range instead of exact match
+    // Solves milliseconds mismatch issue (e.g., 19:00:00.000 vs 19:00:00.001)
+    // Query: date >= today 00:00:00 AND date < tomorrow 00:00:00
+    const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+
     const result = await this.dailyTaskModel.findOne({
       userId: userObjectId, // ✅ ObjectId matching
-      date: today,
+      date: {
+        $gte: today, // Greater than or equal to today midnight
+        $lt: tomorrow, // Less than tomorrow midnight
+      },
     });
 
     if (!result) {
@@ -306,7 +314,7 @@ export class DailyTasksService {
         `🔥 getTodayTasks - NO MATCH | ` +
         `userId: ${userId} | ` +
         `ObjectId: ${userObjectId} | ` +
-        `Searching date: ${today.toISOString()} | ` +
+        `Date range: ${today.toISOString()} to ${tomorrow.toISOString()} | ` +
         `Latest task date: ${anyTask ? new Date(anyTask.date).toISOString() : 'NONE'} | ` +
         `Latest task ID: ${anyTask ? anyTask._id : 'N/A'}`,
       );
@@ -314,7 +322,8 @@ export class DailyTasksService {
       this.logger.log(
         `✅ getTodayTasks - FOUND | ` +
         `userId: ${userId} | ` +
-        `date: ${today.toISOString()} | ` +
+        `date range: ${today.toISOString()} to ${tomorrow.toISOString()} | ` +
+        `actual date: ${result.date} | ` +
         `tasks: ${result.tasks.length} | ` +
         `incomplete: ${result.tasks.filter((t) => !t.completed).length}`,
       );

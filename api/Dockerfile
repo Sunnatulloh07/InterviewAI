@@ -25,6 +25,15 @@ FROM node:20-alpine
 
 WORKDIR /app
 
+# 🔧 CRITICAL FIX: Force UTC timezone
+# Server might be in UK/Germany timezone, causing cron to run at wrong times
+# This ensures all date/time operations use UTC regardless of server location
+ENV TZ=UTC
+RUN apk add --no-cache tzdata && \
+    cp /usr/share/zoneinfo/UTC /etc/localtime && \
+    echo "UTC" > /etc/timezone && \
+    apk del tzdata
+
 # Copy dependency manifests
 COPY package.json package-lock.json ./
 
@@ -49,5 +58,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s \
   CMD node -e "require('http').get('http://localhost:3000/health', (r) => { process.exit(r.statusCode === 200 ? 0 : 1) })"
 
-# Start the application
-CMD ["node", "dist/main.js"]
+# 🔧 CRITICAL: Set TZ in CMD as well (some Node.js versions ignore ENV)
+CMD ["sh", "-c", "TZ=UTC node dist/main.js"]

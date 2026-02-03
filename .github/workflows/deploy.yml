@@ -104,6 +104,7 @@ jobs:
             cat > .env << 'EOF'
             NODE_ENV=production
             PORT=3000
+            TZ=UTC
             ALLOWED_ORIGINS=https://interviewai.pro,https://www.interviewai.pro
             
             MONGODB_URI=mongodb://${{ secrets.MONGODB_ROOT_USERNAME }}:${{ secrets.MONGODB_ROOT_PASSWORD }}@mongodb:27017/${{ secrets.MONGODB_DB_NAME }}?authSource=admin
@@ -155,6 +156,7 @@ jobs:
                 env_file:
                   - .env
                 environment:
+                  - TZ=UTC
                   - MONGODB_URI=mongodb://${MONGODB_ROOT_USERNAME}:${MONGODB_ROOT_PASSWORD}@mongodb:27017/${MONGODB_DB_NAME}?authSource=admin
                   - REDIS_HOST=redis
                   - REDIS_PORT=6379
