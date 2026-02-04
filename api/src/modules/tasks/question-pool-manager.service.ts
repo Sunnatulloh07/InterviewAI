@@ -44,10 +44,10 @@ export class QuestionPoolManagerService {
     { position: 'junior', type: 'technical', domains: ['frontend', 'backend', 'mobile', 'general'] },
     { position: 'junior', type: 'behavioral', domains: ['general'] },
     
-    // Mid
-    { position: 'mid', type: 'technical', domains: ['frontend', 'backend', 'mobile', 'fullstack', 'general'] },
-    { position: 'mid', type: 'behavioral', domains: ['general'] },
-    { position: 'mid', type: 'system_design', domains: ['general'] },
+    // Middle (not 'mid' - must match schema enum!)
+    { position: 'middle', type: 'technical', domains: ['frontend', 'backend', 'mobile', 'fullstack', 'general'] },
+    { position: 'middle', type: 'behavioral', domains: ['general'] },
+    { position: 'middle', type: 'system_design', domains: ['general'] },
     
     // Senior
     { position: 'senior', type: 'technical', domains: ['frontend', 'backend', 'mobile', 'fullstack', 'devops', 'general'] },
