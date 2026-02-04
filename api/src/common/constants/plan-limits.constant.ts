@@ -57,6 +57,10 @@ export interface PlanLimits {
     taskCompletionCheck: 'basic' | 'advanced' | 'ai-powered';
     personalizedHints?: boolean;
     progressTracking?: 'basic' | 'advanced';
+    monthlyAIReport?: boolean; // 🆕 Monthly AI analysis (Starter+)
+    weeklyAIRecommendations?: boolean; // 🆕 Weekly tips (Pro+)
+    weeklyRoadmap?: boolean; // 🆕 Career roadmap (Elite only)
+    careerGrowthInsights?: boolean; // 🆕 Career analysis (Elite only)
     oneOnOneCoaching?: boolean; // Elite only
     prioritySupport?: boolean; // Elite only
     customInterviews?: boolean; // Elite only
@@ -70,30 +74,32 @@ export const COMPLETE_PLAN_LIMITS: Record<string, PlanLimits> = {
   /**
    * FREE TRIAL PLAN (7 days)
    * Default plan for new users
+   * 
+   * 🆕 NEW STRUCTURE (2024):
+   * - 1 mock interview (2 minutes voice limit)
+   * - 1 CV analysis
+   * - 0 real interview minutes
+   * - NO daily tasks
    */
   free_trial: {
     voice: {
-      mockVoice: 5, // 5 minutes per month
+      mockVoice: 2, // 🔥 NEW: 5 → 2 minutes (1 short interview only)
       realVoice: 0, // NO real interview voice
     },
 
     mockInterviews: {
-      perMonth: 5, // ✅ FIX: 3 → 5 (per PROJECT_OVERVIEW_V2.md)
+      perMonth: 1, // 🔥 NEW: 5 → 1 interview only (taste test)
       questionsPerInterview: 10,
     },
 
     cvAnalysis: {
-      perMonth: 1, // ✅ FIX: 2 → 1 (per PROJECT_OVERVIEW_V2.md)
+      perMonth: 1, // Keep as 1
       maxFileSize: 5, // 5 MB max
       allowedFormats: ['pdf', 'docx', 'txt'],
     },
 
-    // ⚠️ CRITICAL FIX: Free trial does NOT get daily tasks
-    // REASON: daily-tasks.service.ts only delivers to PAID users (starter/pro/elite)
-    // AUDIT CONFLICT: Spec says enabled=true but implementation disagrees
-    // RESOLUTION: Set to FALSE to match actual behavior
     dailyTasks: {
-      enabled: false, // ❌ FREE TRIAL DOES NOT GET DAILY TASKS (per implementation)
+      enabled: false, // ❌ FREE TRIAL DOES NOT GET DAILY TASKS
       questionsPerDay: 0,
       voiceAnswer: false,
       imageAnswer: false,
@@ -120,27 +126,34 @@ export const COMPLETE_PLAN_LIMITS: Record<string, PlanLimits> = {
   /**
    * STARTER PLAN ($9.99/month)
    * Entry-level paid plan
+   * 
+   * 🆕 NEW STRUCTURE (2024):
+   * - 1 daily task (not 3!) - cost optimization
+   * - Monthly AI analysis (end of month report with feedback)
+   * - 10 mock interviews
+   * - 5 CV analyses
+   * - Basic progress tracking
    */
   starter: {
     voice: {
-      mockVoice: 10, // 5 → 10 minutes
-      realVoice: 15, // 0 → 15 minutes (NEW!)
+      mockVoice: 10, // 10 minutes per month
+      realVoice: 15, // 15 minutes real interview assistance
     },
 
     mockInterviews: {
-      perMonth: 10, // 3 → 10 interviews
+      perMonth: 10, // 10 interviews
       questionsPerInterview: 15,
     },
 
     cvAnalysis: {
-      perMonth: 5, // 2 → 5 analyses
-      maxFileSize: 10, // 5 → 10 MB
+      perMonth: 5, // 5 analyses
+      maxFileSize: 10, // 10 MB
       allowedFormats: ['pdf', 'docx', 'txt', 'rtf'],
     },
 
     dailyTasks: {
       enabled: true,
-      questionsPerDay: 3,
+      questionsPerDay: 1, // 🔥 NEW: 3 → 1 (cost optimization!)
       voiceAnswer: true, // ✅ Can answer with voice!
       imageAnswer: true, // ✅ Can answer with image!
       videoAnswer: false, // ❌ Video only in PRO+
@@ -160,33 +173,42 @@ export const COMPLETE_PLAN_LIMITS: Record<string, PlanLimits> = {
       detailedAnalysis: true, // ✅ Detailed analysis enabled
       voiceExplanations: true, // ✅ Voice explanations enabled
       taskCompletionCheck: 'advanced', // Better AI checking
+      progressTracking: 'basic', // Basic progress only
+      monthlyAIReport: true, // 🔥 NEW: Monthly AI analysis report
     },
   },
 
   /**
    * PRO PLAN ($19.99/month)
    * Professional plan with advanced features
+   * 
+   * 🆕 NEW STRUCTURE (2024):
+   * - 1 daily task (same as Starter but with better tracking)
+   * - Daily progress tracking
+   * - Weekly AI recommendations
+   * - 30 mock interviews
+   * - 15 CV analyses
    */
   pro: {
     voice: {
-      mockVoice: 30, // 10 → 30 minutes
-      realVoice: 45, // 15 → 45 minutes
+      mockVoice: 30, // 30 minutes per month
+      realVoice: 45, // 45 minutes real interview
     },
 
     mockInterviews: {
-      perMonth: 30, // 10 → 30 interviews
+      perMonth: 30, // 30 interviews
       questionsPerInterview: 20,
     },
 
     cvAnalysis: {
-      perMonth: 15, // 5 → 15 analyses
-      maxFileSize: 20, // 10 → 20 MB
+      perMonth: 15, // 15 analyses
+      maxFileSize: 20, // 20 MB
       allowedFormats: ['pdf', 'docx', 'txt', 'rtf', 'odt'],
     },
 
     dailyTasks: {
       enabled: true,
-      questionsPerDay: 5, // 3 → 5 questions!
+      questionsPerDay: 1, // 🔥 NEW: 5 → 1 (cost optimization!)
       voiceAnswer: true,
       imageAnswer: true,
       videoAnswer: false, // ❌ NO VIDEO - Too expensive for AI processing
@@ -219,18 +241,28 @@ export const COMPLETE_PLAN_LIMITS: Record<string, PlanLimits> = {
       voiceExplanations: true,
       taskCompletionCheck: 'ai-powered', // Full AI analysis
       personalizedHints: true, // Custom hints
-      progressTracking: 'advanced',
+      progressTracking: 'advanced', // 🔥 Daily progress tracking
+      weeklyAIRecommendations: true, // 🔥 NEW: Weekly AI tips
+      monthlyAIReport: true, // Monthly summary
     },
   },
 
   /**
    * ELITE PLAN ($29.99/month)
    * Premium plan with maximum features
+   * 
+   * 🆕 NEW STRUCTURE (2024):
+   * - 2 daily tasks (more practice than Starter/Pro)
+   * - Daily progress tracking
+   * - Weekly AI roadmap recommendations
+   * - Career growth insights
+   * - Unlimited mock interviews
+   * - Unlimited CV analyses
    */
   elite: {
     voice: {
-      mockVoice: 60, // 30 → 60 minutes
-      realVoice: 120, // 45 → 120 minutes
+      mockVoice: 60, // 60 minutes per month
+      realVoice: 120, // 120 minutes real interview
     },
 
     mockInterviews: {
@@ -240,13 +272,13 @@ export const COMPLETE_PLAN_LIMITS: Record<string, PlanLimits> = {
 
     cvAnalysis: {
       perMonth: -1, // UNLIMITED!
-      maxFileSize: 50, // 20 → 50 MB
+      maxFileSize: 50, // 50 MB
       allowedFormats: '*', // ALL formats
     },
 
     dailyTasks: {
       enabled: true,
-      questionsPerDay: 10, // 5 → 10 questions!
+      questionsPerDay: 2, // 🔥 NEW: 10 → 2 (cost optimization + better than Starter/Pro)
       voiceAnswer: true,
       imageAnswer: true,
       videoAnswer: false, // ❌ NO VIDEO - Too expensive for AI processing
@@ -269,7 +301,11 @@ export const COMPLETE_PLAN_LIMITS: Record<string, PlanLimits> = {
       voiceExplanations: true,
       taskCompletionCheck: 'ai-powered',
       personalizedHints: true,
-      progressTracking: 'advanced',
+      progressTracking: 'advanced', // 🔥 Daily progress tracking
+      weeklyAIRecommendations: true, // 🔥 Weekly AI tips
+      weeklyRoadmap: true, // 🔥 NEW: Career roadmap recommendations
+      monthlyAIReport: true, // 🔥 Detailed monthly report
+      careerGrowthInsights: true, // 🔥 NEW: Career growth analysis
       oneOnOneCoaching: true, // ✅ Personal coaching
       prioritySupport: true, // ✅ Priority support
       customInterviews: true, // ✅ Custom interview creation

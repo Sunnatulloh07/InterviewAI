@@ -183,60 +183,75 @@ export class DailyTasksService {
               continue;
             }
 
-            // Generate 3 questions for the day using priority-based provider
+            // 🎯 PLAN-BASED TASK GENERATION
+            // Starter/Pro: 1 task per day
+            // Elite: 2 tasks per day
             const position = user.profile?.position || 'junior';
             const techStack = user.profile?.techStack || [];
             const domain = this.detectDomain(techStack);
 
-            // 🚀 PERFORMANCE OPTIMIZATION: Fetch user data once for all 3 questions
-            // This avoids 3 separate DB queries (1 query instead of 3)
+            // 🚀 PERFORMANCE OPTIMIZATION: Fetch user data once for all questions
             const userFull = await this.userModel
               .findById(user._id)
               .select('subscription seenQuestionIds')
               .lean();
 
+            const userPlan = userFull?.subscription?.plan || 'free_trial';
             const userCache = {
-              plan: userFull?.subscription?.plan || 'free_trial',
+              plan: userPlan,
               seenIds: (userFull as any)?.seenQuestionIds || [],
             };
 
-            const [technical, behavioral, systemDesign] = await Promise.all([
-              this.priorityProvider.getQuestionByPriority(user._id.toString(), position, 'technical', domain, userCache),
-              this.priorityProvider.getQuestionByPriority(user._id.toString(), position, 'behavioral', domain, userCache),
-              position !== 'junior'
-                ? this.priorityProvider.getQuestionByPriority(user._id.toString(), position, 'system_design', domain, userCache)
-                : Promise.resolve({ question: null as any, questionId: null, source: 'none' as any, priority: 'free' as any }),
-            ]);
+            // 🔥 NEW: Get plan-specific task count
+            const planLimits = getPlanLimits(userPlan);
+            const tasksPerDay = planLimits.dailyTasks.questionsPerDay;
 
-            // 🛡 CRITICAL: Validate questions before creating tasks
-            // Fallback should always return a question, but just in case...
-            if (!technical.question || !behavioral.question) {
+            this.logger.debug(`User ${user._id} (${userPlan}): Generating ${tasksPerDay} tasks`);
+
+            // Generate questions based on plan
+            const questions: any[] = [];
+            
+            if (tasksPerDay >= 1) {
+              // All plans get at least 1 technical question
+              const technical = await this.priorityProvider.getQuestionByPriority(
+                user._id.toString(), position, 'technical', domain, userCache
+              );
+              questions.push(technical);
+            }
+
+            if (tasksPerDay >= 2) {
+              // Elite gets 2nd question (behavioral or system_design based on level)
+              const secondType = position !== 'junior' ? 'system_design' : 'behavioral';
+              const second = await this.priorityProvider.getQuestionByPriority(
+                user._id.toString(), position, secondType, domain, userCache
+              );
+              questions.push(second);
+            }
+
+            // Validate at least 1 question exists
+            if (questions.length === 0 || !questions[0].question) {
               this.logger.error(
-                `❌ Failed to generate questions for user ${user._id}: ` +
-                `technical=${!!technical.question}, behavioral=${!!behavioral.question}`,
+                `❌ Failed to generate questions for user ${user._id} (${userPlan}): no valid questions`,
               );
               errorCount++;
-              continue; // Skip this user - don't create empty tasks
+              continue; // Skip this user
             }
 
-            const tasks = [
-              { question: technical.question, questionId: technical.questionId, completed: false },
-              { question: behavioral.question, questionId: behavioral.questionId, completed: false },
-            ];
-
-            // Add system design only for non-juniors (or if valid question generated)
-            if (position !== 'junior' && systemDesign.question) {
-              tasks.push({
-                question: systemDesign.question,
-                questionId: systemDesign.questionId,
+            // Build tasks array
+            const tasks = questions
+              .filter(q => q && q.question) // Only valid questions
+              .map(q => ({
+                question: q.question,
+                questionId: q.questionId,
                 completed: false,
-              });
-            }
+              }));
 
             // 🛡 PHASE 1.4: CRITICAL FIX - Update seen IDs BEFORE creating task
             // This prevents duplicate questions if task creation fails
             // SEQUENTIAL LEARNING LOGIC
-            const newIds = [technical.questionId, behavioral.questionId, systemDesign?.questionId].filter((id) => id);
+            const newIds = questions
+              .map(q => q?.questionId)
+              .filter((id) => id);
 
             if (newIds.length > 0) {
               // Batch update for this user FIRST
@@ -1218,50 +1233,60 @@ Provide your response in JSON format:
             const techStack = user.profile?.techStack || [];
             const domain = this.detectDomain(techStack);
 
-            // 🚀 PERFORMANCE OPTIMIZATION: Fetch user data once for all 3 questions
+            // 🚀 PERFORMANCE OPTIMIZATION: Fetch user data once
             const userFull = await this.userModel
               .findById(user._id)
               .select('subscription seenQuestionIds')
               .lean();
 
+            const userPlan = userFull?.subscription?.plan || 'free_trial';
             const userCache = {
-              plan: userFull?.subscription?.plan || 'free_trial',
+              plan: userPlan,
               seenIds: (userFull as any)?.seenQuestionIds || [],
             };
 
-            const [technical, behavioral, systemDesign] = await Promise.all([
-              this.priorityProvider.getQuestionByPriority(user._id.toString(), position, 'technical', domain, userCache),
-              this.priorityProvider.getQuestionByPriority(user._id.toString(), position, 'behavioral', domain, userCache),
-              position !== 'junior'
-                ? this.priorityProvider.getQuestionByPriority(user._id.toString(), position, 'system_design', domain, userCache)
-                : Promise.resolve({ question: null as any, questionId: null, source: 'none' as any, priority: 'free' as any }),
-            ]);
+            // 🔥 NEW: Get plan-specific task count
+            const planLimits = getPlanLimits(userPlan);
+            const tasksPerDay = planLimits.dailyTasks.questionsPerDay;
 
-            // 🛡 CRITICAL: Validate questions before creating tasks
-            if (!technical.question || !behavioral.question) {
-              this.logger.error(
-                `❌ Failed to generate questions for missed user ${user._id}: ` +
-                `technical=${!!technical.question}, behavioral=${!!behavioral.question}`,
+            // Generate questions based on plan
+            const questions: any[] = [];
+            
+            if (tasksPerDay >= 1) {
+              const technical = await this.priorityProvider.getQuestionByPriority(
+                user._id.toString(), position, 'technical', domain, userCache
               );
+              questions.push(technical);
+            }
+
+            if (tasksPerDay >= 2) {
+              const secondType = position !== 'junior' ? 'system_design' : 'behavioral';
+              const second = await this.priorityProvider.getQuestionByPriority(
+                user._id.toString(), position, secondType, domain, userCache
+              );
+              questions.push(second);
+            }
+
+            // Validate
+            if (questions.length === 0 || !questions[0].question) {
+              this.logger.error(`❌ Failed to generate questions for missed user ${user._id}`);
               failed++;
-              continue; // Skip this user
+              continue;
             }
 
-            const tasks = [
-              { question: technical.question, questionId: technical.questionId, completed: false },
-              { question: behavioral.question, questionId: behavioral.questionId, completed: false },
-            ];
-
-            if (systemDesign.question) {
-              tasks.push({
-                question: systemDesign.question,
-                questionId: systemDesign.questionId,
+            // Build tasks
+            const tasks = questions
+              .filter(q => q && q.question)
+              .map(q => ({
+                question: q.question,
+                questionId: q.questionId,
                 completed: false,
-              });
-            }
+              }));
 
-            // 🛡 PHASE 1.4: Update seen IDs BEFORE creating task (same fix as main delivery)
-            const newIds = [technical.questionId, behavioral.questionId, systemDesign?.questionId].filter((id) => id);
+            // 🛡 Update seen IDs
+            const newIds = questions
+              .map(q => q?.questionId)
+              .filter((id) => id);
 
             if (newIds.length > 0) {
               await this.userModel.updateOne(
