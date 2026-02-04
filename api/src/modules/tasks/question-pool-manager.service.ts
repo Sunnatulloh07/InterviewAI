@@ -67,16 +67,20 @@ export class QuestionPoolManagerService {
     private readonly configService: ConfigService,
   ) {
     // Initialize OpenRouter client
-    const apiKey = this.configService.get<string>('OPENROUTER_API_KEY');
-    if (apiKey) {
+    // 🔧 FIX: Use OPENAI_API_KEY instead of OPENROUTER_API_KEY (consistent with daily-tasks.service.ts)
+    const apiKey = this.configService.get<string>('OPENAI_API_KEY');
+    if (apiKey && apiKey.trim() && !apiKey.includes('your-')) {
       this.openai = new OpenAI({
         baseURL: 'https://openrouter.ai/api/v1',
         apiKey: apiKey,
         defaultHeaders: {
-          'HTTP-Referer': 'https://interviewai.uz',
-          'X-Title': 'InterviewAI Pro',
+          'HTTP-Referer': this.configService.get<string>('OPENROUTER_HTTP_REFERER') || 'https://interviewai.pro',
+          'X-Title': this.configService.get<string>('OPENROUTER_X_TITLE') || 'InterviewAI Pro',
         },
       });
+      this.logger.log('✅ OpenAI/OpenRouter client initialized successfully');
+    } else {
+      this.logger.warn('⚠️  OPENAI_API_KEY not configured - pool generation will be skipped!');
     }
   }
 
