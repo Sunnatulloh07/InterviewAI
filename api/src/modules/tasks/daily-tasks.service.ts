@@ -158,7 +158,7 @@ export class DailyTasksService {
           .find(query)
           .sort({ _id: 1 }) // Important: consistent ordering
           .limit(BATCH_SIZE)
-          .select('_id telegramId profile subscription seenQuestionIds')
+          .select('_id telegramId profile subscription seenQuestionIds language preferences') // 🌍 Add language
           .lean();
 
         if (userBatch.length === 0) {
@@ -191,11 +191,13 @@ export class DailyTasksService {
             const domain = this.detectDomain(techStack);
 
             // 🚀 PERFORMANCE OPTIMIZATION: Use data from batch query (no additional DB call!)
-            // userBatch already has: subscription, seenQuestionIds
+            // userBatch already has: subscription, seenQuestionIds, language, preferences
             const userPlan = user.subscription?.plan || 'free_trial';
+            const userLanguage = (user as any).preferences?.language || (user as any).language || 'en'; // 🌍 Get language
             const userCache = {
               plan: userPlan,
               seenIds: (user as any)?.seenQuestionIds || [],
+              language: userLanguage, // 🌍 Add language to cache
             };
 
             // 🔥 NEW: Get plan-specific task count
@@ -1220,7 +1222,7 @@ Provide your response in JSON format:
 
         const missedUsers = await this.userModel
           .find({ _id: { $in: batch } })
-          .select('_id telegramId profile subscription seenQuestionIds')
+          .select('_id telegramId profile subscription seenQuestionIds language preferences') // 🌍 Add language
           .lean();
 
         for (const user of missedUsers) {
@@ -1231,9 +1233,11 @@ Provide your response in JSON format:
 
             // 🚀 PERFORMANCE OPTIMIZATION: Use data from batch query (no additional DB call!)
             const userPlan = user.subscription?.plan || 'free_trial';
+            const userLanguage = (user as any).preferences?.language || (user as any).language || 'en'; // 🌍 Get language
             const userCache = {
               plan: userPlan,
               seenIds: (user as any)?.seenQuestionIds || [],
+              language: userLanguage, // 🌍 Add language to cache
             };
 
             // 🔥 NEW: Get plan-specific task count

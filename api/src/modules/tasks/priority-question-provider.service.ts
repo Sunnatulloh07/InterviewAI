@@ -61,44 +61,48 @@ export class PriorityQuestionProviderService {
     position: 'junior' | 'middle' | 'senior' | 'lead',
     type: 'technical' | 'behavioral' | 'system_design',
     domain: string,
-    userCache?: { plan: string; seenIds: any[] },
+    userCache?: { plan: string; seenIds: any[]; language?: string }, // 🌍 Add language to cache
   ): Promise<{ question: string; questionId: any; source: 'pool' | 'ai' | 'fallback'; priority: 'premium' | 'free' }> {
     try {
       let plan: string;
       let seenIds: any[];
+      let language: string;
 
       // 🚀 PERFORMANCE: Use cached user data if provided (avoid DB query)
       if (userCache) {
         plan = userCache.plan;
         seenIds = userCache.seenIds;
-        this.logger.debug(`Using cached user data (plan=${plan}, seenCount=${seenIds.length})`);
+        language = userCache.language || 'en'; // 🌍 Get language from cache
+        this.logger.debug(`Using cached user data (plan=${plan}, lang=${language}, seenCount=${seenIds.length})`);
       } else {
         // Get user with seen history from DB
         const user = await this.userModel
           .findById(userId)
-          .select('subscription seenQuestionIds')
+          .select('subscription seenQuestionIds language preferences') // 🌍 Add language + preferences
           .lean();
         
         if (!user) {
           this.logger.error(`User ${userId} not found!`);
-          // Fallback to free logic
-          return await this.getForFreeUser(position, type, domain, []);
+          // Fallback to free logic with default language
+          return await this.getForFreeUser(position, type, domain, [], 'en');
         }
 
         plan = user.subscription?.plan || 'free_trial';
         seenIds = (user as any).seenQuestionIds || [];
+        // 🌍 Get language from user preferences or language field
+        language = (user as any).preferences?.language || (user as any).language || 'en';
       }
 
       const isPremium = this.isPremiumPlan(plan);
 
       this.logger.debug(
-        `User ${userId}: plan=${plan}, isPremium=${isPremium}, seenCount=${seenIds.length}`,
+        `User ${userId}: plan=${plan}, lang=${language}, isPremium=${isPremium}, seenCount=${seenIds.length}`,
       );
 
       if (isPremium) {
-        return await this.getForPremiumUser(userId, position, type, domain, seenIds);
+        return await this.getForPremiumUser(userId, position, type, domain, seenIds, language); // 🌍 Pass language
       } else {
-        return await this.getForFreeUser(position, type, domain, seenIds);
+        return await this.getForFreeUser(position, type, domain, seenIds, language); // 🌍 Pass language
       }
     } catch (error: any) {
       this.logger.error(
@@ -147,17 +151,19 @@ export class PriorityQuestionProviderService {
     type: string,
     domain: string,
     seenIds: any[],
+    language: string, // 🌍 Language parameter
   ): Promise<any> {
-    // 🔍 STEP 1: Check unseen questions in pool
+    // 🔍 STEP 1: Check unseen questions in pool (with language filter)
     const unseenCount = await this.safeProvider.countUnseenQuestions(
       position,
       type,
       domain,
+      language, // 🌍 Pass language
       seenIds,
     );
 
     this.logger.log(
-      `👑 Premium user ${userId}: ${position}/${type}/${domain} - ` +
+      `👑 Premium user ${userId}: ${position}/${type}/${domain}/${language} - ` +
       `Unseen pool questions: ${unseenCount} (threshold: ${this.MIN_UNSEEN_THRESHOLD})`,
     );
 
@@ -175,6 +181,7 @@ export class PriorityQuestionProviderService {
         domain,
         seenIds,
         false, // 💰 NO AI needed - pool has enough questions!
+        language, // 🌍 Pass language
       );
 
       return {
@@ -194,6 +201,7 @@ export class PriorityQuestionProviderService {
         domain,
         seenIds,
         true, // ✅ AI allowed - need to generate new questions!
+        language, // 🌍 Pass language
       );
 
       return {
@@ -217,16 +225,18 @@ export class PriorityQuestionProviderService {
     type: string,
     domain: string,
     seenIds: any[],
+    language: string, // 🌍 Language parameter
   ): Promise<any> {
     const unseenCount = await this.safeProvider.countUnseenQuestions(
       position,
       type,
       domain,
+      language, // 🌍 Pass language
       seenIds,
     );
 
     this.logger.log(
-      `🆓 Free user: ${position}/${type}/${domain} - Unseen pool: ${unseenCount}`,
+      `🆓 Free user: ${position}/${type}/${domain}/${language} - Unseen pool: ${unseenCount}`,
     );
 
     // 🔥 CRITICAL: allowAI=false to prevent AI generation for free users!
@@ -236,6 +246,7 @@ export class PriorityQuestionProviderService {
       domain,
       seenIds,
       false, // 💰 NO AI generation for free users = 100% cost savings!
+      language, // 🌍 Pass language
     );
 
     return {

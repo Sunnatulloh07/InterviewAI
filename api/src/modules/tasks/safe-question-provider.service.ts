@@ -59,6 +59,7 @@ export class SafeQuestionProviderService {
    * 
    * @param seenQuestionIds - Questions user has already seen (for sequential learning)
    * @param allowAI - Whether to allow AI generation (false for free users to save costs)
+   * @param language - User's preferred language (uz/ru/en)
    * @returns Always returns a question (never fails!)
    */
   async getQuestionSafely(
@@ -67,16 +68,17 @@ export class SafeQuestionProviderService {
     domain: string,
     seenQuestionIds: any[] = [],
     allowAI: boolean = true,
+    language: string = 'en', // 🌍 New parameter
   ): Promise<{ question: string; questionId: any; source: 'pool' | 'ai' | 'fallback' }> {
-    this.logger.debug(`Getting question: ${position}/${type}/${domain} (${seenQuestionIds.length} seen, AI=${allowAI})`);
+    this.logger.debug(`Getting question: ${position}/${type}/${domain}/${language} (${seenQuestionIds.length} seen, AI=${allowAI})`);
 
     // ═══════════════════════════════════════════════════════
     // LEVEL 1: Try Pool First (Fast & Free)
     // ═══════════════════════════════════════════════════════
     try {
-      const poolQuestion = await this.getFromPool(position, type, domain, seenQuestionIds);
+      const poolQuestion = await this.getFromPool(position, type, domain, language, seenQuestionIds);
       if (poolQuestion) {
-        this.logger.debug(`✅ Found in pool: ${poolQuestion._id}`);
+        this.logger.debug(`✅ Found in pool: ${poolQuestion._id} (${language})`);
         
         // Increment usage counter (fire-and-forget)
         this.incrementUsageCount(poolQuestion._id).catch(() => {});
@@ -132,15 +134,16 @@ export class SafeQuestionProviderService {
   }
 
   /**
-   * 📦 LEVEL 1: Get from Pool (excluding seen questions)
+   * 📦 LEVEL 1: Get from Pool (excluding seen questions, with language filter)
    */
   private async getFromPool(
     position: string,
     type: string,
     domain: string,
+    language: string, // 🌍 Language filter
     seenQuestionIds: any[] = [],
   ): Promise<any> {
-    const query: any = { position, type, domain };
+    const query: any = { position, type, domain, language }; // 🌍 Add language
     
     // 🔥 CRITICAL: Exclude questions user has already seen (sequential learning)
     if (seenQuestionIds.length > 0) {
@@ -150,22 +153,23 @@ export class SafeQuestionProviderService {
     return await this.questionModel
       .findOne(query)
       .sort({ createdAt: 1 }) // FIFO - oldest first (sequential learning)
-      .select('question _id')
+      .select('question _id language') // 🌍 Include language in select
       .lean()
       .exec();
   }
 
   /**
-   * 📊 Count unseen questions in pool
+   * 📊 Count unseen questions in pool (with language filter)
    * Used to determine if AI generation is needed
    */
   async countUnseenQuestions(
     position: string,
     type: string,
     domain: string,
+    language: string, // 🌍 Language filter
     seenQuestionIds: any[] = [],
   ): Promise<number> {
-    const query: any = { position, type, domain };
+    const query: any = { position, type, domain, language }; // 🌍 Add language
     
     if (seenQuestionIds.length > 0) {
       query._id = { $nin: seenQuestionIds };
