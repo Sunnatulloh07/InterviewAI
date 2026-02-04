@@ -6,6 +6,7 @@ import { AIQuestionGeneratorService } from './ai-question-generator.service';
 import { SegmentQuestionGeneratorService } from './segment-question-generator.service';
 import { QuestionPoolManagerService } from './question-pool-manager.service';
 import { SafeQuestionProviderService } from './safe-question-provider.service';
+import { PriorityQuestionProviderService } from './priority-question-provider.service';
 import { DailyTask, DailyTaskSchema } from './schemas/daily-task.schema';
 import { CareerPath, CareerPathSchema } from './schemas/career-path.schema';
 import { SegmentQuestion, SegmentQuestionSchema } from './schemas/segment-question.schema';
@@ -35,7 +36,8 @@ import { EngagementModule } from '../engagement/engagement.module';
     AIQuestionGeneratorService,
     SegmentQuestionGeneratorService,
     QuestionPoolManagerService, // 🏭 Background question pool manager
-    SafeQuestionProviderService, // 🛡️ NEW: Safe 3-level question provider
+    SafeQuestionProviderService, // 🛡️ Safe 3-level question provider
+    PriorityQuestionProviderService, // 🎯 Priority-based provider (premium vs free)
   ],
   exports: [
     DailyTasksService,
@@ -43,6 +45,7 @@ import { EngagementModule } from '../engagement/engagement.module';
     SegmentQuestionGeneratorService,
     QuestionPoolManagerService,
     SafeQuestionProviderService,
+    PriorityQuestionProviderService,
   ],
 })
 export class TasksModule {}
