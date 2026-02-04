@@ -75,8 +75,13 @@ export class AppController {
         timestamp: new Date().toISOString(),
         summary: {
           total: stats.reduce((sum: number, s: any) => sum + s.count, 0),
-          healthy: stats.filter((s: any) => s.count >= 30).length,
-          warning: stats.filter((s: any) => s.count < 30).length,
+          healthy: stats.filter((s: any) => s.count >= s.min).length,
+          warning: stats.filter((s: any) => s.count < s.min).length,
+          byPriority: {
+            high: stats.filter((s: any) => s.priority === 'high').reduce((sum: number, s: any) => sum + s.count, 0),
+            medium: stats.filter((s: any) => s.priority === 'medium').reduce((sum: number, s: any) => sum + s.count, 0),
+            low: stats.filter((s: any) => s.priority === 'low').reduce((sum: number, s: any) => sum + s.count, 0),
+          },
         },
       };
     } catch (error: any) {

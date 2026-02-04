@@ -33,31 +33,36 @@ export class QuestionPoolManagerService {
   private readonly logger = new Logger(QuestionPoolManagerService.name);
   private readonly openai: OpenAI;
 
-  // Target pool size per position/type/domain
-  private readonly TARGET_POOL_SIZE = 100; // 100 questions per combination
-  private readonly MIN_POOL_SIZE = 30; // Refill when below this
+  // 🎯 SMART POOL SIZING: Based on expected user distribution
+  // High-traffic combinations get more questions
+  private readonly POOL_SIZES = {
+    high: { target: 150, min: 50 },    // Junior/Middle (70% users)
+    medium: { target: 80, min: 30 },   // Senior (25% users)
+    low: { target: 40, min: 15 },      // Lead (5% users)
+  };
+  
   private readonly BATCH_SIZE = 10; // Generate 10 at a time
 
-  // Position/Type/Domain combinations to maintain
+  // Position/Type/Domain combinations with traffic priority
   private readonly COMBINATIONS = [
-    // Junior
-    { position: 'junior', type: 'technical', domains: ['frontend', 'backend', 'mobile', 'general'] },
-    { position: 'junior', type: 'behavioral', domains: ['general'] },
+    // Junior (HIGH traffic - 40% of users)
+    { position: 'junior', type: 'technical', domains: ['frontend', 'backend', 'mobile', 'general'], priority: 'high' },
+    { position: 'junior', type: 'behavioral', domains: ['general'], priority: 'high' },
     
-    // Middle (not 'mid' - must match schema enum!)
-    { position: 'middle', type: 'technical', domains: ['frontend', 'backend', 'mobile', 'fullstack', 'general'] },
-    { position: 'middle', type: 'behavioral', domains: ['general'] },
-    { position: 'middle', type: 'system_design', domains: ['general'] },
+    // Middle (HIGH traffic - 30% of users)
+    { position: 'middle', type: 'technical', domains: ['frontend', 'backend', 'mobile', 'fullstack', 'general'], priority: 'high' },
+    { position: 'middle', type: 'behavioral', domains: ['general'], priority: 'high' },
+    { position: 'middle', type: 'system_design', domains: ['general'], priority: 'high' },
     
-    // Senior
-    { position: 'senior', type: 'technical', domains: ['frontend', 'backend', 'mobile', 'fullstack', 'devops', 'general'] },
-    { position: 'senior', type: 'behavioral', domains: ['general'] },
-    { position: 'senior', type: 'system_design', domains: ['general'] },
+    // Senior (MEDIUM traffic - 25% of users)
+    { position: 'senior', type: 'technical', domains: ['frontend', 'backend', 'mobile', 'fullstack', 'devops', 'general'], priority: 'medium' },
+    { position: 'senior', type: 'behavioral', domains: ['general'], priority: 'medium' },
+    { position: 'senior', type: 'system_design', domains: ['general'], priority: 'medium' },
     
-    // Lead
-    { position: 'lead', type: 'technical', domains: ['architecture', 'fullstack', 'devops', 'general'] },
-    { position: 'lead', type: 'behavioral', domains: ['general'] },
-    { position: 'lead', type: 'system_design', domains: ['general'] },
+    // Lead (LOW traffic - 5% of users)
+    { position: 'lead', type: 'technical', domains: ['architecture', 'fullstack', 'devops', 'general'], priority: 'low' },
+    { position: 'lead', type: 'behavioral', domains: ['general'], priority: 'low' },
+    { position: 'lead', type: 'system_design', domains: ['general'], priority: 'low' },
   ];
 
   constructor(
@@ -120,6 +125,9 @@ export class QuestionPoolManagerService {
 
       // Check each combination
       for (const combo of this.COMBINATIONS) {
+        // Get dynamic pool size based on priority
+        const poolConfig = this.POOL_SIZES[combo.priority];
+        
         for (const domain of combo.domains) {
           try {
             const count = await this.questionModel.countDocuments({
@@ -129,16 +137,16 @@ export class QuestionPoolManagerService {
             });
 
             this.logger.debug(
-              `Pool status: ${combo.position}/${combo.type}/${domain} = ${count}/${this.TARGET_POOL_SIZE}`,
+              `Pool status: ${combo.position}/${combo.type}/${domain} (${combo.priority} priority) = ${count}/${poolConfig.target} (min: ${poolConfig.min})`,
             );
 
             // Refill if below minimum
-            if (count < this.MIN_POOL_SIZE) {
-              const needed = this.TARGET_POOL_SIZE - count;
+            if (count < poolConfig.min) {
+              const needed = poolConfig.target - count;
               const toGenerate = Math.min(needed, this.BATCH_SIZE);
 
               this.logger.log(
-                `🔥 Pool low! Generating ${toGenerate} questions for ${combo.position}/${combo.type}/${domain}`,
+                `🔥 Pool low! Generating ${toGenerate} questions for ${combo.position}/${combo.type}/${domain} (${combo.priority} priority)`,
               );
 
               const generated = await this.generateQuestionsForCombination(
@@ -274,7 +282,7 @@ export class QuestionPoolManagerService {
   private buildPrompt(position: string, type: string, domain: string): string {
     const positionContext = {
       junior: '1-2 years experience, entry-level',
-      mid: '3-5 years experience, intermediate',
+      middle: '3-5 years experience, intermediate',
       senior: '5+ years experience, advanced',
       lead: '7+ years experience, leadership',
     }[position] || 'intermediate';
@@ -302,7 +310,7 @@ Make it realistic and suitable for ${position} level.`;
   private mapPositionToDifficulty(position: string): string {
     return {
       junior: 'easy',
-      mid: 'medium',
+      middle: 'medium',
       senior: 'hard',
       lead: 'expert',
     }[position] || 'medium';
@@ -323,13 +331,17 @@ Make it realistic and suitable for ${position} level.`;
       position: string;
       type: string;
       domain: string;
+      priority: string;
       count: number;
+      min: number;
       target: number;
       percentage: number;
       status: string;
     }> = [];
 
     for (const combo of this.COMBINATIONS) {
+      const poolConfig = this.POOL_SIZES[combo.priority];
+      
       for (const domain of combo.domains) {
         const count = await this.questionModel.countDocuments({
           position: combo.position,
@@ -341,10 +353,12 @@ Make it realistic and suitable for ${position} level.`;
           position: combo.position,
           type: combo.type,
           domain: domain,
+          priority: combo.priority,
           count: count,
-          target: this.TARGET_POOL_SIZE,
-          percentage: Math.round((count / this.TARGET_POOL_SIZE) * 100),
-          status: count >= this.MIN_POOL_SIZE ? '✅' : '⚠️',
+          min: poolConfig.min,
+          target: poolConfig.target,
+          percentage: Math.round((count / poolConfig.target) * 100),
+          status: count >= poolConfig.min ? '✅' : '⚠️',
         });
       }
     }

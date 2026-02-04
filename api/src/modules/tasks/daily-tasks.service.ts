@@ -19,6 +19,7 @@ import {
   canUseDailyTaskImageAnswer,
   canUseDailyTaskVideoAnswer,
 } from '@common/constants';
+import { PriorityQuestionProviderService } from './priority-question-provider.service';
 
 @Injectable()
 export class DailyTasksService {
@@ -38,6 +39,7 @@ export class DailyTasksService {
     private readonly retryService: FailedNotificationRetryService,
     private readonly configService: ConfigService,
     @InjectRedis() private readonly redis: Redis,
+    private readonly priorityProvider: PriorityQuestionProviderService,
   ) {
     // Initialize OpenAI/OpenRouter client
     this.openai = createOpenAIClient(this.configService);
@@ -181,31 +183,29 @@ export class DailyTasksService {
               continue;
             }
 
-            // Generate 3 questions for the day
+            // Generate 3 questions for the day using priority-based provider
             const position = user.profile?.position || 'junior';
             const techStack = user.profile?.techStack || [];
             const domain = this.detectDomain(techStack);
-            // Seen IDs from user profile (added in selection)
-            const seenIds = (user as any).seenQuestionIds || [];
 
             const [technical, behavioral, systemDesign] = await Promise.all([
-              this.findOrGenerateQuestion(position, 'technical', domain, techStack, seenIds),
-              this.findOrGenerateQuestion(position, 'behavioral', domain, techStack, seenIds),
+              this.priorityProvider.getQuestionByPriority(user._id.toString(), position, 'technical', domain),
+              this.priorityProvider.getQuestionByPriority(user._id.toString(), position, 'behavioral', domain),
               position !== 'junior'
-                ? this.findOrGenerateQuestion(position, 'system_design', domain, techStack, seenIds)
-                : Promise.resolve({ question: null as any, id: null }),
+                ? this.priorityProvider.getQuestionByPriority(user._id.toString(), position, 'system_design', domain)
+                : Promise.resolve({ question: null as any, questionId: null, source: 'none' as any, priority: 'free' as any }),
             ]);
 
             const tasks = [
-              { question: technical.question, questionId: technical.id, completed: false },
-              { question: behavioral.question, questionId: behavioral.id, completed: false },
+              { question: technical.question, questionId: technical.questionId, completed: false },
+              { question: behavioral.question, questionId: behavioral.questionId, completed: false },
             ];
 
             // Add system design only for non-juniors (or if valid question generated)
             if (position !== 'junior' && systemDesign.question) {
               tasks.push({
                 question: systemDesign.question,
-                questionId: systemDesign.id,
+                questionId: systemDesign.questionId,
                 completed: false,
               });
             }
@@ -213,7 +213,7 @@ export class DailyTasksService {
             // 🛡 PHASE 1.4: CRITICAL FIX - Update seen IDs BEFORE creating task
             // This prevents duplicate questions if task creation fails
             // SEQUENTIAL LEARNING LOGIC
-            const newIds = [technical.id, behavioral.id, systemDesign?.id].filter((id) => id);
+            const newIds = [technical.questionId, behavioral.questionId, systemDesign?.questionId].filter((id) => id);
 
             if (newIds.length > 0) {
               // Batch update for this user FIRST
@@ -1195,32 +1195,29 @@ Provide your response in JSON format:
             const techStack = user.profile?.techStack || [];
             const domain = this.detectDomain(techStack);
 
-            const userFull = await this.userModel.findById(user._id).select('seenQuestionIds');
-            const seenIds = userFull?.seenQuestionIds || [];
-
             const [technical, behavioral, systemDesign] = await Promise.all([
-              this.findOrGenerateQuestion(position, 'technical', domain, techStack, seenIds),
-              this.findOrGenerateQuestion(position, 'behavioral', domain, techStack, seenIds),
+              this.priorityProvider.getQuestionByPriority(user._id.toString(), position, 'technical', domain),
+              this.priorityProvider.getQuestionByPriority(user._id.toString(), position, 'behavioral', domain),
               position !== 'junior'
-                ? this.findOrGenerateQuestion(position, 'system_design', domain, techStack, seenIds)
-                : Promise.resolve({ question: null as any, id: null }),
+                ? this.priorityProvider.getQuestionByPriority(user._id.toString(), position, 'system_design', domain)
+                : Promise.resolve({ question: null as any, questionId: null, source: 'none' as any, priority: 'free' as any }),
             ]);
 
             const tasks = [
-              { question: technical.question, questionId: technical.id, completed: false },
-              { question: behavioral.question, questionId: behavioral.id, completed: false },
+              { question: technical.question, questionId: technical.questionId, completed: false },
+              { question: behavioral.question, questionId: behavioral.questionId, completed: false },
             ];
 
             if (systemDesign.question) {
               tasks.push({
                 question: systemDesign.question,
-                questionId: systemDesign.id,
+                questionId: systemDesign.questionId,
                 completed: false,
               });
             }
 
             // 🛡 PHASE 1.4: Update seen IDs BEFORE creating task (same fix as main delivery)
-            const newIds = [technical.id, behavioral.id, systemDesign?.id].filter((id) => id);
+            const newIds = [technical.questionId, behavioral.questionId, systemDesign?.questionId].filter((id) => id);
 
             if (newIds.length > 0) {
               await this.userModel.updateOne(
