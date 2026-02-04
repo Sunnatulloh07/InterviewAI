@@ -24,6 +24,8 @@ export class FailedNotification {
       'inactivity',
       'unregistered_engagement',
       'limit_exhausted',
+      'employment_survey', // 🔧 FIX: Added missing enum value
+      'position_prompt', // 🔧 FIX: Added missing enum value
     ],
     required: true,
     index: true,
