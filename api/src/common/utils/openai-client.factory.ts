@@ -49,6 +49,12 @@ export const OPENROUTER_MODELS = {
   // ═══════════════════════════════════════════════════════════════════
   'llama-3-70b': 'meta-llama/llama-3-70b-instruct',
   'llama-3-8b': 'meta-llama/llama-3-8b-instruct',
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Z-AI GLM Models (Cost-effective Chinese models)
+  // ═══════════════════════════════════════════════════════════════════
+  'glm-4-32b': 'z-ai/glm-4-32b', // Very cheap: $0.10/$0.10 per 1M tokens
+  'glm-4': 'z-ai/glm-4-32b', // Alias
 } as const;
 
 /**

@@ -197,7 +197,7 @@ export class SafeQuestionProviderService {
     const prompt = this.buildPrompt(position, type, domain);
 
     const completion = await this.openai.chat.completions.create({
-      model: OPENROUTER_MODELS['gpt-4o-mini'],
+      model: OPENROUTER_MODELS['glm-4-32b'], // Very cheap: $0.10 per 1M tokens
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.7,
       max_tokens: 150,

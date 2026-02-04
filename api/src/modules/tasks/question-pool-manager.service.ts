@@ -236,7 +236,7 @@ export class QuestionPoolManagerService {
 
     try {
       const response = await this.openai.chat.completions.create({
-        model: OPENROUTER_MODELS['gpt-4o-mini'], // Fast and cheap
+        model: OPENROUTER_MODELS['glm-4-32b'], // Very cheap: $0.10 per 1M tokens (6x cheaper than GPT-4o-mini)
         messages: [
           {
             role: 'system',
