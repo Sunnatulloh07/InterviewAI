@@ -121,7 +121,11 @@ export class UserActivationService {
           }
 
           const trialEndsAt = new Date(user.subscription.trialEndsAt);
-          const daysRemaining = Math.ceil(
+          // ✅ FIX: Math.ceil → Math.floor for accurate remaining days
+          // If trial ends 2026-02-11 10:00 and now is 2026-02-11 09:00 (1h left),
+          // Math.ceil would show "1 day" which is misleading
+          // Math.floor shows "0 days" which triggers urgent message correctly
+          const daysRemaining = Math.floor(
             (trialEndsAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
           );
 
@@ -131,7 +135,8 @@ export class UserActivationService {
           }
 
           // Get trial limits based on plan features
-          const totalInterviews = 5; // Free trial limit
+          // ✅ FIX: 5 → 3 (per COMPLETE_PLAN_LIMITS and PROJECT_OVERVIEW_V2.md)
+          const totalInterviews = 3; // Free trial limit (text only)
           const usedInterviews = user.usage?.mockInterviewsThisMonth || 0;
 
           let message: string;
@@ -242,11 +247,13 @@ export class UserActivationService {
 
         const now = new Date();
         const trialEndsAt = new Date(user.subscription.trialEndsAt);
-        const daysRemaining = Math.ceil(
+        // ✅ FIX: Math.ceil → Math.floor for accurate remaining days
+        const daysRemaining = Math.floor(
           (trialEndsAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
         );
         const usedInterviews = user.usage?.mockInterviewsThisMonth || 0;
-        const totalInterviews = 5;
+        // ✅ FIX: 5 → 3 (per COMPLETE_PLAN_LIMITS)
+        const totalInterviews = 3;
 
         message = getTrialReminderMessage(
           daysRemaining,

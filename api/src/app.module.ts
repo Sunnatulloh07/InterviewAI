@@ -210,9 +210,9 @@ import { VoiceModule } from './modules/voice/voice.module';
             // Production security
             ...(nodeEnv === 'production' && redisPassword
               ? {
-                // Require password in production
-                password: redisPassword,
-              }
+                  // Require password in production
+                  password: redisPassword,
+                }
               : {}),
           },
         } as any;

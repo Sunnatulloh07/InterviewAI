@@ -24,9 +24,9 @@ export const NON_REGISTERED_USER_MESSAGES = [
     en: `🚀 Be 100% ready for interviews with InterviewAI Pro!\n\n📊 Statistics:\n• 85% users found their dream job\n• 4.9/5 rating\n• 10,000+ successful interviews\n\n💡 Start today: /register`,
   },
   {
-    uz: `🎁 7 KUNLIK BEPUL SINOV VERSIYASI!\n\n✨ Hozir ro'yxatdan o'tsangiz quyidagilarni TEKIN olasiz:\n• 5 ta mock interview\n• 5 daqiqa ovozli javoblar\n• CV tahlili\n• AI yordamchisi\n\n⏰ Vaqt cheklangan! /register`,
-    ru: `🎁 7 ДНЕЙ БЕСПЛАТНОГО ПРОБНОГО ПЕРИОДА!\n\n✨ Зарегистрируйтесь сейчас и получите БЕСПЛАТНО:\n• 5 mock интервью\n• 5 минут голосовых ответов\n• Анализ CV\n• AI помощник\n\n⏰ Предложение ограничено! /register`,
-    en: `🎁 7 DAYS FREE TRIAL!\n\n✨ Register now and get FREE:\n• 5 mock interviews\n• 5 minutes voice responses\n• CV analysis\n• AI assistant\n\n⏰ Limited time offer! /register`,
+    uz: `🎁 7 KUNLIK BEPUL SINOV VERSIYASI!\n\n✨ Hozir ro'yxatdan o'tsangiz quyidagilarni TEKIN olasiz:\n• 3 ta mock interview (text)\n• 5 daqiqa ovozli javoblar\n• 1 ta CV tahlili\n• AI yordamchisi\n\n⏰ Vaqt cheklangan! /register`,
+    ru: `🎁 7 ДНЕЙ БЕСПЛАТНОГО ПРОБНОГО ПЕРИОДА!\n\n✨ Зарегистрируйтесь сейчас и получите БЕСПЛАТНО:\n• 3 mock интервью (текст)\n• 5 минут голосовых ответов\n• 1 анализ CV\n• AI помощник\n\n⏰ Предложение ограничено! /register`,
+    en: `🎁 7 DAYS FREE TRIAL!\n\n✨ Register now and get FREE:\n• 3 mock interviews (text)\n• 5 minutes voice responses\n• 1 CV analysis\n• AI assistant\n\n⏰ Limited time offer! /register`,
   },
   {
     uz: `💼 Intervyuda tez-tez qiladigan xatolarni bilasizmi?\n\n❌ Tayyorgarliksiz ketish\n❌ STAR metodini bilmaslik\n❌ O'z tajribangizni aniq bayon qilolmaslik\n\n✅ InterviewAI Pro sizga bularni bartaraf etishda yordam beradi!\n\nBoshlaymizmi? /register`,
@@ -88,11 +88,11 @@ export function getTrialReminderMessage(
   language: string = 'uz',
 ): string {
   const messages = {
-    uz: `⏰ BEPUL SINOV: ${daysRemaining} kun qoldi!\n\n📊 Sizning statistikangiz:\n• Mock interviews: ${usedInterviews}/${totalInterviews} ishlatildi\n• Ovozli javoblar: ${totalInterviews - usedInterviews} ta qoldi\n\n🎁 Bepul sinov davridagi imkoniyatlar:\n✅ ${totalInterviews} ta mock interview\n✅ 5 daqiqa ovozli javoblar\n✅ CV tahlili\n✅ Kunlik amaliy topshiriqlar\n✅ AI yordamchisi 24/7\n\n💡 Imkoniyatdan to'liq foydalaning!\n\nIntervyu boshlash: /interview\nCV yuklash: /cv`,
+    uz: `⏰ BEPUL SINOV: ${daysRemaining} kun qoldi!\n\n📊 Sizning statistikangiz:\n• Mock interviews: ${usedInterviews}/${totalInterviews} ishlatildi\n• Qolgan: ${totalInterviews - usedInterviews} ta\n\n🎁 Bepul sinov davridagi imkoniyatlar:\n✅ 3 ta mock interview (text)\n✅ 5 daqiqa ovozli javoblar\n✅ 1 ta CV tahlili\n✅ Kunlik amaliy topshiriqlar\n✅ AI yordamchisi 24/7\n\n💡 Imkoniyatdan to'liq foydalaning!\n\nIntervyu boshlash: /interview\nCV yuklash: /cv`,
 
-    ru: `⏰ ПРОБНЫЙ ПЕРИОД: осталось ${daysRemaining} дней!\n\n📊 Ваша статистика:\n• Mock интервью: ${usedInterviews}/${totalInterviews} использовано\n• Голосовые ответы: ${totalInterviews - usedInterviews} осталось\n\n🎁 Возможности пробного периода:\n✅ ${totalInterviews} mock интервью\n✅ 5 минут голосовых ответов\n✅ Анализ CV\n✅ Ежедневные задания\n✅ AI помощник 24/7\n\n💡 Используйте все возможности!\n\nНачать интервью: /interview\nЗагрузить CV: /cv`,
+    ru: `⏰ ПРОБНЫЙ ПЕРИОД: осталось ${daysRemaining} дней!\n\n📊 Ваша статистика:\n• Mock интервью: ${usedInterviews}/${totalInterviews} использовано\n• Осталось: ${totalInterviews - usedInterviews}\n\n🎁 Возможности пробного периода:\n✅ 3 mock интервью (текст)\n✅ 5 минут голосовых ответов\n✅ 1 анализ CV\n✅ Ежедневные задания\n✅ AI помощник 24/7\n\n💡 Используйте все возможности!\n\nНачать интервью: /interview\nЗагрузить CV: /cv`,
 
-    en: `⏰ FREE TRIAL: ${daysRemaining} days left!\n\n📊 Your statistics:\n• Mock interviews: ${usedInterviews}/${totalInterviews} used\n• Voice responses: ${totalInterviews - usedInterviews} remaining\n\n🎁 Trial period features:\n✅ ${totalInterviews} mock interviews\n✅ 5 minutes voice responses\n✅ CV analysis\n✅ Daily tasks\n✅ AI assistant 24/7\n\n💡 Use all opportunities!\n\nStart interview: /interview\nUpload CV: /cv`,
+    en: `⏰ FREE TRIAL: ${daysRemaining} days left!\n\n📊 Your statistics:\n• Mock interviews: ${usedInterviews}/${totalInterviews} used\n• Remaining: ${totalInterviews - usedInterviews}\n\n🎁 Trial period features:\n✅ 3 mock interviews (text)\n✅ 5 minutes voice responses\n✅ 1 CV analysis\n✅ Daily tasks\n✅ AI assistant 24/7\n\n💡 Use all opportunities!\n\nStart interview: /interview\nUpload CV: /cv`,
   };
 
   return messages[language as keyof typeof messages] || messages.uz;
@@ -103,11 +103,11 @@ export function getTrialReminderMessage(
  */
 export function getTrialEndingSoonMessage(language: string = 'uz'): string {
   const messages = {
-    uz: `⚠️ DIQQAT: Bepul sinov ERTAGA tugaydi!\n\n🎯 Davom etish uchun:\n1️⃣ Pro rejani tanlang (50% chegirma)\n2️⃣ Cheksiz mock interviews\n3️⃣ 45 daqiqa ovozli javoblar/oy\n4️⃣ Advanced AI tahlil\n\n💰 Faqat 49,000 so'm/oy\n\nRejalarni ko'rish: /plans`,
+    uz: `⚠️ DIQQAT: Bepul sinov ERTAGA tugaydi!\n\n🎯 Davom etish uchun:\n1️⃣ Pro rejani tanlang (50% chegirma)\n2️⃣ Cheksiz mock interviews\n3️⃣ 45 daqiqa ovozli javoblar/oy\n4️⃣ Advanced AI tahlil\n\n💰 Faqat $19.99/oy (~250,000 so'm)\n\nRejalarni ko'rish: /plans`,
 
-    ru: `⚠️ ВНИМАНИЕ: Пробный период заканчивается ЗАВТРА!\n\n🎯 Чтобы продолжить:\n1️⃣ Выберите Pro план (скидка 50%)\n2️⃣ Неограниченные mock интервью\n3️⃣ 45 минут голосовых ответов/месяц\n4️⃣ Продвинутый AI анализ\n\n💰 Всего 49,000 сум/месяц\n\nСмотреть планы: /plans`,
+    ru: `⚠️ ВНИМАНИЕ: Пробный период заканчивается ЗАВТРА!\n\n🎯 Чтобы продолжить:\n1️⃣ Выберите Pro план (скидка 50%)\n2️⃣ Неограниченные mock интервью\n3️⃣ 45 минут голосовых ответов/месяц\n4️⃣ Продвинутый AI анализ\n\n💰 Всего $19.99/мес (~250,000 сум)\n\nСмотреть планы: /plans`,
 
-    en: `⚠️ ATTENTION: Free trial ends TOMORROW!\n\n🎯 To continue:\n1️⃣ Choose Pro plan (50% discount)\n2️⃣ Unlimited mock interviews\n3️⃣ 45 minutes voice responses/month\n4️⃣ Advanced AI analysis\n\n💰 Only 49,000 sum/month\n\nView plans: /plans`,
+    en: `⚠️ ATTENTION: Free trial ends TOMORROW!\n\n🎯 To continue:\n1️⃣ Choose Pro plan (50% discount)\n2️⃣ Unlimited mock interviews\n3️⃣ 45 minutes voice responses/month\n4️⃣ Advanced AI analysis\n\n💰 Only $19.99/mo (~250,000 sum)\n\nView plans: /plans`,
   };
 
   return messages[language as keyof typeof messages] || messages.uz;

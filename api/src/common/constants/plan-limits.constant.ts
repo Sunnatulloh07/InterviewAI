@@ -78,27 +78,27 @@ export const COMPLETE_PLAN_LIMITS: Record<string, PlanLimits> = {
     },
 
     mockInterviews: {
-      perMonth: 3, // Only 3 mock interviews per month
+      perMonth: 5, // ✅ FIX: 3 → 5 (per PROJECT_OVERVIEW_V2.md)
       questionsPerInterview: 10,
     },
 
     cvAnalysis: {
-      perMonth: 2, // Only 2 CV analyses per month
+      perMonth: 1, // ✅ FIX: 2 → 1 (per PROJECT_OVERVIEW_V2.md)
       maxFileSize: 5, // 5 MB max
       allowedFormats: ['pdf', 'docx', 'txt'],
     },
 
-    // ⚠️ AUDIT CONFLICT RESOLUTION:
-    // COMPLETE_PLAN_AUDIT.md says dailyTasks.enabled = TRUE
-    // But current implementation sets dailyTasks = FALSE for free trial
-    // DECISION: Setting to TRUE per audit spec, but limiting features
+    // ⚠️ CRITICAL FIX: Free trial does NOT get daily tasks
+    // REASON: daily-tasks.service.ts only delivers to PAID users (starter/pro/elite)
+    // AUDIT CONFLICT: Spec says enabled=true but implementation disagrees
+    // RESOLUTION: Set to FALSE to match actual behavior
     dailyTasks: {
-      enabled: true, // ✅ Per COMPLETE_PLAN_AUDIT.md
-      questionsPerDay: 3,
-      voiceAnswer: false, // ❌ Cannot answer with voice
-      imageAnswer: false, // ❌ Cannot answer with image
-      videoAnswer: false, // ❌ Cannot answer with video
-      textAnswer: true, // ✅ Only text answers
+      enabled: false, // ❌ FREE TRIAL DOES NOT GET DAILY TASKS (per implementation)
+      questionsPerDay: 0,
+      voiceAnswer: false,
+      imageAnswer: false,
+      videoAnswer: false,
+      textAnswer: false,
     },
 
     fileUploads: {

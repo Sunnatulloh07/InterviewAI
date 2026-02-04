@@ -65,6 +65,19 @@ export class Cv {
       major?: string;
     }>;
     skills: string[];
+    categorizedSkills?: {
+      frontend?: string[];
+      backend?: string[];
+      mobile?: string[];
+      devops?: string[];
+      ai_ml?: string[];
+      databases?: string[];
+      tools?: string[];
+      languages?: string[];
+      other?: string[];
+    };
+    detectedDomains?: string[];
+    primaryDomain?: string;
     languages: string[];
     certifications: Array<{
       name: string;

@@ -478,10 +478,9 @@ Sinov muddatingiz 3 kun ichida tugaydi, lekin siz hali platformadan to'liq foyda
 🎯 <b>Imkoniyatni qo'ldan boy bermang!</b>
 
 Bepul sinov davrida siz:
-✅ 5 ta mock intervyu
+✅ 3 ta mock intervyu (text)
 ✅ 5 daqiqa ovozli yordam
-✅ CV tahlili
-✅ Kunlik vazifalar
+✅ 1 ta CV tahlili
 
 💡 Hoziroq boshlang va karyerangizni o'zgartiring!
 
@@ -518,10 +517,9 @@ Hoziroq sinab ko'ring — bu sizning karyerangizni o'zgartirishi mumkin!
 🎯 <b>Не упустите возможность!</b>
 
 В пробный период доступно:
-✅ 5 mock-интервью
+✅ 3 mock-интервью (текст)
 ✅ 5 минут голосовой помощи
-✅ Анализ резюме
-✅ Ежедневные задания
+✅ 1 анализ резюме
 
 💡 Начните сейчас и измените свою карьеру!
 
@@ -558,10 +556,9 @@ Your trial ends in 3 days, but you haven't fully used the platform yet.
 🎯 <b>Don't miss this opportunity!</b>
 
 During free trial you get:
-✅ 5 mock interviews
+✅ 3 mock interviews (text)
 ✅ 5 minutes voice assistance
-✅ CV analysis
-✅ Daily tasks
+✅ 1 CV analysis
 
 💡 Start now and transform your career!
 

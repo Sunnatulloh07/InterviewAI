@@ -1594,27 +1594,27 @@ Send a document to upload your CV (PDF, DOCX)
       const strengthsText =
         strengths.length > 0
           ? strengths
-            .slice(0, 3)
-            .map((s: string, i: number) => `${i + 1}. ${s}`)
-            .join('\n')
+              .slice(0, 3)
+              .map((s: string, i: number) => `${i + 1}. ${s}`)
+              .join('\n')
           : {
-            uz: 'Kuchli tomonlar aniqlanmadi',
-            ru: 'Сильные стороны не определены',
-            en: 'No specific strengths identified',
-          }[lang] || 'No specific strengths identified';
+              uz: 'Kuchli tomonlar aniqlanmadi',
+              ru: 'Сильные стороны не определены',
+              en: 'No specific strengths identified',
+            }[lang] || 'No specific strengths identified';
 
       // Format weaknesses (top 3 for summary)
       const weaknessesText =
         weaknesses.length > 0
           ? weaknesses
-            .slice(0, 3)
-            .map((w: string, i: number) => `${i + 1}. ${w}`)
-            .join('\n')
+              .slice(0, 3)
+              .map((w: string, i: number) => `${i + 1}. ${w}`)
+              .join('\n')
           : {
-            uz: 'Kamchiliklar topilmadi',
-            ru: 'Слабости не найдены',
-            en: 'No weaknesses identified',
-          }[lang] || 'No weaknesses identified';
+              uz: 'Kamchiliklar topilmadi',
+              ru: 'Слабости не найдены',
+              en: 'No weaknesses identified',
+            }[lang] || 'No weaknesses identified';
 
       const resultsText: Record<string, string> = {
         uz: `📊 <b>CV Tahlili Natijalari</b>
@@ -1998,25 +1998,27 @@ Send a document (PDF, DOCX, DOC, TXT)
 ${strengths.length > 0 ? strengths.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n') : 'Tahlil davom etmoqda...'}
 
 ⚠️ <b>Muhim kamchiliklar:</b>
-${weaknesses.length > 0
-                ? weaknesses
-                  .slice(0, 5)
-                  .map((w: string, i: number) => `${i + 1}. ${w}`)
-                  .join('\n')
-                : 'Kamchilik topilmadi'
-              }
+${
+  weaknesses.length > 0
+    ? weaknesses
+        .slice(0, 5)
+        .map((w: string, i: number) => `${i + 1}. ${w}`)
+        .join('\n')
+    : 'Kamchilik topilmadi'
+}
 
 🚀 <b>Tezkor yaxshilashlar (Quick Wins):</b>
 ${quickWins.length > 0 ? quickWins.map((q: string, i: number) => `${i + 1}. ${q}`).join('\n') : 'Tavsiyalar tayyorlanmoqda...'}
 
 💡 <b>Transformation Roadmap:</b>
-${transformationRoadmap.length > 0
-                ? transformationRoadmap
-                  .slice(0, 3)
-                  .map((t: any, i: number) => `${i + 1}. [Priority ${t.priority}] ${t.problem}`)
-                  .join('\n')
-                : 'Roadmap tayyorlanmoqda...'
-              }
+${
+  transformationRoadmap.length > 0
+    ? transformationRoadmap
+        .slice(0, 3)
+        .map((t: any, i: number) => `${i + 1}. [Priority ${t.priority}] ${t.problem}`)
+        .join('\n')
+    : 'Roadmap tayyorlanmoqda...'
+}
 
 ━━━━━━━━━━━━━━━━━━`,
             ru: `━━━━━━━━━━━━━━━━━━
@@ -2031,25 +2033,27 @@ ${transformationRoadmap.length > 0
 ${strengths.length > 0 ? strengths.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n') : 'Анализ продолжается...'}
 
 ⚠️ <b>Критические слабости:</b>
-${weaknesses.length > 0
-                ? weaknesses
-                  .slice(0, 5)
-                  .map((w: string, i: number) => `${i + 1}. ${w}`)
-                  .join('\n')
-                : 'Слабостей не найдено'
-              }
+${
+  weaknesses.length > 0
+    ? weaknesses
+        .slice(0, 5)
+        .map((w: string, i: number) => `${i + 1}. ${w}`)
+        .join('\n')
+    : 'Слабостей не найдено'
+}
 
 🚀 <b>Быстрые улучшения (Quick Wins):</b>
 ${quickWins.length > 0 ? quickWins.map((q: string, i: number) => `${i + 1}. ${q}`).join('\n') : 'Рекомендации готовятся...'}
 
 💡 <b>Transformation Roadmap:</b>
-${transformationRoadmap.length > 0
-                ? transformationRoadmap
-                  .slice(0, 3)
-                  .map((t: any, i: number) => `${i + 1}. [Приоритет ${t.priority}] ${t.problem}`)
-                  .join('\n')
-                : 'Roadmap готовится...'
-              }
+${
+  transformationRoadmap.length > 0
+    ? transformationRoadmap
+        .slice(0, 3)
+        .map((t: any, i: number) => `${i + 1}. [Приоритет ${t.priority}] ${t.problem}`)
+        .join('\n')
+    : 'Roadmap готовится...'
+}
 
 ━━━━━━━━━━━━━━━━━━`,
             en: `━━━━━━━━━━━━━━━━━━
@@ -2064,25 +2068,27 @@ ${transformationRoadmap.length > 0
 ${strengths.length > 0 ? strengths.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n') : 'Analysis in progress...'}
 
 ⚠️ <b>Critical Weaknesses:</b>
-${weaknesses.length > 0
-                ? weaknesses
-                  .slice(0, 5)
-                  .map((w: string, i: number) => `${i + 1}. ${w}`)
-                  .join('\n')
-                : 'No weaknesses found'
-              }
+${
+  weaknesses.length > 0
+    ? weaknesses
+        .slice(0, 5)
+        .map((w: string, i: number) => `${i + 1}. ${w}`)
+        .join('\n')
+    : 'No weaknesses found'
+}
 
 🚀 <b>Quick Wins:</b>
 ${quickWins.length > 0 ? quickWins.map((q: string, i: number) => `${i + 1}. ${q}`).join('\n') : 'Recommendations preparing...'}
 
 💡 <b>Transformation Roadmap:</b>
-${transformationRoadmap.length > 0
-                ? transformationRoadmap
-                  .slice(0, 3)
-                  .map((t: any, i: number) => `${i + 1}. [Priority ${t.priority}] ${t.problem}`)
-                  .join('\n')
-                : 'Roadmap preparing...'
-              }
+${
+  transformationRoadmap.length > 0
+    ? transformationRoadmap
+        .slice(0, 3)
+        .map((t: any, i: number) => `${i + 1}. [Priority ${t.priority}] ${t.problem}`)
+        .join('\n')
+    : 'Roadmap preparing...'
+}
 
 ━━━━━━━━━━━━━━━━━━`,
           };
@@ -2096,13 +2102,13 @@ ${transformationRoadmap.length > 0
           const keyboard = new InlineKeyboard()
             .text(
               fullAnalysisButtonLabels[userLang]?.backToSummary ||
-              fullAnalysisButtonLabels['en'].backToSummary,
+                fullAnalysisButtonLabels['en'].backToSummary,
               'cv_view',
             )
             .row()
             .text(
               fullAnalysisButtonLabels[userLang]?.mainMenu ||
-              fullAnalysisButtonLabels['en'].mainMenu,
+                fullAnalysisButtonLabels['en'].mainMenu,
               'back_to_menu',
             );
 

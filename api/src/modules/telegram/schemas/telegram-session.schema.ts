@@ -75,6 +75,17 @@ export const TelegramSessionSchema = SchemaFactory.createForClass(TelegramSessio
 TelegramSessionSchema.index({ userId: 1, status: 1 });
 TelegramSessionSchema.index({ status: 1, lastActivityAt: -1 });
 
+// ⚡ PHASE 2.4: TTL index for automatic cleanup of stale sessions
+// Sessions older than 24 hours are automatically deleted by MongoDB
+// This prevents memory leaks from abandoned sessions (bot restart, network errors, etc.)
+TelegramSessionSchema.index(
+  { lastActivityAt: 1 },
+  {
+    expireAfterSeconds: 86400, // 24 hours
+    name: 'session_ttl_cleanup',
+  },
+);
+
 // Transform to JSON
 TelegramSessionSchema.set('toJSON', {
   transform: (doc, ret) => {

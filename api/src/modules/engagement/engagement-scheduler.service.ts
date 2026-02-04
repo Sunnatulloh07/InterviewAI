@@ -69,7 +69,7 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
     private readonly positionPromptService: PositionPromptService,
     private readonly configService: ConfigService,
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
-  ) { }
+  ) {}
 
   onModuleInit(): void {
     // Check if scheduler is enabled via environment
@@ -126,7 +126,7 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
 
       this.logger.log(
         `Daily notification job completed in ${durationSec}s: ` +
-        `sent=${results.sent}, failed=${results.failed}, skipped=${results.skipped}`,
+          `sent=${results.sent}, failed=${results.failed}, skipped=${results.skipped}`,
       );
     } catch (error) {
       this.logger.error(`Daily notification job failed: ${error.message}`);
@@ -395,6 +395,7 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
             $ne: null,
           },
           'engagement.positionConfirmed': false, // Not yet confirmed
+          'engagement.positionPromptSentAt': null, // CRITICAL: Never sent before (no retries)
           'profile.position': 'junior', // Still default
           'engagement.isBotBlocked': { $ne: true },
           deletedAt: null,
@@ -412,6 +413,7 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
           'profile.position': 'junior',
           'engagement.positionConfirmed': { $ne: true },
           'engagement.scheduledPositionPromptAt': null, // No schedule set
+          'engagement.positionPromptSentAt': null, // CRITICAL: Never sent before (no retries)
           'engagement.isBotBlocked': { $ne: true },
           deletedAt: null,
         })
@@ -428,7 +430,7 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
 
       this.logger.log(
         `Found ${allUsers.length} users needing position prompts ` +
-        `(${scheduledUsers.length} scheduled, ${backfillUsers.length} backfill)`,
+          `(${scheduledUsers.length} scheduled, ${backfillUsers.length} backfill)`,
       );
 
       let sent = 0;
@@ -447,9 +449,12 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
           if (result.success) {
             sent++;
 
-            // Clear scheduled time after sending (prevent re-sending)
+            // CRITICAL: Mark as sent and clear scheduled time to prevent re-sending
             await this.userModel.findByIdAndUpdate(user._id, {
-              $set: { 'engagement.scheduledPositionPromptAt': null },
+              $set: {
+                'engagement.scheduledPositionPromptAt': null,
+                'engagement.positionPromptSentAt': new Date(),
+              },
             });
           } else {
             failed++;

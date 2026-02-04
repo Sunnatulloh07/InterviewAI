@@ -872,8 +872,9 @@ export class CvService {
     // Check if limit reached (-1 means unlimited)
     if (monthlyLimit !== -1 && user.usage.cvAnalysesThisMonth >= monthlyLimit) {
       // Provide helpful upgrade message based on current plan
+      // ✅ FIX: Updated limits to match COMPLETE_PLAN_LIMITS
       const upgradeMessages: Record<string, string> = {
-        free_trial: 'CV analysis limit reached (2/month). Upgrade to Starter for 5/month.',
+        free_trial: 'CV analysis limit reached (1/month). Upgrade to Starter for 5/month.',
         starter: 'CV analysis limit reached (5/month). Upgrade to Pro for 15/month.',
         pro: 'CV analysis limit reached (15/month). Upgrade to Elite for unlimited analyses.',
       };

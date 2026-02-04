@@ -1007,6 +1007,7 @@ Your response must be valid JSON that can be parsed directly. All questions must
     // Check if limit reached (-1 means unlimited)
     if (monthlyLimit !== -1 && user.usage.mockInterviewsThisMonth >= monthlyLimit) {
       // Multi-language upgrade messages for better UX
+      // ✅ FIX: Updated limits to match COMPLETE_PLAN_LIMITS (free_trial: 3→5)
       const upgradeMessages = {
         free_trial: {
           uz: `Mock intervyu limiti tugadi (${user.usage.mockInterviewsThisMonth}/${monthlyLimit}). Starter tarifiga o'ting - 10 ta/oy.`,

@@ -361,9 +361,9 @@ Get full access with the Starter plan.
       if (!dailyTask) {
         this.logger.error(
           `🔥 CRITICAL: No tasks found for userId: ${userId} on ${today.toISOString()} | ` +
-          `UTC: ${today.toUTCString()} | ` +
-          `Current UTC: ${new Date().toISOString()} | ` +
-          `Tashkent hour: ${new Date(Date.now() + 5 * 60 * 60 * 1000).getUTCHours()}`,
+            `UTC: ${today.toUTCString()} | ` +
+            `Current UTC: ${new Date().toISOString()} | ` +
+            `Tashkent hour: ${new Date(Date.now() + 5 * 60 * 60 * 1000).getUTCHours()}`,
         );
         const noTasksText = {
           uz: '❌ Bugun uchun vazifalar topilmadi.\n\nErtalab 09:00 da yangi vazifalar yuboriladi.',
@@ -679,6 +679,7 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
 
   /**
    * Handle text answer for daily task
+   * 🛡 PHASE 1.1: Updated to handle async scoring
    */
   async handleTextAnswer(ctx: BotContext, text: string): Promise<void> {
     try {
@@ -697,7 +698,7 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
       const { dailyTaskId, currentTaskIndex, date } = session.dailyTaskSession;
       const userId = session.userId.toString();
 
-      // Submit answer
+      // Submit answer (returns immediately with pending score)
       const result = await this.dailyTasksService.completeTask(
         userId,
         date,
@@ -705,7 +706,7 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
         text,
       );
 
-      // Show result
+      // Show result (pending state)
       await this.showTaskResult(ctx, result, currentTaskIndex);
 
       // Move to next task or end session
@@ -817,7 +818,7 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
 
       this.logger.log(
         `Voice quota reserved for daily task: user=${userId}, ` +
-        `resId=${reservationId}, minutes=${preflight.estimatedMinutes}`,
+          `resId=${reservationId}, minutes=${preflight.estimatedMinutes}`,
       );
 
       // ═══════════════════════════════════════════════════════════════════
@@ -891,20 +892,14 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
       // ═══════════════════════════════════════════════════════════════════
       // CRITICAL: ROLLBACK quota if any error occurred
       // This prevents charging users for failed services
+      // 🛡 PHASE 1.2: Rollback never throws now, uses retry queue fallback
       // ═══════════════════════════════════════════════════════════════════
       if (reservationId) {
-        try {
-          await this.voiceQuotaGuardService.rollbackReservation(reservationId, 'ai_failed');
-          this.logger.log(
-            `Voice quota rolled back due to error: resId=${reservationId}, ` +
-            `error=${error.message}`,
-          );
-        } catch (rollbackError: any) {
-          this.logger.error(
-            `CRITICAL: Failed to rollback reservation ${reservationId}: ${rollbackError.message}`,
-            rollbackError.stack,
-          );
-        }
+        await this.voiceQuotaGuardService.rollbackReservation(reservationId, 'ai_failed');
+        this.logger.log(
+          `Voice quota rollback initiated: resId=${reservationId}, ` + `error=${error.message}`,
+        );
+        // Note: If rollback fails, it's added to retry queue automatically
       }
 
       const errorText = {
@@ -1056,14 +1051,36 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
 
   /**
    * Show task completion result
+   * 🛡 PHASE 1.1: Handle pending scoring state
    */
   private async showTaskResult(
     ctx: BotContext,
-    result: { score: number; feedback: string; allCompleted: boolean },
+    result: {
+      score: number;
+      feedback: string;
+      allCompleted: boolean;
+      scoring?: 'pending' | 'completed';
+    },
     taskIndex: number,
   ): Promise<void> {
     const lang = ctx.session?.language || 'uz';
 
+    // 🛡 PHASE 1.1: Show pending state for async scoring
+    if (result.scoring === 'pending') {
+      const pendingText = {
+        uz: `✅ <b>Vazifa ${taskIndex + 1} qabul qilindi!</b>\n\n⏳ AI baholash jarayonida...\n💡 Natijani bir necha soniyadan keyin /tasks orqali ko'rishingiz mumkin.`,
+        ru: `✅ <b>Задание ${taskIndex + 1} принято!</b>\n\n⏳ AI оценка в процессе...\n💡 Результат можно увидеть через несколько секунд через /tasks.`,
+        en: `✅ <b>Task ${taskIndex + 1} submitted!</b>\n\n⏳ AI scoring in progress...\n💡 Check results in a few seconds via /tasks.`,
+      };
+
+      await ctx.reply(pendingText[lang] || pendingText.uz, {
+        parse_mode: 'HTML',
+      });
+
+      return; // Don't send voice explanation for pending scores
+    }
+
+    // Show completed score
     let emoji = '⚪';
     if (result.score >= 8) emoji = '🟢';
     else if (result.score >= 5) emoji = '🟡';

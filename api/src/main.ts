@@ -21,132 +21,132 @@ import { MetricsService } from './modules/metrics/metrics.service';
 import { Reflector } from '@nestjs/core';
 
 async function bootstrap() {
-    // Create NestJS application
-    const app = await NestFactory.create<NestExpressApplication>(AppModule, {
-      logger: ['error', 'warn', 'log', 'debug', 'verbose'],
-      cors: true,
-    });
+  // Create NestJS application
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    logger: ['error', 'warn', 'log', 'debug', 'verbose'],
+    cors: true,
+  });
 
-    // Get config service
-    const configService = app.get(ConfigService);
-    const port = configService.get<number>('PORT', 3000);
-    const env = configService.get<string>('NODE_ENV', 'development');
+  // Get config service
+  const configService = app.get(ConfigService);
+  const port = configService.get<number>('PORT', 3000);
+  const env = configService.get<string>('NODE_ENV', 'development');
 
-    // Set global prefix
-    app.setGlobalPrefix('api/v1');
+  // Set global prefix
+  app.setGlobalPrefix('api/v1');
 
-    // Enable versioning
-    app.enableVersioning({
-      type: VersioningType.URI,
-      defaultVersion: '1',
-    });
+  // Enable versioning
+  app.enableVersioning({
+    type: VersioningType.URI,
+    defaultVersion: '1',
+  });
 
-    // Security middlewares
-    app.use(
-      helmet({
-        contentSecurityPolicy: env === 'production',
-        crossOriginEmbedderPolicy: env === 'production',
-      }),
-    );
+  // Security middlewares
+  app.use(
+    helmet({
+      contentSecurityPolicy: env === 'production',
+      crossOriginEmbedderPolicy: env === 'production',
+    }),
+  );
 
-    // Additional security headers
-    app.use(new SecurityMiddleware().use);
+  // Additional security headers
+  app.use(new SecurityMiddleware().use);
 
-    // Compression
-    app.use(compression());
+  // Compression
+  app.use(compression());
 
-    // Cookie parser
-    app.use(cookieParser());
+  // Cookie parser
+  app.use(cookieParser());
 
-    // CORS configuration
-    app.enableCors({
-      origin: configService.get<string>('ALLOWED_ORIGINS', '*').split(','),
-      credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-      exposedHeaders: ['X-Total-Count', 'X-Page', 'X-Page-Size'],
-    });
+  // CORS configuration
+  app.enableCors({
+    origin: configService.get<string>('ALLOWED_ORIGINS', '*').split(','),
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    exposedHeaders: ['X-Total-Count', 'X-Page', 'X-Page-Size'],
+  });
 
-    // Serve static files for local uploads
-    const uploadPath = configService.get<string>('LOCAL_UPLOAD_PATH', './uploads');
-    app.useStaticAssets(join(__dirname, '..', uploadPath), {
-      prefix: '/uploads/',
-    });
+  // Serve static files for local uploads
+  const uploadPath = configService.get<string>('LOCAL_UPLOAD_PATH', './uploads');
+  app.useStaticAssets(join(__dirname, '..', uploadPath), {
+    prefix: '/uploads/',
+  });
 
-    // Global validation pipe
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-        transformOptions: {
-          enableImplicitConversion: true,
+  // Global validation pipe
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+      transformOptions: {
+        enableImplicitConversion: true,
+      },
+      disableErrorMessages: env === 'production',
+    }),
+  );
+
+  // Get services for interceptors
+  const loggerService = app.get(LoggerService);
+  const metricsService = app.get(MetricsService);
+  const reflector = app.get(Reflector);
+
+  // Global filters
+  app.useGlobalFilters(new AllExceptionsFilter());
+
+  // Global interceptors (order matters!)
+  app.useGlobalInterceptors(
+    new LoggingInterceptor(loggerService),
+    new MetricsInterceptor(metricsService),
+    new AuditLogInterceptor(reflector, loggerService),
+    new PerformanceInterceptor(reflector, loggerService),
+    new TransformInterceptor(),
+  );
+
+  // Swagger documentation (only in development)
+  if (env !== 'production') {
+    const config = new DocumentBuilder()
+      .setTitle('InterviewAI Pro API')
+      .setDescription('AI-powered interview preparation platform API')
+      .setVersion('1.0')
+      .addBearerAuth(
+        {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+          name: 'JWT',
+          description: 'Enter JWT token',
+          in: 'header',
         },
-        disableErrorMessages: env === 'production',
-      }),
-    );
+        'JWT-auth',
+      )
+      .addTag('auth', 'Authentication endpoints')
+      .addTag('users', 'User management')
+      .addTag('cv', 'CV/Resume management')
+      .addTag('interviews', 'Mock interviews')
+      .addTag('ai', 'AI processing')
+      .addTag('payments', 'Payment and subscriptions')
+      .addTag('telegram', 'Telegram bot')
+      .build();
 
-    // Get services for interceptors
-    const loggerService = app.get(LoggerService);
-    const metricsService = app.get(MetricsService);
-    const reflector = app.get(Reflector);
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api/docs', app, document, {
+      swaggerOptions: {
+        persistAuthorization: true,
+        docExpansion: 'none',
+        filter: true,
+        showRequestDuration: true,
+      },
+    });
+  }
 
-    // Global filters
-    app.useGlobalFilters(new AllExceptionsFilter());
+  // Graceful shutdown
+  app.enableShutdownHooks();
 
-    // Global interceptors (order matters!)
-    app.useGlobalInterceptors(
-      new LoggingInterceptor(loggerService),
-      new MetricsInterceptor(metricsService),
-      new AuditLogInterceptor(reflector, loggerService),
-      new PerformanceInterceptor(reflector, loggerService),
-      new TransformInterceptor(),
-    );
+  // Start server
+  await app.listen(port, '0.0.0.0');
 
-    // Swagger documentation (only in development)
-    if (env !== 'production') {
-      const config = new DocumentBuilder()
-        .setTitle('InterviewAI Pro API')
-        .setDescription('AI-powered interview preparation platform API')
-        .setVersion('1.0')
-        .addBearerAuth(
-          {
-            type: 'http',
-            scheme: 'bearer',
-            bearerFormat: 'JWT',
-            name: 'JWT',
-            description: 'Enter JWT token',
-            in: 'header',
-          },
-          'JWT-auth',
-        )
-        .addTag('auth', 'Authentication endpoints')
-        .addTag('users', 'User management')
-        .addTag('cv', 'CV/Resume management')
-        .addTag('interviews', 'Mock interviews')
-        .addTag('ai', 'AI processing')
-        .addTag('payments', 'Payment and subscriptions')
-        .addTag('telegram', 'Telegram bot')
-        .build();
-
-      const document = SwaggerModule.createDocument(app, config);
-      SwaggerModule.setup('api/docs', app, document, {
-        swaggerOptions: {
-          persistAuthorization: true,
-          docExpansion: 'none',
-          filter: true,
-          showRequestDuration: true,
-        },
-      });
-    }
-
-    // Graceful shutdown
-    app.enableShutdownHooks();
-
-    // Start server
-    await app.listen(port, '0.0.0.0');
-
-    console.log(`
+  console.log(`
       ╔══════════════════════════════════════════════════════════╗
       ║                                                          ║
       ║   🚀 InterviewAI Pro API Server Started!                ║
@@ -169,20 +169,20 @@ async function bootstrap() {
       ╚══════════════════════════════════════════════════════════╝
     `);
 
-    // Log using Winston logger
-    loggerService.setContext('Bootstrap');
-    loggerService.log(`Server started successfully on port ${port}`, {
-      environment: env,
-      port,
-      features: {
-        logging: 'Winston',
-        metrics: 'Prometheus',
-        rateLimiting: 'Advanced',
-        security: 'Enhanced',
-        auditLog: 'Enabled',
-        twoFactor: 'Available',
-      },
-    });
+  // Log using Winston logger
+  loggerService.setContext('Bootstrap');
+  loggerService.log(`Server started successfully on port ${port}`, {
+    environment: env,
+    port,
+    features: {
+      logging: 'Winston',
+      metrics: 'Prometheus',
+      rateLimiting: 'Advanced',
+      security: 'Enhanced',
+      auditLog: 'Enabled',
+      twoFactor: 'Available',
+    },
+  });
 }
 
 bootstrap().catch((error) => {

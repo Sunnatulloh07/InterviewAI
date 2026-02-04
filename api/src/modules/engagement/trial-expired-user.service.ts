@@ -150,8 +150,8 @@ Afsuski, 7 kunlik bepul sinov muddatingiz tugagan.
 
 🎯 Endi haqiqiy o'zgarishlar boshlanadi!
 
-💼 STARTER - $4.99/oy
-🚀 PRO - $14.99/oy
+💼 STARTER - $9.99/oy
+🚀 PRO - $19.99/oy
 👑 ELITE - $29.99/oy
 
 📞 Tez yangilash uchun: @interviewai_support_bot

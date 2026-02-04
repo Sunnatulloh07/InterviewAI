@@ -2,6 +2,8 @@ import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Cron } from '@nestjs/schedule';
+import { InjectRedis } from '@nestjs-modules/ioredis';
+import Redis from 'ioredis';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { VoiceReservation, VoiceReservationDocument } from './schemas/voice-reservation.schema';
 import { VoiceQuotaService } from './voice-quota.service';
@@ -75,11 +77,15 @@ export class VoiceQuotaGuardService {
   // Reservation expiry time (5 minutes)
   private readonly RESERVATION_EXPIRY_MS = 5 * 60 * 1000;
 
+  // 🛡 PHASE 1.2: Redis queue for failed rollbacks
+  private readonly FAILED_ROLLBACK_QUEUE = 'voice-quota:failed-rollbacks';
+
   constructor(
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
     @InjectModel(VoiceReservation.name)
     private readonly reservationModel: Model<VoiceReservationDocument>,
     private readonly voiceQuotaService: VoiceQuotaService,
+    @InjectRedis() private readonly redis: Redis,
   ) {}
 
   /**
@@ -293,6 +299,11 @@ export class VoiceQuotaGuardService {
    *
    * Returns reserved quota to available pool if AI processing fails
    *
+   * 🛡 PHASE 1.2 FIX: Enhanced with retry queue fallback
+   * - If rollback succeeds → ✅ Done
+   * - If rollback fails → 📦 Add to Redis retry queue
+   * - Cron job retries every 5 minutes
+   *
    * @param reservationId - Reservation ID from reserveQuota()
    * @param reason - Reason for rollback
    */
@@ -326,10 +337,30 @@ export class VoiceQuotaGuardService {
       );
     } catch (error: any) {
       this.logger.error(
-        `Failed to rollback reservation ${reservationId}: ${error.message}`,
+        `CRITICAL: Rollback failed for ${reservationId}: ${error.message}`,
         error.stack,
       );
-      throw error;
+
+      // 🛡 PHASE 1.2: Add to retry queue instead of throwing
+      try {
+        const failedRollback = {
+          reservationId,
+          reason,
+          failedAt: new Date().toISOString(),
+          error: error.message,
+          retryCount: 0,
+        };
+
+        await this.redis.lpush(this.FAILED_ROLLBACK_QUEUE, JSON.stringify(failedRollback));
+
+        this.logger.warn(`❌ Rollback failed, added to retry queue: ${reservationId}`);
+      } catch (queueError: any) {
+        this.logger.error(`💀 DOUBLE FAILURE: Could not add to retry queue: ${queueError.message}`);
+        // At this point, we need manual intervention or monitoring alert
+      }
+
+      // 🛡 DON'T throw - let the calling code continue
+      // The quota will be recovered by retry cron job
     }
   }
 
@@ -379,6 +410,104 @@ export class VoiceQuotaGuardService {
       );
     } catch (error: any) {
       this.logger.error(`Failed to cleanup expired reservations: ${error.message}`, error.stack);
+    }
+  }
+
+  /**
+   * 🛡 PHASE 1.2: RETRY FAILED ROLLBACKS CRON
+   *
+   * Runs every 5 minutes to retry failed rollback operations
+   * Prevents permanent quota leakage from failed rollbacks
+   *
+   * Flow:
+   * 1. Get all failed rollbacks from Redis queue
+   * 2. Retry each rollback
+   * 3. If success → remove from queue
+   * 4. If fail again → increment retry count, keep in queue
+   * 5. After 10 retries → move to dead letter queue for manual review
+   */
+  @Cron('*/5 * * * *', {
+    name: 'retry_failed_rollbacks',
+    timeZone: 'UTC',
+  })
+  async retryFailedRollbacks(): Promise<void> {
+    try {
+      // Get all failed rollbacks (max 100 at a time)
+      const queueLength = await this.redis.llen(this.FAILED_ROLLBACK_QUEUE);
+
+      if (queueLength === 0) {
+        return; // Nothing to retry
+      }
+
+      this.logger.log(`🔄 Retrying ${queueLength} failed rollback operations...`);
+
+      const failedRollbacks = await this.redis.lrange(this.FAILED_ROLLBACK_QUEUE, 0, 99);
+
+      let successCount = 0;
+      let permanentFailCount = 0;
+      let retriedCount = 0;
+
+      for (const item of failedRollbacks) {
+        try {
+          const failedRollback = JSON.parse(item);
+          const { reservationId, reason, retryCount } = failedRollback;
+
+          // Max 10 retries, then give up
+          if (retryCount >= 10) {
+            this.logger.error(
+              `💀 Rollback failed 10 times, moving to dead letter: ${reservationId}`,
+            );
+
+            // Move to dead letter queue for manual review
+            await this.redis.lpush(`${this.FAILED_ROLLBACK_QUEUE}:dead-letter`, item);
+
+            // Remove from main queue
+            await this.redis.lrem(this.FAILED_ROLLBACK_QUEUE, 1, item);
+
+            permanentFailCount++;
+            continue;
+          }
+
+          // Retry the rollback
+          try {
+            await this.rollbackReservation(reservationId, reason);
+
+            // Success! Remove from queue
+            await this.redis.lrem(this.FAILED_ROLLBACK_QUEUE, 1, item);
+
+            this.logger.log(
+              `✅ Retry succeeded for rollback: ${reservationId} (after ${retryCount} retries)`,
+            );
+
+            successCount++;
+          } catch (retryError: any) {
+            // Still failing, increment retry count and keep in queue
+            failedRollback.retryCount = retryCount + 1;
+            failedRollback.lastRetryAt = new Date().toISOString();
+            failedRollback.lastRetryError = retryError.message;
+
+            // Update in queue (remove old, add updated)
+            await this.redis.lrem(this.FAILED_ROLLBACK_QUEUE, 1, item);
+            await this.redis.lpush(this.FAILED_ROLLBACK_QUEUE, JSON.stringify(failedRollback));
+
+            this.logger.warn(
+              `❌ Retry failed for rollback: ${reservationId} (attempt ${retryCount + 1}/10)`,
+            );
+
+            retriedCount++;
+          }
+        } catch (parseError: any) {
+          this.logger.error(`Failed to parse rollback item: ${parseError.message}`);
+          // Remove corrupted item
+          await this.redis.lrem(this.FAILED_ROLLBACK_QUEUE, 1, item);
+        }
+      }
+
+      this.logger.log(
+        `✅ Retry complete: ${successCount} recovered, ${retriedCount} retried, ${permanentFailCount} moved to dead letter`,
+      );
+    } catch (error: any) {
+      this.logger.error(`Failed to retry rollbacks: ${error.message}`, error.stack);
     }
   }
 

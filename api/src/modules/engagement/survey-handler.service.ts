@@ -78,7 +78,7 @@ export class SurveyHandlerService {
   constructor(
     private readonly configService: ConfigService,
     private readonly usersService: UsersService,
-  ) { }
+  ) {}
 
   /**
    * Lazy initialize bot instance

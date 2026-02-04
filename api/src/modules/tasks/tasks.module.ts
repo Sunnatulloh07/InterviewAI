@@ -31,4 +31,4 @@ import { EngagementModule } from '../engagement/engagement.module';
   providers: [DailyTasksService, AIQuestionGeneratorService, SegmentQuestionGeneratorService],
   exports: [DailyTasksService, AIQuestionGeneratorService, SegmentQuestionGeneratorService],
 })
-export class TasksModule { }
+export class TasksModule {}

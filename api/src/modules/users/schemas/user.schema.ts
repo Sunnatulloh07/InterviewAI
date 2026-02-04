@@ -265,6 +265,7 @@ export class User {
       // Position completion tracking
       positionConfirmed: false,
       scheduledPositionPromptAt: null,
+      positionPromptSentAt: null,
     }),
   })
   engagement: {
@@ -296,6 +297,8 @@ export class User {
     positionConfirmed: boolean;
     /** Scheduled time for position prompt (4h after registration if still default) */
     scheduledPositionPromptAt: Date | null;
+    /** When position prompt was sent (to prevent retries) */
+    positionPromptSentAt: Date | null;
   };
 
   // Virtual property

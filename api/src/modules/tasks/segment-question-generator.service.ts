@@ -78,7 +78,7 @@ export class SegmentQuestionGeneratorService {
       if (segmentQuestions) {
         this.logger.debug(
           `Cache HIT: ${careerPathSlug}/${position}/week${weekNumber}/${type} | ` +
-          `Served ${segmentQuestions.timesServed} times`,
+            `Served ${segmentQuestions.timesServed} times`,
         );
 
         // Update usage stats
@@ -116,7 +116,7 @@ export class SegmentQuestionGeneratorService {
 
       this.logger.log(
         `✅ Generated and cached: ${careerPathSlug}/${position}/week${weekNumber}/${type} | ` +
-        `Cost: $${generated.metadata.cost.toFixed(4)}`,
+          `Cost: $${generated.metadata.cost.toFixed(4)}`,
       );
 
       return {
@@ -201,7 +201,7 @@ Output format: JSON array with 3 questions:
     try {
       const response = await axios.post(
         this.configService.get('OPENROUTER_BASE_URL') ||
-        'https://openrouter.ai/api/v1/chat/completions',
+          'https://openrouter.ai/api/v1/chat/completions',
         {
           model: this.configService.get('OPENROUTER_MODEL') || 'z-ai/glm-4-32b',
           messages: [
@@ -231,7 +231,7 @@ Output format: JSON array with 3 questions:
 
       this.logger.log(
         `AI Generation: ${careerPathSlug}/${position}/${type} | ` +
-        `Tokens: ${tokensUsed}, Time: ${generationTime}ms, Cost: $${cost.toFixed(4)}`,
+          `Tokens: ${tokensUsed}, Time: ${generationTime}ms, Cost: $${cost.toFixed(4)}`,
       );
 
       // Validate response

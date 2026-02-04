@@ -177,7 +177,7 @@ Output ONLY valid JSON:
     try {
       const response = await axios.post(
         this.configService.get('OPENROUTER_BASE_URL') ||
-        'https://openrouter.ai/api/v1/chat/completions',
+          'https://openrouter.ai/api/v1/chat/completions',
         {
           model: this.configService.get('OPENROUTER_MODEL') || 'z-ai/glm-4-32b',
           messages: [

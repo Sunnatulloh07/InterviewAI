@@ -70,18 +70,21 @@ export class TelegramSubscriptionService {
 Sizning 7 kunlik bepul sinov muddatingiz tugadi. 
 Davom etish uchun tarifni tanlang:
 
-💼 <b>STARTER</b> - $4.99/oy
-• 15 ta mock intervyu
-• 30 daqiqa live intervyu
-• Voice xabarlar
+💼 <b>STARTER</b> - $9.99/oy
+• 10 ta mock intervyu/oy
+• 10 daq mock + 15 daq live ovoz
+• 5 ta CV tahlili/oy
 
-🚀 <b>PRO</b> - $14.99/oy
-• Cheksiz mock intervyu
-• 120 daqiqa live intervyu
+🚀 <b>PRO</b> - $19.99/oy
+• 30 ta mock intervyu/oy
+• 30 daq mock + 45 daq live ovoz
+• 15 ta CV tahlili/oy
 • Chrome extension
 
 👑 <b>ELITE</b> - $29.99/oy
-• Hammasi cheksiz
+• Cheksiz mock intervyu
+• 60 daq mock + 120 daq live ovoz
+• Cheksiz CV tahlili
 • Priority support
 
 📞 Tarifni yangilash uchun @interviewai_support_bot ga murojaat qiling.`,
@@ -90,18 +93,21 @@ Davom etish uchun tarifni tanlang:
 Ваш 7-дневный бесплатный период закончился.
 Выберите тариф для продолжения:
 
-💼 <b>STARTER</b> - $4.99/мес
-• 15 mock-интервью
-• 30 минут live-интервью
-• Голосовые сообщения
+💼 <b>STARTER</b> - $9.99/мес
+• 10 mock-интервью/мес
+• 10 мин mock + 15 мин live голос
+• 5 анализов CV/мес
 
-🚀 <b>PRO</b> - $14.99/мес
-• Безлимитные mock-интервью
-• 120 минут live-интервью
+🚀 <b>PRO</b> - $19.99/мес
+• 30 mock-интервью/мес
+• 30 мин mock + 45 мин live голос
+• 15 анализов CV/мес
 • Chrome extension
 
 👑 <b>ELITE</b> - $29.99/мес
-• Всё безлимитно
+• Безлимитные mock-интервью
+• 60 мин mock + 120 мин live голос
+• Безлимитные анализы CV
 • Priority support
 
 📞 Для обновления тарифа обратитесь в @interviewai_support_bot.`,
@@ -110,18 +116,21 @@ Davom etish uchun tarifni tanlang:
 Your 7-day free trial has ended.
 Choose a plan to continue:
 
-💼 <b>STARTER</b> - $4.99/mo
-• 15 mock interviews
-• 30 min live interview
-• Voice messages
+💼 <b>STARTER</b> - $9.99/mo
+• 10 mock interviews/mo
+• 10 min mock + 15 min live voice
+• 5 CV analyses/mo
 
-🚀 <b>PRO</b> - $14.99/mo
-• Unlimited mock interviews
-• 120 min live interview
+🚀 <b>PRO</b> - $19.99/mo
+• 30 mock interviews/mo
+• 30 min mock + 45 min live voice
+• 15 CV analyses/mo
 • Chrome extension
 
 👑 <b>ELITE</b> - $29.99/mo
-• Everything unlimited
+• Unlimited mock interviews
+• 60 min mock + 120 min live voice
+• Unlimited CV analyses
 • Priority support
 
 📞 Contact @interviewai_support_bot to upgrade.`,

@@ -375,4 +375,48 @@ export class SubscriptionService {
       this.logger.error(`❌ Monthly usage counters reset failed: ${error.message}`, error.stack);
     }
   }
+
+  /**
+   * CRITICAL CRON JOB: Expire trial subscriptions
+   * Runs every hour to check and update expired trial subscriptions
+   * Updates status from 'trialing' to 'expired' when trialEndsAt has passed
+   *
+   * ✅ NEW FIX: This was missing! Trial users never got status updated to 'expired'
+   */
+  @Cron('0 */1 * * *', {
+    name: 'expire_trial_subscriptions',
+    timeZone: 'UTC',
+  })
+  async expireTrialSubscriptions(): Promise<void> {
+    try {
+      this.logger.log('🔄 Checking for expired trial subscriptions...');
+
+      const now = new Date();
+
+      // Find all trial users whose trial has ended but status is still 'trialing'
+      const result = await this.userModel.updateMany(
+        {
+          'subscription.plan': 'free_trial',
+          'subscription.status': 'trialing',
+          'subscription.trialEndsAt': { $lt: now },
+          deletedAt: null,
+        },
+        {
+          $set: {
+            'subscription.status': 'expired',
+          },
+        },
+      );
+
+      if (result.modifiedCount > 0) {
+        this.logger.log(
+          `✅ Expired ${result.modifiedCount} trial subscriptions (status: trialing → expired)`,
+        );
+      } else {
+        this.logger.debug('No trial subscriptions to expire');
+      }
+    } catch (error: any) {
+      this.logger.error(`❌ Trial expiration job failed: ${error.message}`, error.stack);
+    }
+  }
 }

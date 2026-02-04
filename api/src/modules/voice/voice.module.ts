@@ -17,4 +17,4 @@ import { VoiceReservation, VoiceReservationSchema } from './schemas/voice-reserv
   providers: [VoiceQuotaService, VoiceQuotaGuardService],
   exports: [VoiceQuotaService, VoiceQuotaGuardService],
 })
-export class VoiceModule { }
+export class VoiceModule {}

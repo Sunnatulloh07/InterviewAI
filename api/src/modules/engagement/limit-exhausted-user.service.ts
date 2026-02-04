@@ -35,7 +35,8 @@ export class LimitExhaustedUserService {
           'engagement.isBotBlocked': { $ne: true },
           'engagement.notificationsPaused': { $ne: true },
           $or: [
-            { 'usage.mockInterviewsThisMonth': { $gte: 5 } },
+            // ✅ FIX: 5 → 3 (per COMPLETE_PLAN_LIMITS)
+            { 'usage.mockInterviewsThisMonth': { $gte: 3 } },
             { 'voiceQuota.mockVoice.remaining': 0 },
           ],
         })
@@ -62,7 +63,8 @@ export class LimitExhaustedUserService {
 
           const mockInterviewsUsed = user.usage?.mockInterviewsThisMonth || 0;
           const voiceMinutesRemaining = user.voiceQuota?.mockVoice?.remaining || 0;
-          const isMockExhausted = mockInterviewsUsed >= 5;
+          // ✅ FIX: 5 → 3 (per COMPLETE_PLAN_LIMITS)
+          const isMockExhausted = mockInterviewsUsed >= 3;
           const isVoiceExhausted = voiceMinutesRemaining === 0;
 
           const lang = user.language || 'uz';
@@ -159,7 +161,7 @@ export class LimitExhaustedUserService {
 • Advanced AI tahlil
 • Shaxsiy mentorlik
 
-💰 Faqat 49,000 so'm/oy (50% chegirma!)
+💰 Faqat $9.99/oy (~125,000 so'm)
 
 📞 @interviewai_support_bot
 
@@ -177,7 +179,7 @@ export class LimitExhaustedUserService {
 • Продвинутый AI анализ
 • Персональное менторство
 
-💰 Всего 49,000 сум/мес (скидка 50%!)
+💰 Всего $9.99/мес (~125,000 сум)
 
 📞 @interviewai_support_bot
 
@@ -195,7 +197,7 @@ export class LimitExhaustedUserService {
 • Advanced AI analysis
 • Personal mentorship
 
-💰 Only 49,000 sum/mo (50% discount!)
+💰 Only $9.99/mo (~125,000 sum)
 
 📞 @interviewai_support_bot
 
@@ -218,7 +220,7 @@ Sizning bepul 5 daqiqa ovozli javob limitingiz tugagan.
 • Avtomatik transkripsiya
 • Ovozli tahlil va feedback
 
-💰 STARTER: 49,000 so'm/oy
+💰 STARTER: $9.99/oy (~125,000 so'm)
 
 📞 @interviewai_support_bot
 
@@ -235,7 +237,7 @@ Sizning bepul 5 daqiqa ovozli javob limitingiz tugagan.
 • Автоматическая транскрипция
 • Голосовой анализ и feedback
 
-💰 STARTER: 49,000 сум/мес
+💰 STARTER: $9.99/мес (~125,000 сум)
 
 📞 @interviewai_support_bot
 
@@ -252,7 +254,7 @@ Your free 5-minute voice answer limit has ended.
 • Automatic transcription
 • Voice analysis and feedback
 
-💰 STARTER: 49,000 sum/mo
+💰 STARTER: $9.99/mo (~125,000 sum)
 
 📞 @interviewai_support_bot
 
@@ -337,19 +339,20 @@ Your free 5-minute voice answer limit has ended.
       const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
 
       const [mockExhausted, voiceExhausted, bothExhausted, totalNotified] = await Promise.all([
+        // ✅ FIX: 5 → 3 (per COMPLETE_PLAN_LIMITS)
         this.userModel.countDocuments({
           'subscription.plan': 'free_trial',
-          'usage.mockInterviewsThisMonth': { $gte: 5 },
+          'usage.mockInterviewsThisMonth': { $gte: 3 },
           'voiceQuota.mockVoice.remaining': { $gt: 0 },
         }),
         this.userModel.countDocuments({
           'subscription.plan': 'free_trial',
-          'usage.mockInterviewsThisMonth': { $lt: 5 },
+          'usage.mockInterviewsThisMonth': { $lt: 3 },
           'voiceQuota.mockVoice.remaining': 0,
         }),
         this.userModel.countDocuments({
           'subscription.plan': 'free_trial',
-          'usage.mockInterviewsThisMonth': { $gte: 5 },
+          'usage.mockInterviewsThisMonth': { $gte: 3 },
           'voiceQuota.mockVoice.remaining': 0,
         }),
         this.userModel.countDocuments({

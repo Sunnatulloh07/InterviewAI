@@ -51,6 +51,13 @@ export class DailyTask {
         score: { type: Number, min: 0, max: 10 }, // Score validation
         feedback: { type: String }, // AI feedback stored
         completedAt: { type: Date },
+        // 🛡 PHASE 1.1: Race condition prevention fields
+        scoringStatus: {
+          type: String,
+          enum: ['pending', 'completed', 'failed'],
+          default: 'pending',
+        },
+        scoredAt: { type: Date }, // When scoring finished
       },
     ],
     default: [],
@@ -74,6 +81,8 @@ export class DailyTask {
     score?: number; // 0-10 range
     feedback?: string; // AI feedback stored
     completedAt?: Date;
+    scoringStatus?: 'pending' | 'completed' | 'failed'; // 🛡 PHASE 1.1
+    scoredAt?: Date; // 🛡 PHASE 1.1
   }[];
 
   @Prop({ default: 'pending', index: true })
