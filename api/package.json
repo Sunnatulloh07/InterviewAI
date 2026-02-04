@@ -26,7 +26,9 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "migration:generate": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js migration:generate",
     "migration:run": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js migration:run",
-    "seed": "ts-node -r tsconfig-paths/register src/database/seeds/index.ts"
+    "seed": "ts-node -r tsconfig-paths/register src/database/seeds/index.ts",
+    "debug:tasks": "ts-node -r tsconfig-paths/register src/debug-tasks.ts",
+    "debug:daily-tasks": "ts-node -r tsconfig-paths/register src/debug-daily-tasks.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.515.0",
