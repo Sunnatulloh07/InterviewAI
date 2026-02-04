@@ -57,20 +57,24 @@ export class SafeQuestionProviderService {
   /**
    * 🎯 MAIN METHOD: Get question with 3-level safety
    * 
+   * @param seenQuestionIds - Questions user has already seen (for sequential learning)
+   * @param allowAI - Whether to allow AI generation (false for free users to save costs)
    * @returns Always returns a question (never fails!)
    */
   async getQuestionSafely(
     position: 'junior' | 'middle' | 'senior' | 'lead',
     type: 'technical' | 'behavioral' | 'system_design',
     domain: string,
+    seenQuestionIds: any[] = [],
+    allowAI: boolean = true,
   ): Promise<{ question: string; questionId: any; source: 'pool' | 'ai' | 'fallback' }> {
-    this.logger.debug(`Getting question: ${position}/${type}/${domain}`);
+    this.logger.debug(`Getting question: ${position}/${type}/${domain} (${seenQuestionIds.length} seen, AI=${allowAI})`);
 
     // ═══════════════════════════════════════════════════════
     // LEVEL 1: Try Pool First (Fast & Free)
     // ═══════════════════════════════════════════════════════
     try {
-      const poolQuestion = await this.getFromPool(position, type, domain);
+      const poolQuestion = await this.getFromPool(position, type, domain, seenQuestionIds);
       if (poolQuestion) {
         this.logger.debug(`✅ Found in pool: ${poolQuestion._id}`);
         
@@ -88,26 +92,30 @@ export class SafeQuestionProviderService {
       // Continue to next level (don't fail here)
     }
 
-    this.logger.log(`⚠️  Pool empty for ${position}/${type}/${domain} - trying AI generation`);
-
     // ═══════════════════════════════════════════════════════
     // LEVEL 2: AI Generation (With Retry + Timeout)
     // ═══════════════════════════════════════════════════════
-    if (this.openai) {
-      try {
-        const aiResult = await this.generateWithAISafely(position, type, domain);
-        if (aiResult) {
-          this.logger.log(`✅ AI generated successfully: ${aiResult.questionId}`);
-          return {
-            question: aiResult.question,
-            questionId: aiResult.questionId,
-            source: 'ai',
-          };
+    if (allowAI) {
+      this.logger.log(`⚠️  Pool empty (or all seen) for ${position}/${type}/${domain} - trying AI generation`);
+      
+      if (this.openai) {
+        try {
+          const aiResult = await this.generateWithAISafely(position, type, domain);
+          if (aiResult) {
+            this.logger.log(`✅ AI generated successfully: ${aiResult.questionId}`);
+            return {
+              question: aiResult.question,
+              questionId: aiResult.questionId,
+              source: 'ai',
+            };
+          }
+        } catch (error: any) {
+          this.logger.error(`AI generation failed after retries: ${error.message}`);
+          // Continue to fallback (don't fail here)
         }
-      } catch (error: any) {
-        this.logger.error(`AI generation failed after retries: ${error.message}`);
-        // Continue to fallback (don't fail here)
       }
+    } else {
+      this.logger.log(`💰 AI generation DISABLED (free user) - skipping to fallback`);
     }
 
     // ═══════════════════════════════════════════════════════
@@ -124,19 +132,46 @@ export class SafeQuestionProviderService {
   }
 
   /**
-   * 📦 LEVEL 1: Get from Pool
+   * 📦 LEVEL 1: Get from Pool (excluding seen questions)
    */
   private async getFromPool(
     position: string,
     type: string,
     domain: string,
+    seenQuestionIds: any[] = [],
   ): Promise<any> {
+    const query: any = { position, type, domain };
+    
+    // 🔥 CRITICAL: Exclude questions user has already seen (sequential learning)
+    if (seenQuestionIds.length > 0) {
+      query._id = { $nin: seenQuestionIds };
+    }
+    
     return await this.questionModel
-      .findOne({ position, type, domain })
-      .sort({ createdAt: 1 }) // FIFO - oldest first
+      .findOne(query)
+      .sort({ createdAt: 1 }) // FIFO - oldest first (sequential learning)
       .select('question _id')
       .lean()
       .exec();
+  }
+
+  /**
+   * 📊 Count unseen questions in pool
+   * Used to determine if AI generation is needed
+   */
+  async countUnseenQuestions(
+    position: string,
+    type: string,
+    domain: string,
+    seenQuestionIds: any[] = [],
+  ): Promise<number> {
+    const query: any = { position, type, domain };
+    
+    if (seenQuestionIds.length > 0) {
+      query._id = { $nin: seenQuestionIds };
+    }
+    
+    return await this.questionModel.countDocuments(query);
   }
 
   /**
