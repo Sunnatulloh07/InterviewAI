@@ -3,6 +3,7 @@ import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { AppService } from './app.service';
 import { Public } from './common/decorators/public.decorator';
 import { DailyTasksService } from './modules/tasks/daily-tasks.service';
+import { QuestionPoolManagerService } from './modules/tasks/question-pool-manager.service';
 
 @ApiTags('root')
 @Controller()
@@ -10,6 +11,7 @@ export class AppController {
   constructor(
     private readonly appService: AppService,
     private readonly dailyTasksService: DailyTasksService,
+    private readonly questionPoolManager: QuestionPoolManagerService,
   ) {}
 
   @Public()
@@ -50,6 +52,63 @@ export class AppController {
       return {
         success: false,
         message: 'Failed to trigger daily tasks delivery',
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      };
+    }
+  }
+
+  /**
+   * 🔍 DEBUG ENDPOINT: Check question pool status
+   * Shows count of questions for each position/type/domain combination
+   */
+  @Public()
+  @Get('debug/question-pool-status')
+  @ApiOperation({ summary: 'Check question pool status (DEBUG)' })
+  @ApiResponse({ status: 200, description: 'Pool status retrieved' })
+  async getQuestionPoolStatus() {
+    try {
+      const stats = await this.questionPoolManager.getPoolStatus();
+      return {
+        success: true,
+        stats: stats,
+        timestamp: new Date().toISOString(),
+        summary: {
+          total: stats.reduce((sum: number, s: any) => sum + s.count, 0),
+          healthy: stats.filter((s: any) => s.count >= 30).length,
+          warning: stats.filter((s: any) => s.count < 30).length,
+        },
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: 'Failed to get pool status',
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      };
+    }
+  }
+
+  /**
+   * 🔧 DEBUG ENDPOINT: Manually trigger pool refill
+   * Runs the background question generation process
+   */
+  @Public()
+  @Post('debug/trigger-pool-refill')
+  @ApiOperation({ summary: 'Manually trigger question pool refill (DEBUG)' })
+  @ApiResponse({ status: 200, description: 'Pool refill triggered' })
+  async triggerPoolRefill() {
+    try {
+      await this.questionPoolManager.refillQuestionPool();
+      return {
+        success: true,
+        message: 'Question pool refill triggered successfully',
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: 'Failed to trigger pool refill',
         error: error.message,
         timestamp: new Date().toISOString(),
       };

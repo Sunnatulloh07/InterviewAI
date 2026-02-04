@@ -110,10 +110,13 @@ export class PositionPromptService {
   ): Promise<void> {
     try {
       // Update user profile with confirmed position
+      // 🔧 FIX: Also clear scheduled times to prevent re-sending position prompts
       await this.userModel.findByIdAndUpdate(userId, {
         $set: {
           'profile.position': position,
           'engagement.positionConfirmed': true,
+          'engagement.scheduledPositionPromptAt': null, // Clear scheduled time
+          'engagement.positionPromptSentAt': new Date(), // Mark as sent
         },
       });
 

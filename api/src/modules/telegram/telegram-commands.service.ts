@@ -2538,12 +2538,18 @@ Which domain would you like to practice?
 
       try {
         // Update user profile with confirmed position
+        // 🔧 FIX: Also clear scheduled times to prevent re-sending position prompts
         await this.usersRepository.updateRaw((user as any).id || (user as any)._id?.toString(), {
           $set: {
             'profile.position': position,
             'engagement.positionConfirmed': true,
+            'engagement.scheduledPositionPromptAt': null, // Clear scheduled time
+            'engagement.positionPromptSentAt': new Date(), // Mark as sent
           },
         });
+
+        // 🔧 FIX: Use user's language from database, not session (session might be empty)
+        const userLang = (user as any).language || lang || 'uz';
 
         const confirmText: Record<string, string> = {
           uz: `✅ Rahmat! Lavozimingiz saqlandi: <b>${position}</b>\n\nEndi sizga mos savollar jo'natiladi.`,
@@ -2551,7 +2557,7 @@ Which domain would you like to practice?
           en: `✅ Thank you! Your position has been saved: <b>${position}</b>\n\nYou will now receive appropriate questions.`,
         };
 
-        await ctx.editMessageText(confirmText[lang] || confirmText.uz, { parse_mode: 'HTML' });
+        await ctx.editMessageText(confirmText[userLang] || confirmText.uz, { parse_mode: 'HTML' });
 
         this.logger.log(`User ${telegramId} confirmed position: ${position}`);
       } catch (error: any) {

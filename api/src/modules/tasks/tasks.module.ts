@@ -4,6 +4,7 @@ import { ConfigModule } from '@nestjs/config';
 import { DailyTasksService } from './daily-tasks.service';
 import { AIQuestionGeneratorService } from './ai-question-generator.service';
 import { SegmentQuestionGeneratorService } from './segment-question-generator.service';
+import { QuestionPoolManagerService } from './question-pool-manager.service';
 import { DailyTask, DailyTaskSchema } from './schemas/daily-task.schema';
 import { CareerPath, CareerPathSchema } from './schemas/career-path.schema';
 import { SegmentQuestion, SegmentQuestionSchema } from './schemas/segment-question.schema';
@@ -28,7 +29,17 @@ import { EngagementModule } from '../engagement/engagement.module';
     forwardRef(() => TelegramModule),
     forwardRef(() => EngagementModule), // Required for FailedNotificationRetryService
   ],
-  providers: [DailyTasksService, AIQuestionGeneratorService, SegmentQuestionGeneratorService],
-  exports: [DailyTasksService, AIQuestionGeneratorService, SegmentQuestionGeneratorService],
+  providers: [
+    DailyTasksService,
+    AIQuestionGeneratorService,
+    SegmentQuestionGeneratorService,
+    QuestionPoolManagerService, // 🏭 NEW: Background question pool manager
+  ],
+  exports: [
+    DailyTasksService,
+    AIQuestionGeneratorService,
+    SegmentQuestionGeneratorService,
+    QuestionPoolManagerService,
+  ],
 })
 export class TasksModule {}
