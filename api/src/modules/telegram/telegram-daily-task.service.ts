@@ -83,15 +83,22 @@ export class TelegramDailyTaskService {
 ❌ <b>Kunlik vazifalar premium xususiyat!</b>
 
 🎯 <b>Premium bilan nimalar olasiz:</b>
-• Har kuni 3 ta professional savol
-• 📊 Progress tracking va oylik statistika
+
+💎 <b>STARTER ($9.99/oy):</b>
+• Har kuni 1 ta professional savol
+• 📊 Oylik AI tahlil va feedback
 • 🎤 Voice va 🖼 image javoblar
-• 💎 AI-powered batafsil feedback
-• 🔥 Streak va motivatsiya sistemasi
 
-💰 <b>Faqat $9.99/oy dan boshlab!</b>
+🚀 <b>PRO ($19.99/oy):</b>
+• Har kuni 1 ta savol + kunlik progress
+• 📈 Haftalik AI tavsiyalar
+• Kengaytirilgan statistika
 
-Starter plan bilan barcha imkoniyatlardan foydalaning.
+👑 <b>ELITE ($29.99/oy):</b>
+• Har kuni 2 ta savol (2x ko'proq!)
+• 🗺 Haftalik career roadmap
+• Karyera o'sish tahlili
+• Unlimited mock interview va CV
 
 ━━━━━━━━━━━━━━━━━━`,
 
@@ -99,15 +106,22 @@ Starter plan bilan barcha imkoniyatlardan foydalaning.
 ❌ <b>Ежедневные задания - премиум функция!</b>
 
 🎯 <b>Что вы получите с Premium:</b>
-• Каждый день 3 профессиональных вопроса
-• 📊 Отслеживание прогресса и статистика за месяц
-• 🎤 Голосовые и 🖼 ответы изображениями
-• 💎 Подробный AI-анализ
-• 🔥 Система мотивации и серий
 
-💰 <b>Всего от $9.99/мес!</b>
+💎 <b>STARTER ($9.99/мес):</b>
+• 1 профессиональный вопрос в день
+• 📊 Месячный AI отчет и feedback
+• 🎤 Голосовые и 🖼 ответы фото
 
-Получите все возможности с тарифом Starter.
+🚀 <b>PRO ($19.99/мес):</b>
+• 1 вопрос в день + ежедневный прогресс
+• 📈 Еженедельные AI рекомендации
+• Расширенная статистика
+
+👑 <b>ELITE ($29.99/мес):</b>
+• 2 вопроса в день (в 2 раза больше!)
+• 🗺 Еженедельная карьерная roadmap
+• Анализ роста карьеры
+• Unlimited mock interview и CV
 
 ━━━━━━━━━━━━━━━━━━`,
 
@@ -115,15 +129,22 @@ Starter plan bilan barcha imkoniyatlardan foydalaning.
 ❌ <b>Daily Tasks is a premium feature!</b>
 
 🎯 <b>What you get with Premium:</b>
-• 3 professional questions every day
-• 📊 Progress tracking & monthly statistics
+
+💎 <b>STARTER ($9.99/month):</b>
+• 1 professional question per day
+• 📊 Monthly AI report & feedback
 • 🎤 Voice & 🖼 image answers
-• 💎 AI-powered detailed feedback
-• 🔥 Streak & motivation system
 
-💰 <b>Starting from just $9.99/month!</b>
+🚀 <b>PRO ($19.99/month):</b>
+• 1 question/day + daily progress
+• 📈 Weekly AI recommendations
+• Advanced statistics
 
-Get full access with the Starter plan.
+👑 <b>ELITE ($29.99/month):</b>
+• 2 questions per day (2x more!)
+• 🗺 Weekly career roadmap
+• Career growth insights
+• Unlimited mock interview & CV
 
 ━━━━━━━━━━━━━━━━━━`,
       };
