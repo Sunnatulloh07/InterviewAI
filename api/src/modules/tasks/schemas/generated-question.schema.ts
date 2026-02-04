@@ -51,10 +51,11 @@ export class GeneratedQuestion {
   };
 
   @Prop({ default: 0 })
-  timesUsed: number; // How many users received this
+  timesUsed: number; // How many users received this (counter only)
 
-  @Prop({ type: [Types.ObjectId], ref: 'User', default: [] })
-  servedToUsers: Types.ObjectId[]; // Track who got this (prevent duplication)
+  // 🗑️ REMOVED: servedToUsers array (memory overflow risk for 1M+ users)
+  // Instead, we track seen questions in User.seenQuestionIds (reverse relationship)
+  // This is more scalable: each user has ~100-1000 seen IDs vs each question having 1M+ user IDs
 
   @Prop({ type: Date })
   expiresAt: Date; // Cache expiry (30 days)

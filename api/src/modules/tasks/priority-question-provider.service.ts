@@ -49,31 +49,45 @@ export class PriorityQuestionProviderService {
    * 🎯 Get question based on user priority (INTELLIGENT VERSION)
    * 
    * SMART LOGIC:
-   * 1. Get user's seenQuestionIds from DB
+   * 1. Get user's seenQuestionIds from DB (or use cached if provided)
    * 2. Count unseen questions in pool
    * 3. If premium AND unseen < 3: Generate new (save money!)
    * 4. Otherwise: Use pool (sequential learning)
+   * 
+   * @param userCache - Optional cached user data to avoid DB query (performance optimization)
    */
   async getQuestionByPriority(
     userId: string,
     position: 'junior' | 'middle' | 'senior' | 'lead',
     type: 'technical' | 'behavioral' | 'system_design',
     domain: string,
+    userCache?: { plan: string; seenIds: any[] },
   ): Promise<{ question: string; questionId: any; source: 'pool' | 'ai' | 'fallback'; priority: 'premium' | 'free' }> {
-    // Get user with seen history
-    const user = await this.userModel
-      .findById(userId)
-      .select('subscription seenQuestionIds')
-      .lean();
-    
-    if (!user) {
-      this.logger.error(`User ${userId} not found!`);
-      // Fallback to free logic
-      return await this.getForFreeUser(position, type, domain, []);
+    let plan: string;
+    let seenIds: any[];
+
+    // 🚀 PERFORMANCE: Use cached user data if provided (avoid DB query)
+    if (userCache) {
+      plan = userCache.plan;
+      seenIds = userCache.seenIds;
+      this.logger.debug(`Using cached user data (plan=${plan}, seenCount=${seenIds.length})`);
+    } else {
+      // Get user with seen history from DB
+      const user = await this.userModel
+        .findById(userId)
+        .select('subscription seenQuestionIds')
+        .lean();
+      
+      if (!user) {
+        this.logger.error(`User ${userId} not found!`);
+        // Fallback to free logic
+        return await this.getForFreeUser(position, type, domain, []);
+      }
+
+      plan = user.subscription?.plan || 'free_trial';
+      seenIds = (user as any).seenQuestionIds || [];
     }
 
-    const plan = user.subscription?.plan || 'free_trial';
-    const seenIds = (user as any).seenQuestionIds || [];
     const isPremium = this.isPremiumPlan(plan);
 
     this.logger.debug(

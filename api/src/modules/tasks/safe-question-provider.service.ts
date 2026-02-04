@@ -265,13 +265,14 @@ export class SafeQuestionProviderService {
         type,
         domain,
         question: result.question,
+        techStacks: [domain], // Match pool structure
         metadata: {
-          generatedBy: 'gpt-4o-mini',
-          tokensUsed: 0,
+          generatedBy: 'z-ai/glm-4-32b', // Current model (not gpt-4o-mini)
+          tokensUsed: 0, // OpenRouter doesn't return this
           generationTime: 0,
-          cost: 0,
+          cost: 0.00001, // Estimated
         },
-        timesUsed: 1,
+        timesUsed: 1, // Already used by the requestor
       });
 
       result.questionId = doc._id;

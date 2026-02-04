@@ -212,10 +212,14 @@ export class QuestionPoolManagerService {
             type: type,
             domain: domain,
             techStacks: [domain], // Simplified
-            difficulty: this.mapPositionToDifficulty(position),
             timesUsed: 0,
-            averageScore: 0,
-            createdAt: new Date(),
+            metadata: {
+              generatedBy: 'z-ai/glm-4-32b',
+              tokensUsed: 0, // Unknown (OpenRouter doesn't return this)
+              generationTime: 0,
+              cost: 0.00001, // Estimated: ~$0.01 per 1K questions
+            },
+            // createdAt is auto-added by Mongoose timestamps
           });
 
           generated++;
@@ -302,18 +306,6 @@ Make it realistic and suitable for ${position} level.`;
     }
 
     return `Generate an interview question for ${position} ${type} developer.`;
-  }
-
-  /**
-   * Map position to difficulty level
-   */
-  private mapPositionToDifficulty(position: string): string {
-    return {
-      junior: 'easy',
-      middle: 'medium',
-      senior: 'hard',
-      lead: 'expert',
-    }[position] || 'medium';
   }
 
   /**

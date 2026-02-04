@@ -188,13 +188,36 @@ export class DailyTasksService {
             const techStack = user.profile?.techStack || [];
             const domain = this.detectDomain(techStack);
 
+            // 🚀 PERFORMANCE OPTIMIZATION: Fetch user data once for all 3 questions
+            // This avoids 3 separate DB queries (1 query instead of 3)
+            const userFull = await this.userModel
+              .findById(user._id)
+              .select('subscription seenQuestionIds')
+              .lean();
+
+            const userCache = {
+              plan: userFull?.subscription?.plan || 'free_trial',
+              seenIds: (userFull as any)?.seenQuestionIds || [],
+            };
+
             const [technical, behavioral, systemDesign] = await Promise.all([
-              this.priorityProvider.getQuestionByPriority(user._id.toString(), position, 'technical', domain),
-              this.priorityProvider.getQuestionByPriority(user._id.toString(), position, 'behavioral', domain),
+              this.priorityProvider.getQuestionByPriority(user._id.toString(), position, 'technical', domain, userCache),
+              this.priorityProvider.getQuestionByPriority(user._id.toString(), position, 'behavioral', domain, userCache),
               position !== 'junior'
-                ? this.priorityProvider.getQuestionByPriority(user._id.toString(), position, 'system_design', domain)
+                ? this.priorityProvider.getQuestionByPriority(user._id.toString(), position, 'system_design', domain, userCache)
                 : Promise.resolve({ question: null as any, questionId: null, source: 'none' as any, priority: 'free' as any }),
             ]);
+
+            // 🛡 CRITICAL: Validate questions before creating tasks
+            // Fallback should always return a question, but just in case...
+            if (!technical.question || !behavioral.question) {
+              this.logger.error(
+                `❌ Failed to generate questions for user ${user._id}: ` +
+                `technical=${!!technical.question}, behavioral=${!!behavioral.question}`,
+              );
+              errorCount++;
+              continue; // Skip this user - don't create empty tasks
+            }
 
             const tasks = [
               { question: technical.question, questionId: technical.questionId, completed: false },
@@ -1195,13 +1218,34 @@ Provide your response in JSON format:
             const techStack = user.profile?.techStack || [];
             const domain = this.detectDomain(techStack);
 
+            // 🚀 PERFORMANCE OPTIMIZATION: Fetch user data once for all 3 questions
+            const userFull = await this.userModel
+              .findById(user._id)
+              .select('subscription seenQuestionIds')
+              .lean();
+
+            const userCache = {
+              plan: userFull?.subscription?.plan || 'free_trial',
+              seenIds: (userFull as any)?.seenQuestionIds || [],
+            };
+
             const [technical, behavioral, systemDesign] = await Promise.all([
-              this.priorityProvider.getQuestionByPriority(user._id.toString(), position, 'technical', domain),
-              this.priorityProvider.getQuestionByPriority(user._id.toString(), position, 'behavioral', domain),
+              this.priorityProvider.getQuestionByPriority(user._id.toString(), position, 'technical', domain, userCache),
+              this.priorityProvider.getQuestionByPriority(user._id.toString(), position, 'behavioral', domain, userCache),
               position !== 'junior'
-                ? this.priorityProvider.getQuestionByPriority(user._id.toString(), position, 'system_design', domain)
+                ? this.priorityProvider.getQuestionByPriority(user._id.toString(), position, 'system_design', domain, userCache)
                 : Promise.resolve({ question: null as any, questionId: null, source: 'none' as any, priority: 'free' as any }),
             ]);
+
+            // 🛡 CRITICAL: Validate questions before creating tasks
+            if (!technical.question || !behavioral.question) {
+              this.logger.error(
+                `❌ Failed to generate questions for missed user ${user._id}: ` +
+                `technical=${!!technical.question}, behavioral=${!!behavioral.question}`,
+              );
+              failed++;
+              continue; // Skip this user
+            }
 
             const tasks = [
               { question: technical.question, questionId: technical.questionId, completed: false },
