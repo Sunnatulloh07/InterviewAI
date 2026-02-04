@@ -65,6 +65,12 @@ export type GeneratedQuestionDocument = GeneratedQuestion & Document;
 export const GeneratedQuestionSchema = SchemaFactory.createForClass(GeneratedQuestion);
 
 // Indexes for efficient queries
+// 🔥 CRITICAL: Main pool query index (position + type + domain + createdAt)
+// This covers the main query: { position, type, domain, _id: { $nin: seenIds } }
+// sorted by createdAt for FIFO sequential learning
+GeneratedQuestionSchema.index({ position: 1, type: 1, domain: 1, createdAt: 1 });
+
+// Legacy indexes (still useful for other queries)
 GeneratedQuestionSchema.index({ patternId: 1, position: 1, type: 1 });
 GeneratedQuestionSchema.index({ domain: 1, techStacks: 1 }); // Tech stack matching
 GeneratedQuestionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 }); // TTL index

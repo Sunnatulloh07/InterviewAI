@@ -63,42 +63,69 @@ export class PriorityQuestionProviderService {
     domain: string,
     userCache?: { plan: string; seenIds: any[] },
   ): Promise<{ question: string; questionId: any; source: 'pool' | 'ai' | 'fallback'; priority: 'premium' | 'free' }> {
-    let plan: string;
-    let seenIds: any[];
+    try {
+      let plan: string;
+      let seenIds: any[];
 
-    // 🚀 PERFORMANCE: Use cached user data if provided (avoid DB query)
-    if (userCache) {
-      plan = userCache.plan;
-      seenIds = userCache.seenIds;
-      this.logger.debug(`Using cached user data (plan=${plan}, seenCount=${seenIds.length})`);
-    } else {
-      // Get user with seen history from DB
-      const user = await this.userModel
-        .findById(userId)
-        .select('subscription seenQuestionIds')
-        .lean();
-      
-      if (!user) {
-        this.logger.error(`User ${userId} not found!`);
-        // Fallback to free logic
-        return await this.getForFreeUser(position, type, domain, []);
+      // 🚀 PERFORMANCE: Use cached user data if provided (avoid DB query)
+      if (userCache) {
+        plan = userCache.plan;
+        seenIds = userCache.seenIds;
+        this.logger.debug(`Using cached user data (plan=${plan}, seenCount=${seenIds.length})`);
+      } else {
+        // Get user with seen history from DB
+        const user = await this.userModel
+          .findById(userId)
+          .select('subscription seenQuestionIds')
+          .lean();
+        
+        if (!user) {
+          this.logger.error(`User ${userId} not found!`);
+          // Fallback to free logic
+          return await this.getForFreeUser(position, type, domain, []);
+        }
+
+        plan = user.subscription?.plan || 'free_trial';
+        seenIds = (user as any).seenQuestionIds || [];
       }
 
-      plan = user.subscription?.plan || 'free_trial';
-      seenIds = (user as any).seenQuestionIds || [];
+      const isPremium = this.isPremiumPlan(plan);
+
+      this.logger.debug(
+        `User ${userId}: plan=${plan}, isPremium=${isPremium}, seenCount=${seenIds.length}`,
+      );
+
+      if (isPremium) {
+        return await this.getForPremiumUser(userId, position, type, domain, seenIds);
+      } else {
+        return await this.getForFreeUser(position, type, domain, seenIds);
+      }
+    } catch (error: any) {
+      this.logger.error(
+        `Priority question provider failed for user ${userId}: ${error.message}`,
+        error.stack,
+      );
+      
+      // Ultimate fallback: return static question
+      return {
+        question: this.getUltimateFallback(type),
+        questionId: null,
+        source: 'fallback',
+        priority: 'free',
+      };
     }
+  }
 
-    const isPremium = this.isPremiumPlan(plan);
-
-    this.logger.debug(
-      `User ${userId}: plan=${plan}, isPremium=${isPremium}, seenCount=${seenIds.length}`,
-    );
-
-    if (isPremium) {
-      return await this.getForPremiumUser(userId, position, type, domain, seenIds);
-    } else {
-      return await this.getForFreeUser(position, type, domain, seenIds);
-    }
+  /**
+   * 🆘 Ultimate fallback - used when everything fails
+   */
+  private getUltimateFallback(type: string): string {
+    const fallbacks = {
+      technical: 'Explain the difference between SQL and NoSQL databases. When would you use each?',
+      behavioral: 'Tell me about a time when you had to learn a new technology quickly. How did you approach it?',
+      system_design: 'Design a simple URL shortener service. What are the main components?',
+    };
+    return fallbacks[type] || fallbacks.technical;
   }
 
   /**
@@ -137,6 +164,7 @@ export class PriorityQuestionProviderService {
     // 🎯 STEP 2: Decision logic
     if (unseenCount >= this.MIN_UNSEEN_THRESHOLD) {
       // ✅ Pool has enough unseen questions - USE POOL (FREE!)
+      // NO AI generation needed since pool is sufficient
       this.logger.log(
         `💰 COST SAVED! Premium user using pool (${unseenCount} unseen questions available)`,
       );
@@ -146,6 +174,7 @@ export class PriorityQuestionProviderService {
         type as any,
         domain,
         seenIds,
+        false, // 💰 NO AI needed - pool has enough questions!
       );
 
       return {
@@ -164,6 +193,7 @@ export class PriorityQuestionProviderService {
         type as any,
         domain,
         seenIds,
+        true, // ✅ AI allowed - need to generate new questions!
       );
 
       return {

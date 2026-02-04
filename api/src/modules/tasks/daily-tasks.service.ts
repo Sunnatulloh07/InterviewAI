@@ -190,16 +190,12 @@ export class DailyTasksService {
             const techStack = user.profile?.techStack || [];
             const domain = this.detectDomain(techStack);
 
-            // 🚀 PERFORMANCE OPTIMIZATION: Fetch user data once for all questions
-            const userFull = await this.userModel
-              .findById(user._id)
-              .select('subscription seenQuestionIds')
-              .lean();
-
-            const userPlan = userFull?.subscription?.plan || 'free_trial';
+            // 🚀 PERFORMANCE OPTIMIZATION: Use data from batch query (no additional DB call!)
+            // userBatch already has: subscription, seenQuestionIds
+            const userPlan = user.subscription?.plan || 'free_trial';
             const userCache = {
               plan: userPlan,
-              seenIds: (userFull as any)?.seenQuestionIds || [],
+              seenIds: (user as any)?.seenQuestionIds || [],
             };
 
             // 🔥 NEW: Get plan-specific task count
@@ -1224,7 +1220,7 @@ Provide your response in JSON format:
 
         const missedUsers = await this.userModel
           .find({ _id: { $in: batch } })
-          .select('_id telegramId profile')
+          .select('_id telegramId profile subscription seenQuestionIds')
           .lean();
 
         for (const user of missedUsers) {
@@ -1233,16 +1229,11 @@ Provide your response in JSON format:
             const techStack = user.profile?.techStack || [];
             const domain = this.detectDomain(techStack);
 
-            // 🚀 PERFORMANCE OPTIMIZATION: Fetch user data once
-            const userFull = await this.userModel
-              .findById(user._id)
-              .select('subscription seenQuestionIds')
-              .lean();
-
-            const userPlan = userFull?.subscription?.plan || 'free_trial';
+            // 🚀 PERFORMANCE OPTIMIZATION: Use data from batch query (no additional DB call!)
+            const userPlan = user.subscription?.plan || 'free_trial';
             const userCache = {
               plan: userPlan,
-              seenIds: (userFull as any)?.seenQuestionIds || [],
+              seenIds: (user as any)?.seenQuestionIds || [],
             };
 
             // 🔥 NEW: Get plan-specific task count
