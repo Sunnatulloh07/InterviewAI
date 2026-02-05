@@ -5,8 +5,10 @@ import { DailyTasksService } from './daily-tasks.service';
 import { AIQuestionGeneratorService } from './ai-question-generator.service';
 import { SegmentQuestionGeneratorService } from './segment-question-generator.service';
 import { QuestionPoolManagerService } from './question-pool-manager.service';
+import { UserAwarePoolManagerService } from './user-aware-pool-manager.service'; // 🎯 NEW: User-aware pool manager
 import { SafeQuestionProviderService } from './safe-question-provider.service';
 import { PriorityQuestionProviderService } from './priority-question-provider.service';
+import { TasksDebugController } from './tasks-debug.controller'; // 🔍 Debug controller
 import { DailyTask, DailyTaskSchema } from './schemas/daily-task.schema';
 import { CareerPath, CareerPathSchema } from './schemas/career-path.schema';
 import { SegmentQuestion, SegmentQuestionSchema } from './schemas/segment-question.schema';
@@ -31,11 +33,13 @@ import { EngagementModule } from '../engagement/engagement.module';
     forwardRef(() => TelegramModule),
     forwardRef(() => EngagementModule), // Required for FailedNotificationRetryService
   ],
+  controllers: [TasksDebugController], // 🔍 Debug endpoints
   providers: [
     DailyTasksService,
     AIQuestionGeneratorService,
     SegmentQuestionGeneratorService,
-    QuestionPoolManagerService, // 🏭 Background question pool manager
+    QuestionPoolManagerService, // 🏭 Background question pool manager (general pool)
+    UserAwarePoolManagerService, // 🎯 User-aware pool manager (tracks consumption)
     SafeQuestionProviderService, // 🛡️ Safe 3-level question provider
     PriorityQuestionProviderService, // 🎯 Priority-based provider (premium vs free)
   ],
@@ -44,6 +48,7 @@ import { EngagementModule } from '../engagement/engagement.module';
     AIQuestionGeneratorService,
     SegmentQuestionGeneratorService,
     QuestionPoolManagerService,
+    UserAwarePoolManagerService, // 🎯 Export for other modules
     SafeQuestionProviderService,
     PriorityQuestionProviderService,
   ],

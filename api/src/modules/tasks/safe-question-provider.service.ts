@@ -98,13 +98,13 @@ export class SafeQuestionProviderService {
     // LEVEL 2: AI Generation (With Retry + Timeout)
     // ═══════════════════════════════════════════════════════
     if (allowAI) {
-      this.logger.log(`⚠️  Pool empty (or all seen) for ${position}/${type}/${domain} - trying AI generation`);
+      this.logger.log(`⚠️  Pool empty (or all seen) for ${position}/${type}/${domain}/${language} - trying AI generation`);
       
       if (this.openai) {
         try {
-          const aiResult = await this.generateWithAISafely(position, type, domain);
+          const aiResult = await this.generateWithAISafely(position, type, domain, language); // 🌍 Pass language
           if (aiResult) {
-            this.logger.log(`✅ AI generated successfully: ${aiResult.questionId}`);
+            this.logger.log(`✅ AI generated successfully (${language}): ${aiResult.questionId}`);
             return {
               question: aiResult.question,
               questionId: aiResult.questionId,
@@ -222,16 +222,47 @@ export class SafeQuestionProviderService {
   }
 
   /**
-   * 🔧 Generate single question with AI
+   * 🤖 LEVEL 2: Generate with AI (with retry + timeout protection)
    */
-  private async generateQuestion(
+  private async generateWithAISafely(
     position: string,
     type: string,
     domain: string,
-  ): Promise<{ question: string; questionId: any }> {
-    if (!this.openai) {
-      throw new Error('AI client not initialized');
+    language: string, // 🌍 Add language parameter
+  ): Promise<{ question: string; questionId: any } | null> {
+    let lastError: any = null;
+
+    for (let attempt = 1; attempt <= this.MAX_RETRIES; attempt++) {
+      this.logger.debug(`AI generation attempt ${attempt}/${this.MAX_RETRIES} (${language})`);
+
+      try {
+        // Race between AI generation and timeout
+        const result = await Promise.race([
+          this.generateQuestion(position, type, domain, language), // 🌍 Pass language
+          this.timeoutPromise(),
+        ]);
+
+        if (result && result.question) {
+          // Save to pool for future use (fire-and-forget)
+          this.saveToPool(result, position, type, domain, language).catch(() => {}); // 🌍 Pass language
+          
+          return result;
+        }
+      } catch (error: any) {
+        lastError = error;
+        this.logger.warn(`Attempt ${attempt} failed: ${error.message}`);
+
+        // Wait before retry (except last attempt)
+        if (attempt < this.MAX_RETRIES) {
+          await this.delay(this.RETRY_DELAY_MS * attempt); // Exponential backoff
+        }
+      }
     }
+
+    // All retries failed
+    this.logger.error(`All ${this.MAX_RETRIES} attempts failed. Last error: ${lastError?.message}`);
+    return null;
+  }
 
     const prompt = this.buildPrompt(position, type, domain);
 
@@ -262,12 +293,14 @@ export class SafeQuestionProviderService {
     position: string,
     type: string,
     domain: string,
+    language: string, // 🌍 Add language parameter
   ): Promise<void> {
     try {
       const doc = await this.questionModel.create({
         position,
         type,
         domain,
+        language, // 🌍 Save language
         question: result.question,
         techStacks: [domain], // Match pool structure
         metadata: {
@@ -280,7 +313,7 @@ export class SafeQuestionProviderService {
       });
 
       result.questionId = doc._id;
-      this.logger.debug(`Saved to pool: ${doc._id}`);
+      this.logger.debug(`Saved to pool: ${doc._id} (${language})`);
     } catch (error: any) {
       this.logger.warn(`Failed to save to pool: ${error.message}`);
       // Don't throw - this is fire-and-forget
@@ -391,16 +424,43 @@ export class SafeQuestionProviderService {
   }
 
   /**
-   * ⏳ Delay helper
+   * 🔧 Generate single question with AI
    */
-  private delay(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+  private async generateQuestion(
+    position: string,
+    type: string,
+    domain: string,
+    language: string, // 🌍 Add language parameter
+  ): Promise<{ question: string; questionId: any }> {
+    if (!this.openai) {
+      throw new Error('AI client not initialized');
+    }
+
+    const prompt = this.buildPrompt(position, type, domain, language); // 🌍 Pass language
+
+    const completion = await this.openai.chat.completions.create({
+      model: OPENROUTER_MODELS['glm-4-32b'], // Very cheap: $0.10 per 1M tokens
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.7,
+      max_tokens: 150,
+    });
+
+    const questionText = completion.choices[0].message.content?.trim();
+    
+    if (!questionText) {
+      throw new Error('Empty response from AI');
+    }
+
+    return {
+      question: questionText,
+      questionId: null, // Will be set after saving
+    };
   }
 
   /**
-   * 📝 Build AI prompt
+   * 📝 Build AI prompt (multilingual: uz/ru/en)
    */
-  private buildPrompt(position: string, type: string, domain: string): string {
+  private buildPrompt(position: string, type: string, domain: string, language: string): string {
     const roleMap = {
       junior: 'Junior',
       middle: 'Middle',
@@ -414,7 +474,48 @@ export class SafeQuestionProviderService {
       system_design: 'system design interview',
     };
 
-    return `Generate 1 ${typeMap[type]} question for a ${roleMap[position]} ${domain} developer.
+    // 🌍 MULTILINGUAL PROMPTS (uz/ru/en)
+    if (language === 'uz') {
+      // Uzbek prompt
+      const typeMapUz = {
+        technical: 'texnik intervyu',
+        behavioral: 'behavioral intervyu',
+        system_design: 'tizim dizayn intervyu',
+      };
+      
+      return `Siz professional intervyu mutaxassisisiz. ${roleMap[position]} darajadagi ${domain} developer uchun 1 ta ${typeMapUz[type]} savolini yarating.
+
+Talablar:
+- Professional va murakkab
+- Real hayotdagi vaziyat
+- Aniq va qisqa
+- Faqat 1 ta savol
+- Qo'shtirnoq yoki markdown ishlatmang
+- Savol **faqat o'zbek tilida** bo'lishi kerak
+
+Faqat savol matnini qaytaring.`;
+    } else if (language === 'ru') {
+      // Russian prompt
+      const typeMapRu = {
+        technical: 'техническое интервью',
+        behavioral: 'поведенческое интервью',
+        system_design: 'интервью по проектированию систем',
+      };
+      
+      return `Вы эксперт по техническим интервью. Создайте 1 вопрос для ${typeMapRu[type]} для ${roleMap[position]} ${domain} разработчика.
+
+Требования:
+- Профессиональный и сложный
+- Реальный сценарий
+- Четкий и лаконичный
+- Только 1 вопрос
+- Без кавычек и markdown
+- Вопрос должен быть **только на русском языке**
+
+Верните только текст вопроса.`;
+    } else {
+      // English prompt (default)
+      return `You are an expert technical interviewer. Generate 1 ${typeMap[type]} question for a ${roleMap[position]} ${domain} developer.
 
 Requirements:
 - Professional and challenging
@@ -422,7 +523,9 @@ Requirements:
 - Clear and concise
 - One question only
 - No quotes or markdown
+- Question must be **in English only**
 
 Return ONLY the question text.`;
+    }
   }
 }
