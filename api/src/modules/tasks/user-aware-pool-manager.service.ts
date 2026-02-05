@@ -11,29 +11,31 @@ import OpenAI from 'openai';
 import { OPENROUTER_MODELS } from '../../common/utils/openai-client.factory';
 
 /**
- * 🎯 USER-AWARE POOL MANAGER
+ * 🎯 USER-AWARE POOL MANAGER (OPTIMIZED VERSION)
  * 
- * Tracks oldest/most active users and proactively generates questions
- * BEFORE they run out (instead of runtime generation)
- * 
- * LOGIC:
+ * CRITICAL LOGIC:
  * 1. Every 30 minutes, check TOP 100 oldest active paid users
- * 2. For each user: count UNSEEN questions in pool
- * 3. If unseen < 3: proactively generate 10 new questions
- * 4. By 09:00 AM, pool is ready for ALL users!
+ * 2. For each user:
+ *    - Get position (junior/middle/senior/lead)
+ *    - Get techStack (specific technologies from CV analysis)
+ *    - Count UNSEEN questions matching position + techStack
+ * 3. If unseen < 3: generate 10 new questions
+ *    - ONLY for this user's specific position + techStack
+ *    - NOT for other positions or domains
+ * 4. Questions generated in 3 languages (uz/ru/en)
+ *    - title_uz, title_ru, title_en
+ *    - question_uz, question_ru, question_en
+ * 5. At 09:00 delivery, select appropriate language based on user preference
  * 
- * BENEFITS:
- * - Proactive (not reactive)
- * - Cheaper (batch generation vs runtime)
- * - Faster delivery (no wait at 09:00)
- * - Scalable (tracks actual consumption)
+ * KEY PRINCIPLE: Generate ONLY what users actually need!
  */
+
 @Injectable()
 export class UserAwarePoolManagerService {
   private readonly logger = new Logger(UserAwarePoolManagerService.name);
   private readonly openai: OpenAI | null;
   
-  // 🎯 How many users to track (oldest/most active)
+  // 🎯 How many users to track
   private readonly TOP_USERS_TO_TRACK = 100;
   
   // 🎯 Threshold: generate if unseen < 3
@@ -105,7 +107,7 @@ export class UserAwarePoolManagerService {
       for (const user of topUsers) {
         try {
           const position = user.profile?.position || 'junior';
-          const language = (user as any).preferences?.language || (user as any).language || 'en';
+          const techStack = user.profile?.techStack || [];
           const seenIds = (user as any).seenQuestionIds || [];
 
           // Check for each task type
@@ -117,15 +119,17 @@ export class UserAwarePoolManagerService {
           }
 
           for (const type of types) {
-            const domain = this.detectDomain(user.profile?.techStack || []);
-            const key = `${position}|${type}|${domain}|${language}`;
+            // 🔥 KEY: Use specific techStack (not domain) for matching
+            const key = `${position}|${type}|${techStack.join(',')}`;
 
-            // Count unseen questions for this combination
+            // Count unseen questions matching this specific user
             const unseenCount = await this.questionModel.countDocuments({
               position,
               type,
-              domain,
-              language,
+              $or: [
+                { techStacks: { $in: techStack } }, // Match specific tech
+                { domain: this.detectDomain(techStack) }, // Fallback
+              ],
               _id: { $nin: seenIds },
             });
 
@@ -157,7 +161,10 @@ export class UserAwarePoolManagerService {
 
       for (const [key, count] of poolNeedsGeneration.entries()) {
         try {
-          const [position, type, domain, language] = key.split('|');
+          const parts = key.split('|');
+          const position = parts[0];
+          const type = parts[1];
+          const techStack = parts[2] ? parts[2].split(',') : [];
           
           this.logger.log(
             `🏭 Generating ${count} questions for ${key}`,
@@ -166,13 +173,12 @@ export class UserAwarePoolManagerService {
           const genCount = await this.generateQuestions(
             position,
             type,
-            domain,
-            language,
+            techStack,
             count,
           );
 
           generated += genCount;
-          await this.delay(1000); // Rate limiting
+          await this.delay(1500); // Rate limiting for 3-language generation
         } catch (error: any) {
           this.logger.error(
             `Failed to generate for ${key}: ${error.message}`,
@@ -217,19 +223,18 @@ export class UserAwarePoolManagerService {
       })
       .sort({ createdAt: 1 }) // Oldest first
       .limit(this.TOP_USERS_TO_TRACK)
-      .select('_id profile seenQuestionIds language preferences')
+      .select('_id profile seenQuestionIds') // Profile includes position and techStack
       .lean()
       .exec();
   }
 
   /**
-   * Generate questions for a combination
+   * Generate questions for a specific combination
    */
   private async generateQuestions(
     position: string,
     type: string,
-    domain: string,
-    language: string,
+    techStack: string[],
     count: number,
   ): Promise<number> {
     if (!this.openai) {
@@ -237,37 +242,42 @@ export class UserAwarePoolManagerService {
     }
 
     let generated = 0;
+    const domain = this.detectDomain(techStack);
 
     for (let i = 0; i < count; i++) {
       try {
-        const question = await this.generateSingleQuestion(
+        const result = await this.generateSingleQuestion(
           position,
           type,
           domain,
-          language,
+          techStack,
         );
 
-        if (question) {
+        if (result) {
           await this.questionModel.create({
-            question,
+            title_uz: result.title_uz,
+            title_ru: result.title_ru,
+            title_en: result.title_en,
+            question_uz: result.question_uz,
+            question_ru: result.question_ru,
+            question_en: result.question_en,
             position,
             type,
             domain,
-            language,
-            techStacks: [domain],
+            techStacks: techStack.length > 0 ? techStack : [domain],
             timesUsed: 0,
             metadata: {
               generatedBy: 'z-ai/glm-4-32b',
               tokensUsed: 0,
               generationTime: 0,
-              cost: 0.00001,
+              cost: 0.00003, // 3x cost for 3 languages
             },
           });
 
           generated++;
         }
 
-        await this.delay(1000); // Rate limiting
+        await this.delay(2000); // Longer delay for 3-language generation
       } catch (error: any) {
         this.logger.error(`Generation failed: ${error.message}`);
       }
@@ -277,25 +287,73 @@ export class UserAwarePoolManagerService {
   }
 
   /**
-   * Generate single question (simplified)
+   * Generate single question in 3 languages with title
    */
   private async generateSingleQuestion(
     position: string,
     type: string,
     domain: string,
-    language: string,
-  ): Promise<string | null> {
+    techStack: string[],
+  ): Promise<{
+    title_uz: string; title_ru: string; title_en: string;
+    question_uz: string; question_ru: string; question_en: string;
+  } | null> {
     try {
-      const prompt = `Generate a ${type} interview question for ${position} ${domain} developer in ${language} language.`;
+      const techStackStr = techStack.length > 0 
+        ? techStack.join(', ') 
+        : domain;
+      
+      const typeMap = {
+        technical: 'technical interview',
+        behavioral: 'behavioral interview',
+        system_design: 'system design interview',
+      };
+      
+      const prompt = `Generate a ${typeMap[type]} question for a ${position} developer specializing in ${techStackStr}.
+
+Generate in 3 languages (Uzbek, Russian, English):
+
+Requirements:
+- Professional and challenging
+- Real-world scenario specific to ${techStackStr}
+- Clear and concise
+- Include a short title (2-5 words)
+- Each language should be culturally appropriate
+
+Output ONLY valid JSON:
+{
+  "title_uz": "Qisqa sarlavha o'zbek tilida",
+  "title_ru": "Краткое название на русском",
+  "title_en": "Short title in English",
+  "question_uz": "To'liq savol o'zbek tilida",
+  "question_ru": "Полный вопрос на русском языке",
+  "question_en": "Full question in English"
+}`;
       
       const response = await this.openai.chat.completions.create({
         model: OPENROUTER_MODELS['glm-4-32b'],
         messages: [{ role: 'user', content: prompt }],
-        temperature: 0.9,
-        max_tokens: 200,
+        temperature: 0.8,
+        max_tokens: 600,
       });
 
-      return response.choices[0]?.message?.content?.trim() || null;
+      const content = response.choices[0]?.message?.content?.trim();
+      if (!content) return null;
+
+      // Extract JSON from response
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) return null;
+
+      const result = JSON.parse(jsonMatch[0]);
+      
+      // Validate all fields present
+      if (!result.title_uz || !result.title_ru || !result.title_en ||
+          !result.question_uz || !result.question_ru || !result.question_en) {
+        this.logger.warn('Missing fields in AI response');
+        return null;
+      }
+
+      return result;
     } catch (error: any) {
       this.logger.error(`AI generation failed: ${error.message}`);
       return null;
@@ -310,8 +368,8 @@ export class UserAwarePoolManagerService {
     
     const stack = techStack[0].toLowerCase();
     if (['react', 'vue', 'angular'].some(t => stack.includes(t))) return 'frontend';
-    if (['node', 'express', 'django'].some(t => stack.includes(t))) return 'backend';
-    if (['react-native', 'flutter', 'swift'].some(t => stack.includes(t))) return 'mobile';
+    if (['node', 'express', 'django', 'spring'].some(t => stack.includes(t))) return 'backend';
+    if (['react-native', 'flutter', 'swift', 'kotlin'].some(t => stack.includes(t))) return 'mobile';
     
     return 'general';
   }

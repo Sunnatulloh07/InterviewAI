@@ -194,10 +194,11 @@ export class DailyTasksService {
             // userBatch already has: subscription, seenQuestionIds, language, preferences
             const userPlan = user.subscription?.plan || 'free_trial';
             const userLanguage = (user as any).preferences?.language || (user as any).language || 'en'; // 🌍 Get language
+            const userTechStack = (user as any).profile?.techStack || []; // 🔥 Get techStack
             const userCache = {
               plan: userPlan,
               seenIds: (user as any)?.seenQuestionIds || [],
-              language: userLanguage, // 🌍 Add language to cache
+              techStack: userTechStack, // 🔥 Add techStack to cache
             };
 
             // 🔥 NEW: Get plan-specific task count
@@ -235,14 +236,36 @@ export class DailyTasksService {
               continue; // Skip this user
             }
 
-            // Build tasks array
+            // 🌍 MULTILINGUAL: Select appropriate language based on user preference
+            const userLanguage = (user as any).preferences?.language || (user as any).language || 'en';
+            
+            // Build tasks array with correct language
             const tasks = questions
-              .filter(q => q && q.question) // Only valid questions
-              .map(q => ({
-                question: q.question,
-                questionId: q.questionId,
-                completed: false,
-              }));
+              .filter(q => q && (q.question_uz || q.question_ru || q.question_en)) // Check any language exists
+              .map(q => {
+                // Select title and question based on user language
+                let title: string;
+                let question: string;
+                
+                if (userLanguage === 'uz') {
+                  title = q.title_uz || q.title_en || q.title_ru || 'Savol';
+                  question = q.question_uz || q.question_en || q.question_ru || '';
+                } else if (userLanguage === 'ru') {
+                  title = q.title_ru || q.title_en || q.title_uz || 'Вопрос';
+                  question = q.question_ru || q.question_en || q.question_uz || '';
+                } else {
+                  // Default to English
+                  title = q.title_en || q.title_ru || q.title_uz || 'Question';
+                  question = q.question_en || q.question_ru || q.question_uz || '';
+                }
+                
+                return {
+                  title,
+                  question,
+                  questionId: q.questionId,
+                  completed: false,
+                };
+              });
 
             // 🛡 PHASE 1.4: CRITICAL FIX - Update seen IDs BEFORE creating task
             // This prevents duplicate questions if task creation fails

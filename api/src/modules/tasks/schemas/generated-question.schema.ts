@@ -3,14 +3,17 @@ import { Document, Types } from 'mongoose';
 
 /**
  * Generated Question Schema
- *
- * Stores AI-generated questions with caching for cost optimization.
- * Questions are cached for 30 days to serve similar requests.
- *
+ * 
+ * 🌍 MULTILINGUAL: Each question has title and question in 3 languages
+ * - title_uz, title_ru, title_en
+ * - question_uz, question_ru, question_en
+ * 
+ * Delivery time: Select appropriate language based on user's preference
+ * 
  * COST OPTIMIZATION:
- * - Cache hit = $0 cost
- * - Cache miss = ~$0.001 (Z-AI GLM-4-32B cost)
- * - 90% cache hit rate for 1M users = $100/day instead of $1000/day
+ * - Generate once in 3 languages
+ * - Serve to all users regardless of language
+ * - 3x generation cost, but serves 3x user base efficiently
  */
 
 @Schema({ timestamps: true })
@@ -25,16 +28,30 @@ export class GeneratedQuestion {
   domain: string; // e.g., 'frontend', 'backend', 'mobile'
 
   @Prop({ type: [String], default: [] })
-  techStacks: string[]; // e.g., ['react', 'node', 'java']
+  techStacks: string[]; // 🔥 CRITICAL: Specific technologies e.g., ['Node.js', 'Express']
 
   @Prop({ required: true, enum: ['technical', 'behavioral', 'system_design'] })
   type: string;
 
-  @Prop({ type: String, enum: ['uz', 'ru', 'en'], default: 'en' })
-  language: string; // Question language (uz/ru/en)
+  // 🌍 MULTILINGUAL: Title in 3 languages
+  @Prop({ type: String })
+  title_uz: string;
+
+  @Prop({ type: String })
+  title_ru: string;
+
+  @Prop({ type: String })
+  title_en: string;
+
+  // 🌍 MULTILINGUAL: Question in 3 languages
+  @Prop({ required: true })
+  question_uz: string;
 
   @Prop({ required: true })
-  question: string; // AI-generated question text
+  question_ru: string;
+
+  @Prop({ required: true })
+  question_en: string;
 
   @Prop({ type: String })
   context: string; // Story context (optional)
@@ -50,15 +67,11 @@ export class GeneratedQuestion {
     generatedBy: string; // 'z-ai/glm-4-32b'
     tokensUsed: number;
     generationTime: number; // milliseconds
-    cost: number; // USD
+    cost: number; // USD (3x for 3 languages)
   };
 
   @Prop({ default: 0 })
   timesUsed: number; // How many users received this (counter only)
-
-  // 🗑️ REMOVED: servedToUsers array (memory overflow risk for 1M+ users)
-  // Instead, we track seen questions in User.seenQuestionIds (reverse relationship)
-  // This is more scalable: each user has ~100-1000 seen IDs vs each question having 1M+ user IDs
 
   @Prop({ type: Date })
   expiresAt: Date; // Cache expiry (30 days)
@@ -68,13 +81,13 @@ export type GeneratedQuestionDocument = GeneratedQuestion & Document;
 export const GeneratedQuestionSchema = SchemaFactory.createForClass(GeneratedQuestion);
 
 // Indexes for efficient queries
-// 🔥 CRITICAL: Main pool query index (position + type + domain + language + createdAt)
-// This covers the main query: { position, type, domain, language, _id: { $nin: seenIds } }
-// sorted by createdAt for FIFO sequential learning
-GeneratedQuestionSchema.index({ position: 1, type: 1, domain: 1, language: 1, createdAt: 1 });
+// 🔥 CRITICAL: Main pool query index (position + type + techStacks + createdAt)
+// Query: { position, type, techStacks: { $in: userTechStack }, _id: { $nin: seenIds } }
+GeneratedQuestionSchema.index({ position: 1, type: 1, techStacks: 1, createdAt: 1 });
+GeneratedQuestionSchema.index({ position: 1, type: 1, domain: 1, createdAt: 1 }); // Fallback
 
-// Legacy indexes (still useful for other queries)
+// Legacy indexes
 GeneratedQuestionSchema.index({ patternId: 1, position: 1, type: 1 });
-GeneratedQuestionSchema.index({ domain: 1, techStacks: 1 }); // Tech stack matching
-GeneratedQuestionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 }); // TTL index
+GeneratedQuestionSchema.index({ domain: 1, techStacks: 1 });
+GeneratedQuestionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 GeneratedQuestionSchema.index({ timesUsed: 1 });
