@@ -92,13 +92,17 @@ export class QuestionPoolManagerService {
   /**
    * 🕐 CRON: Background Question Generation
    * 
+   * ⚠️  DISABLED - Replaced by UserAwarePoolManagerService
+   * This service generates questions WITHOUT checking if users actually need them
+   * UserAwarePoolManagerService tracks real user consumption and generates on-demand
+   * 
    * Runs every 30 minutes to maintain question pool
    * Generates questions for position/type/domain combinations that are running low
    */
-  @Cron('*/30 * * * *', {
-    name: 'refill_question_pool',
-    timeZone: 'Asia/Tashkent',
-  })
+  // @Cron('*/30 * * * *', { // 🚫 DISABLED - Use UserAwarePoolManagerService instead
+  //   name: 'refill_question_pool',
+  //   timeZone: 'Asia/Tashkent',
+  // })
   async refillQuestionPool(): Promise<void> {
     const lockKey = 'cron:question-pool:refill';
     const lockTTL = 1800; // 30 minutes
