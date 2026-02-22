@@ -40,7 +40,8 @@ export class User {
   @Prop({ required: true })
   firstName: string;
 
-  @Prop({ required: true })
+  // FIX #111: lastName not always available from Telegram (some users don't set it)
+  @Prop({ required: false, default: '' })
   lastName: string;
 
   @Prop()
