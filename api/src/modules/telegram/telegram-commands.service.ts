@@ -119,24 +119,17 @@ export class TelegramCommandsService {
         'en', // Default language until selected
       );
 
-      // Show comprehensive welcome message with language selection
-      const welcomeText = `👋 <b>Welcome to InterviewAI Pro!</b>
+      // FIX #110: Clean welcome — short greeting in 3 languages + language selection
+      // Full bot description is shown AFTER language is selected (in user's language)
+      const welcomeText =
+        `👋 <b>Assalomu alaykum!</b>\n` +
+        `Здравствуйте!\n` +
+        `Hello!\n\n` +
+        `━━━━━━━━━━━━━━━━━━\n` +
+        `🌍 <b>Tilni tanlang:</b>\n` +
+        `Выберите язык:\n` +
+        `Select your language:`;
 
-🤖 <b>What is this bot?</b>
-AI-powered interview preparation assistant that helps you:
-
-✅ <b>Mock Interviews</b> - Practice with AI interviewer
-✅ <b>Live Interview Help</b> - Real-time answers during interviews
-✅ <b>Daily Tasks</b> - Daily practice questions to stay sharp
-✅ <b>CV Analysis</b> - AI-powered resume review
-✅ <b>Voice Support</b> - Answer with voice messages
-
-━━━━━━━━━━━━━━━━━━
-🌍 <b>Please select your language:</b>
-Пожалуйста, выберите язык:
-Iltimos, tilni tanlang:`;
-
-      // InlineKeyboard for language selection (message buttons, not keyboard)
       const langKeyboard = new InlineKeyboard()
         .text("🇺🇿 O'zbek", 'lang_uz')
         .text('🇷🇺 Русский', 'lang_ru')
@@ -144,7 +137,7 @@ Iltimos, tilni tanlang:`;
 
       await ctx.reply(welcomeText, {
         parse_mode: 'HTML',
-        reply_markup: langKeyboard, // InlineKeyboard for language selection only
+        reply_markup: langKeyboard,
       });
 
       this.logger.log(`New user started registration: ${telegramId}`);
@@ -2409,31 +2402,71 @@ ${answerInstructions}
         );
       }
 
-      // Show phone number request
+      // FIX #110: Show professional bot description in selected language + registration
+      // Written in a human, conversational tone — not robotic bullet points
       const registrationText: Record<string, string> = {
-        uz: `✅ <b>Til o'rnatildi!</b>
+        uz: `Ajoyib tanlov! 🎯
 
-🔐 <b>Ro'yxatdan o'tish</b>
+Men — <b>InterviewAI Pro</b>, sizning shaxsiy intervyu tayyorgarlik yordamchingizman.
 
-Botdan foydalanish uchun telefon raqamingizni tasdiqlang.
+Mening vazifam oddiy: sizni keyingi ishga kirish intervyusiga <b>to'liq tayyor qilish</b>. Qanday?
 
-Quyidagi tugmani bosing 👇`,
+🎤 <b>Mock intervyular</b> — AI bilan haqiqiy intervyudek mashq qilasiz. Kuchli va zaif tomonlaringizni ko'rsataman.
 
-        ru: `✅ <b>Язык установлен!</b>
+📄 <b>CV tahlili</b> — rezyumeyingizni 100 ballik tizimda baholayman. Nimani tuzatish kerakligini aniq aytaman.
 
-🔐 <b>Регистрация</b>
+📝 <b>Kunlik vazifalar</b> — har kuni sizning sohangizdagi savollar yuboraman. 10-15 daqiqada bilimingizni mustahkamlaymiz.
 
-Для использования бота подтвердите номер телефона.
+🔴 <b>Live yordam</b> — haqiqiy intervyu paytida real vaqtda javoblar taklif qilaman.
 
-Нажмите кнопку ниже 👇`,
+Barchasi AI kuchi bilan — 24/7, sizning qulayligingiz uchun.
 
-        en: `✅ <b>Language set!</b>
+━━━━━━━━━━━━━━━━━━
+🆓 <b>7 kunlik bepul sinov</b> — hoziroq boshlang!
 
-🔐 <b>Registration</b>
+Ro'yxatdan o'tish uchun telefon raqamingizni tasdiqlang 👇`,
 
-To use the bot, verify your phone number.
+        ru: `Отличный выбор! 🎯
 
-Press the button below 👇`,
+Я — <b>InterviewAI Pro</b>, ваш персональный помощник по подготовке к собеседованиям.
+
+Моя задача проста: <b>полностью подготовить вас</b> к следующему собеседованию. Как?
+
+🎤 <b>Mock-интервью</b> — практикуетесь с AI как на настоящем собеседовании. Покажу сильные и слабые стороны.
+
+📄 <b>Анализ CV</b> — оценю ваше резюме по 100-балльной системе. Точно скажу, что исправить.
+
+📝 <b>Ежедневные задания</b> — каждый день присылаю вопросы по вашей специализации. 10-15 минут для закрепления знаний.
+
+🔴 <b>Live-помощь</b> — подсказки в реальном времени прямо во время собеседования.
+
+Всё на основе AI — 24/7, в удобное для вас время.
+
+━━━━━━━━━━━━━━━━━━
+🆓 <b>7 дней бесплатно</b> — начните прямо сейчас!
+
+Для регистрации подтвердите номер телефона 👇`,
+
+        en: `Great choice! 🎯
+
+I'm <b>InterviewAI Pro</b>, your personal interview preparation assistant.
+
+My job is simple: <b>fully prepare you</b> for your next job interview. How?
+
+🎤 <b>Mock Interviews</b> — practice with AI just like a real interview. I'll show your strengths and areas to improve.
+
+📄 <b>CV Analysis</b> — I'll score your resume on a 100-point system and tell you exactly what to fix.
+
+📝 <b>Daily Tasks</b> — every day I send questions in your field. 10-15 minutes to sharpen your skills.
+
+🔴 <b>Live Help</b> — real-time answer suggestions during actual interviews.
+
+All powered by AI — 24/7, whenever it's convenient for you.
+
+━━━━━━━━━━━━━━━━━━
+🆓 <b>7-day free trial</b> — start right now!
+
+To register, verify your phone number 👇`,
       };
 
       const phoneButton: Record<string, string> = {
