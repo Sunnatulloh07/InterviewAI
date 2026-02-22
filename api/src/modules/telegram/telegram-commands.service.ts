@@ -2402,24 +2402,26 @@ ${answerInstructions}
         );
       }
 
-      // FIX #110: Show professional bot description in selected language + registration
-      // Written in a human, conversational tone — not robotic bullet points
+      // FIX #110: Professional bot description in selected language + registration
+      // Focus: career growth, job search, interview prep, skill building, promotion
       const registrationText: Record<string, string> = {
         uz: `Ajoyib tanlov! 🎯
 
-Men — <b>InterviewAI Pro</b>, sizning shaxsiy intervyu tayyorgarlik yordamchingizman.
+<b>InterviewAI Pro</b> — sizning shaxsiy AI karriera yordamchingiz.
 
-Mening vazifam oddiy: sizni keyingi ishga kirish intervyusiga <b>to'liq tayyor qilish</b>. Qanday?
+Ish izlayapsizmi, pozitsiyangizni ko'tarmoqchimisiz yoki sohangizdagi bilimlaringizni chuqurlashtirmoqchimisiz — farqi yo'q, men sizga yordam beraman.
 
-🎤 <b>Mock intervyular</b> — AI bilan haqiqiy intervyudek mashq qilasiz. Kuchli va zaif tomonlaringizni ko'rsataman.
+<b>Men sizga qanday yordam beraman:</b>
 
-📄 <b>CV tahlili</b> — rezyumeyingizni 100 ballik tizimda baholayman. Nimani tuzatish kerakligini aniq aytaman.
+📄 <b>CV tahlili</b> — rezyumeyingizni professional HR ko'zi bilan 100 ballik tizimda baholayman. Qaysi joylarni tuzatsangiz, intervyuga chaqirilish imkoniyatingiz keskin oshishini aniq ko'rsataman.
 
-📝 <b>Kunlik vazifalar</b> — har kuni sizning sohangizdagi savollar yuboraman. 10-15 daqiqada bilimingizni mustahkamlaymiz.
+🎤 <b>Mock intervyu</b> — haqiqiy intervyudek mashq. Men savollar beraman, javoblaringizni baholayman va nimani qanday yaxshilash kerakligini tushuntiraman. Junior bo'lsangiz Middle savollarini, Middle bo'lsangiz Senior savollari bilan sinab ko'ring — keyingi pog'onaga chiqish shu yerdan boshlanadi.
 
-🔴 <b>Live yordam</b> — haqiqiy intervyu paytida real vaqtda javoblar taklif qilaman.
+📝 <b>Kunlik vazifalar</b> — har kuni aynan sizning sohangizdagi savollar. Har bir javobingizga AI baho va tushuntirish beradi. 10-15 daqiqa — katta farq yaratadi. Bilim bo'shlig'ingizni ko'rsataman va uni qanday to'ldirish kerakligini aytaman.
 
-Barchasi AI kuchi bilan — 24/7, sizning qulayligingiz uchun.
+🔴 <b>Live intervyu yordami</b> — haqiqiy intervyu paytida real vaqtda yordam. Savol tushunarsiz bo'lsa yoki javobni qanday strukturalashni bilmasangiz — men yoningizdaman.
+
+Barchasi sizning CV va tajribangiz asosida moslashtiriladi. AI 24/7 ishlaydi — tunda ham, erta tongda ham.
 
 ━━━━━━━━━━━━━━━━━━
 🆓 <b>7 kunlik bepul sinov</b> — hoziroq boshlang!
@@ -2428,19 +2430,21 @@ Ro'yxatdan o'tish uchun telefon raqamingizni tasdiqlang 👇`,
 
         ru: `Отличный выбор! 🎯
 
-Я — <b>InterviewAI Pro</b>, ваш персональный помощник по подготовке к собеседованиям.
+<b>InterviewAI Pro</b> — ваш персональный AI-помощник для карьерного роста.
 
-Моя задача проста: <b>полностью подготовить вас</b> к следующему собеседованию. Как?
+Ищете работу, хотите повысить позицию или углубить знания в своей области — неважно, я помогу.
 
-🎤 <b>Mock-интервью</b> — практикуетесь с AI как на настоящем собеседовании. Покажу сильные и слабые стороны.
+<b>Вот что я умею:</b>
 
-📄 <b>Анализ CV</b> — оценю ваше резюме по 100-балльной системе. Точно скажу, что исправить.
+📄 <b>Анализ CV</b> — оценю ваше резюме глазами профессионального HR по 100-балльной системе. Покажу, какие правки резко повысят ваши шансы получить приглашение на собеседование.
 
-📝 <b>Ежедневные задания</b> — каждый день присылаю вопросы по вашей специализации. 10-15 минут для закрепления знаний.
+🎤 <b>Mock-интервью</b> — тренировка как на настоящем собеседовании. Задаю вопросы, оцениваю ответы и объясняю, как улучшить каждый из них. Junior? Попробуйте вопросы уровня Middle. Middle? Проверьте себя на Senior — рост начинается здесь.
 
-🔴 <b>Live-помощь</b> — подсказки в реальном времени прямо во время собеседования.
+📝 <b>Ежедневные задания</b> — каждый день вопросы именно по вашей специализации. AI оценивает каждый ответ и даёт разбор. 10-15 минут в день — и вы заметите разницу. Покажу пробелы в знаниях и как их закрыть.
 
-Всё на основе AI — 24/7, в удобное для вас время.
+🔴 <b>Live-помощь на интервью</b> — поддержка в реальном времени прямо во время собеседования. Если вопрос непонятен или не знаете как структурировать ответ — я рядом.
+
+Всё адаптируется под ваш CV и опыт. AI работает 24/7 — ночью, рано утром, в любое время.
 
 ━━━━━━━━━━━━━━━━━━
 🆓 <b>7 дней бесплатно</b> — начните прямо сейчас!
@@ -2449,19 +2453,21 @@ Ro'yxatdan o'tish uchun telefon raqamingizni tasdiqlang 👇`,
 
         en: `Great choice! 🎯
 
-I'm <b>InterviewAI Pro</b>, your personal interview preparation assistant.
+<b>InterviewAI Pro</b> — your personal AI career growth assistant.
 
-My job is simple: <b>fully prepare you</b> for your next job interview. How?
+Whether you're job hunting, aiming for a promotion, or looking to deepen your expertise — I'm here to help.
 
-🎤 <b>Mock Interviews</b> — practice with AI just like a real interview. I'll show your strengths and areas to improve.
+<b>Here's what I can do for you:</b>
 
-📄 <b>CV Analysis</b> — I'll score your resume on a 100-point system and tell you exactly what to fix.
+📄 <b>CV Analysis</b> — I'll review your resume through a professional HR lens with a 100-point scoring system. I'll show you exactly which changes will dramatically increase your chances of getting interview calls.
 
-📝 <b>Daily Tasks</b> — every day I send questions in your field. 10-15 minutes to sharpen your skills.
+🎤 <b>Mock Interviews</b> — practice like it's the real thing. I ask the questions, evaluate your answers, and explain how to improve each one. Junior? Try Middle-level questions. Middle? Test yourself with Senior ones — this is where growth happens.
 
-🔴 <b>Live Help</b> — real-time answer suggestions during actual interviews.
+📝 <b>Daily Tasks</b> — every day, questions tailored to your specific field. AI scores each answer with detailed feedback. 10-15 minutes a day makes a real difference. I'll show knowledge gaps and exactly how to fill them.
 
-All powered by AI — 24/7, whenever it's convenient for you.
+🔴 <b>Live Interview Help</b> — real-time support during actual interviews. If a question is unclear or you're not sure how to structure your answer — I'm right there with you.
+
+Everything adapts to your CV and experience. AI works 24/7 — late at night, early morning, whenever works for you.
 
 ━━━━━━━━━━━━━━━━━━
 🆓 <b>7-day free trial</b> — start right now!
