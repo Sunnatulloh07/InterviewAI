@@ -36,6 +36,55 @@ export class SubscriptionService {
   }
 
   /**
+   * FIX #105: Centralized subscription validity check
+   *
+   * Checks BOTH trial and paid plan expiry in one call.
+   * Use this before any user action (CV analysis, interview, task answer, voice).
+   *
+   * Returns { active: true } if user can proceed, or { active: false, reason } if blocked.
+   *
+   * Logic:
+   * - free_trial: check trialEndsAt > now
+   * - paid plans: check status !== 'expired' AND (endDate not set OR endDate > now)
+   */
+  async isSubscriptionActive(userId: string): Promise<{
+    active: boolean;
+    reason?: 'trial_expired' | 'subscription_expired' | 'no_subscription';
+    plan: string;
+  }> {
+    const user = await this.userModel.findById(userId).select('subscription');
+    if (!user?.subscription) {
+      return { active: false, reason: 'no_subscription', plan: 'free_trial' };
+    }
+
+    const plan = user.subscription.plan || 'free_trial';
+    const now = new Date();
+
+    // Free trial: check trialEndsAt
+    if (plan === 'free_trial') {
+      const trialEnd = user.subscription.trialEndsAt;
+      if (trialEnd && now > new Date(trialEnd)) {
+        return { active: false, reason: 'trial_expired', plan };
+      }
+      // Trial still active (or no trialEndsAt set — treat as active)
+      return { active: true, plan };
+    }
+
+    // Paid plans: check status + endDate
+    if (user.subscription.status === 'expired' || user.subscription.status === 'cancelled') {
+      return { active: false, reason: 'subscription_expired', plan };
+    }
+
+    // Check endDate if set
+    const endDate = user.subscription.endDate;
+    if (endDate && now > new Date(endDate)) {
+      return { active: false, reason: 'subscription_expired', plan };
+    }
+
+    return { active: true, plan };
+  }
+
+  /**
    * Get remaining trial days
    */
   async getTrialDaysRemaining(userId: string): Promise<number> {
@@ -76,29 +125,26 @@ export class SubscriptionService {
 
   /**
    * Check if user can use a feature
+   * FIX #105: Uses isSubscriptionActive for both trial + paid plan expiry
    */
   async canUseFeature(userId: string, feature: string): Promise<boolean> {
-    const user = await this.userModel.findById(userId).select('subscription');
-    if (!user?.subscription) return false;
+    const subStatus = await this.isSubscriptionActive(userId);
+    if (!subStatus.active) return false;
 
-    // Check trial expiry first
-    if (await this.isTrialExpired(userId)) return false;
-
-    const plan = user.subscription.plan as SubscriptionPlan;
+    const plan = subStatus.plan as SubscriptionPlan;
     const features = this.getPlanFeatures(plan);
     return !!features[feature as keyof typeof features];
   }
 
   /**
    * Check if user can use voice messages
+   * FIX #105: Uses isSubscriptionActive for both trial + paid plan expiry
    */
   async canUseVoice(userId: string, isLiveInterview: boolean): Promise<boolean> {
-    const user = await this.userModel.findById(userId).select('subscription');
-    if (!user?.subscription) return false;
+    const subStatus = await this.isSubscriptionActive(userId);
+    if (!subStatus.active) return false;
 
-    if (await this.isTrialExpired(userId)) return false;
-
-    const plan = user.subscription.plan as SubscriptionPlan;
+    const plan = subStatus.plan as SubscriptionPlan;
     const features = this.getPlanFeatures(plan);
 
     if (isLiveInterview) {
@@ -128,8 +174,9 @@ export class SubscriptionService {
       return { allowed: false, current: 0, limit: 0 };
     }
 
-    // Check trial expiry
-    if (await this.isTrialExpired(userId)) {
+    // FIX #105: Check both trial + paid plan expiry
+    const subStatus = await this.isSubscriptionActive(userId);
+    if (!subStatus.active) {
       return { allowed: false, current: 0, limit: 0 };
     }
 
@@ -215,7 +262,9 @@ export class SubscriptionService {
     if (!user)
       return { allowed: false, remainingMinutes: 0, plan: 'free_trial', limit: 0, usage: 0 };
 
-    if (await this.isTrialExpired(userId)) {
+    // FIX #105: Use centralized isSubscriptionActive for BOTH trial + paid plan expiry
+    const subStatus = await this.isSubscriptionActive(userId);
+    if (!subStatus.active) {
       return {
         allowed: false,
         reason: 'expired',

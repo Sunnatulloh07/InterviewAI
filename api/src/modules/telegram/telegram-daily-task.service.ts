@@ -741,9 +741,28 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
         await this.endDailyTaskSession(ctx, session, result);
       }
     } catch (error: any) {
-      this.logger.error(`Failed to handle text answer: ${error.message}`);
-      // FIX #87: Use lang variable instead of hardcoded Uzbek
       const lang = ctx.session?.language || 'uz';
+
+      // FIX #109: Handle subscription expired errors with upgrade prompt
+      if (error.status === 403 || error.name === 'ForbiddenException') {
+        this.logger.warn(`Task answer blocked: ${error.message}`);
+        const expiredText: Record<string, string> = {
+          uz: `⏰ <b>Obuna muddatingiz tugagan</b>\n\nVazifa javoblarini yuborish uchun tarifni yangilang.`,
+          ru: `⏰ <b>Срок подписки истёк</b>\n\nОбновите тариф для отправки ответов.`,
+          en: `⏰ <b>Subscription expired</b>\n\nUpgrade your plan to submit task answers.`,
+        };
+        const keyboard = new InlineKeyboard().text(
+          lang === 'uz' ? "⬆️ Tariflarni ko'rish" : lang === 'ru' ? '⬆️ Тарифы' : '⬆️ View Plans',
+          'show_plans',
+        );
+        await ctx.reply(expiredText[lang] || expiredText.en, {
+          parse_mode: 'HTML',
+          reply_markup: keyboard,
+        });
+        return;
+      }
+
+      this.logger.error(`Failed to handle text answer: ${error.message}`);
       const errorText: Record<string, string> = {
         uz: "❌ Javobni qayta ishlashda xatolik. Iltimos, qayta urinib ko'ring.",
         ru: '❌ Ошибка обработки ответа. Пожалуйста, попробуйте ещё раз.',
@@ -919,28 +938,42 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
         await this.endDailyTaskSession(ctx, session, result);
       }
     } catch (error: any) {
-      this.logger.error(`Failed to handle voice answer: ${error.message}`, error.stack);
-
-      // ═══════════════════════════════════════════════════════════════════
       // CRITICAL: ROLLBACK quota if any error occurred
-      // This prevents charging users for failed services
-      // 🛡 PHASE 1.2: Rollback never throws now, uses retry queue fallback
-      // ═══════════════════════════════════════════════════════════════════
       if (reservationId) {
         await this.voiceQuotaGuardService.rollbackReservation(reservationId, 'ai_failed');
         this.logger.log(
           `Voice quota rollback initiated: resId=${reservationId}, ` + `error=${error.message}`,
         );
-        // Note: If rollback fails, it's added to retry queue automatically
       }
+
+      const lang = ctx.session?.language || 'uz';
+
+      // FIX #109: Handle subscription expired errors with upgrade prompt
+      if (error.status === 403 || error.name === 'ForbiddenException') {
+        this.logger.warn(`Voice answer blocked: ${error.message}`);
+        const expiredText: Record<string, string> = {
+          uz: `⏰ <b>Obuna muddatingiz tugagan</b>\n\nVazifa javoblarini yuborish uchun tarifni yangilang.`,
+          ru: `⏰ <b>Срок подписки истёк</b>\n\nОбновите тариф для отправки ответов.`,
+          en: `⏰ <b>Subscription expired</b>\n\nUpgrade your plan to submit task answers.`,
+        };
+        const keyboard = new InlineKeyboard().text(
+          lang === 'uz' ? "⬆️ Tariflarni ko'rish" : lang === 'ru' ? '⬆️ Тарифы' : '⬆️ View Plans',
+          'show_plans',
+        );
+        await ctx.reply(expiredText[lang] || expiredText.en, {
+          parse_mode: 'HTML',
+          reply_markup: keyboard,
+        });
+        return;
+      }
+
+      this.logger.error(`Failed to handle voice answer: ${error.message}`, error.stack);
 
       const errorText = {
         uz: "❌ Ovozli xabarni qayta ishlashda xatolik. Iltimos, matn bilan urinib ko'ring.",
         ru: '❌ Ошибка обработки голосового сообщения. Попробуйте отправить текст.',
         en: '❌ Error processing voice message. Please try with text.',
       };
-
-      const lang = ctx.session?.language || 'uz';
       await ctx.reply(errorText[lang as keyof typeof errorText] || errorText.uz);
     }
   }
@@ -1079,6 +1112,26 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
       this.logger.error(`Failed to handle image answer: ${error.message}`);
       // FIX #90: Use lang variable instead of hardcoded Uzbek
       const lang = ctx.session?.language || 'uz';
+
+      // FIX #109: Handle subscription expired errors with upgrade prompt
+      if (error.status === 403 || error.name === 'ForbiddenException') {
+        this.logger.warn(`Image answer blocked: ${error.message}`);
+        const expiredText: Record<string, string> = {
+          uz: `⏰ <b>Obuna muddatingiz tugagan</b>\n\nVazifa javoblarini yuborish uchun tarifni yangilang.`,
+          ru: `⏰ <b>Срок подписки истёк</b>\n\nОбновите тариф для отправки ответов.`,
+          en: `⏰ <b>Subscription expired</b>\n\nUpgrade your plan to submit task answers.`,
+        };
+        const keyboard = new InlineKeyboard().text(
+          lang === 'uz' ? "⬆️ Tariflarni ko'rish" : lang === 'ru' ? '⬆️ Тарифы' : '⬆️ View Plans',
+          'show_plans',
+        );
+        await ctx.reply(expiredText[lang] || expiredText.en, {
+          parse_mode: 'HTML',
+          reply_markup: keyboard,
+        });
+        return;
+      }
+
       const errorText: Record<string, string> = {
         uz: "❌ Rasmni qayta ishlashda xatolik. Iltimos, matn bilan urinib ko'ring.",
         ru: '❌ Ошибка обработки изображения. Попробуйте отправить текст.',

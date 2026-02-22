@@ -1016,6 +1016,31 @@ Your response must be valid JSON that can be parsed directly. All questions must
   private async checkUsageLimits(userId: string): Promise<void> {
     const user = await this.usersService.findById(userId);
     const plan = user.subscription?.plan || 'free_trial';
+    const now = new Date();
+
+    // FIX #106: Check subscription expiry FIRST (trial + paid plans)
+    // Previously only checked monthly limits — expired users could still proceed
+    if (plan === 'free_trial') {
+      const trialEnd = user.subscription?.trialEndsAt;
+      if (trialEnd && now > new Date(trialEnd)) {
+        throw new ForbiddenException(
+          'Your free trial has expired. Please upgrade to continue using mock interviews.',
+        );
+      }
+    } else {
+      // Paid plan: check status + endDate
+      const status = user.subscription?.status;
+      const endDate = user.subscription?.endDate;
+      if (
+        status === 'expired' ||
+        status === 'cancelled' ||
+        (endDate && now > new Date(endDate))
+      ) {
+        throw new ForbiddenException(
+          'Your subscription has expired. Please renew to continue using mock interviews.',
+        );
+      }
+    }
 
     // ✅ Use COMPLETE_PLAN_LIMITS (single source of truth)
     const monthlyLimit = getMockInterviewMonthlyLimit(plan);

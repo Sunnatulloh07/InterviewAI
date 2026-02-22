@@ -571,6 +571,34 @@ export class DailyTasksService {
     const user = await this.userModel.findById(userId).select('subscription');
     const userPlan: string = user?.subscription?.plan || 'free_trial';
 
+    // FIX #107: Check subscription validity before accepting answer
+    // Daily tasks are only for paid plans, but even if somehow a free/expired user
+    // reaches here, we must block them.
+    if (user?.subscription) {
+      const now = new Date();
+      const sub = user.subscription;
+
+      if (userPlan === 'free_trial') {
+        const trialEnd = sub.trialEndsAt;
+        if (trialEnd && now > new Date(trialEnd)) {
+          throw new ForbiddenException(
+            'Your free trial has expired. Upgrade to submit task answers.',
+          );
+        }
+      } else {
+        // Paid plan: check status + endDate
+        if (
+          sub.status === 'expired' ||
+          sub.status === 'cancelled' ||
+          (sub.endDate && now > new Date(sub.endDate))
+        ) {
+          throw new ForbiddenException(
+            'Your subscription has expired. Renew to submit task answers.',
+          );
+        }
+      }
+    }
+
     if (typeof answer === 'string') {
       // Legacy format: plain text
       answerText = answer.trim();

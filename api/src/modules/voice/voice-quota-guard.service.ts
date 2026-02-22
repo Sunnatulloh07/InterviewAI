@@ -116,6 +116,36 @@ export class VoiceQuotaGuardService {
         };
       }
 
+      // FIX #108: Check subscription validity before allowing voice usage
+      const sub = user.subscription;
+      if (sub) {
+        const now = new Date();
+        const plan = sub.plan || 'free_trial';
+
+        if (plan === 'free_trial') {
+          const trialEnd = sub.trialEndsAt;
+          if (trialEnd && now > new Date(trialEnd)) {
+            return {
+              allowed: false,
+              estimatedMinutes: 0,
+              quotaInfo: { total: 0, used: 0, reserved: 0, remaining: 0 },
+              rejectionReason: 'plan_not_allowed',
+            };
+          }
+        } else if (
+          sub.status === 'expired' ||
+          sub.status === 'cancelled' ||
+          (sub.endDate && now > new Date(sub.endDate))
+        ) {
+          return {
+            allowed: false,
+            estimatedMinutes: 0,
+            quotaInfo: { total: 0, used: 0, reserved: 0, remaining: 0 },
+            rejectionReason: 'plan_not_allowed',
+          };
+        }
+      }
+
       // Initialize if not exists
       if (!user.voiceQuota) {
         const quota = await this.voiceQuotaService.getQuota(userId);
