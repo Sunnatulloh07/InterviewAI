@@ -3105,9 +3105,12 @@ ${firstQuestion.codeSnippet || firstQuestion.sampleAnswer ? `\n\`\`\`\n${firstQu
 💡 <i>Type your answer or send a voice message</i>`,
         };
 
+        // FIX #114: Localized interview action buttons
+        const skipLabel: Record<string, string> = { uz: "⏭️ O'tkazish", ru: '⏭️ Пропустить', en: '⏭️ Skip' };
+        const endLabel: Record<string, string> = { uz: '🛑 Tugatish', ru: '🛑 Завершить', en: '🛑 End Interview' };
         const answerKeyboard = new InlineKeyboard()
-          .text('⏭️ Skip', `skip_question_${session.id}`)
-          .text('🛑 End Interview', `end_interview_${session.id}`);
+          .text(skipLabel[lang] || skipLabel.en, `skip_question_${session.id}`)
+          .text(endLabel[lang] || endLabel.en, `end_interview_${session.id}`);
 
         await ctx.reply(startText[lang] || startText.en, {
           parse_mode: 'HTML',
@@ -3209,35 +3212,39 @@ Congratulations! You've completed all questions.
         ];
         ctx.session.currentQuestionIndex = sessionAfterSkip.currentQuestionIndex;
 
+        // FIX #113: Use .question (schema field), fallback to .text
+        const qText = nextQuestion.question || nextQuestion.text || '';
+        const cBlock = nextQuestion.codeSnippet ? `\n<code>${nextQuestion.codeSnippet}</code>\n` : '';
+
         const skipText: Record<string, string> = {
           uz: `⏭️ <b>Savol o'tkazib yuborildi</b>
 
 <b>Savol ${sessionAfterSkip.currentQuestionIndex + 1}/${sessionAfterSkip.numQuestions}:</b>
 
-${nextQuestion.text}
-
-${nextQuestion.codeSnippet ? `\n\`\`\`\n${nextQuestion.codeSnippet}\n\`\`\`\n` : ''}`,
+${qText}
+${cBlock}`,
 
           ru: `⏭️ <b>Вопрос пропущен</b>
 
 <b>Вопрос ${sessionAfterSkip.currentQuestionIndex + 1}/${sessionAfterSkip.numQuestions}:</b>
 
-${nextQuestion.text}
-
-${nextQuestion.codeSnippet ? `\n\`\`\`\n${nextQuestion.codeSnippet}\n\`\`\`\n` : ''}`,
+${qText}
+${cBlock}`,
 
           en: `⏭️ <b>Question Skipped</b>
 
 <b>Question ${sessionAfterSkip.currentQuestionIndex + 1}/${sessionAfterSkip.numQuestions}:</b>
 
-${nextQuestion.text}
-
-${nextQuestion.codeSnippet ? `\n\`\`\`\n${nextQuestion.codeSnippet}\n\`\`\`\n` : ''}`,
+${qText}
+${cBlock}`,
         };
 
+        // FIX #114: Localized buttons
+        const skipBtnLabel: Record<string, string> = { uz: "⏭️ O'tkazish", ru: '⏭️ Пропустить', en: '⏭️ Skip' };
+        const endBtnLabel: Record<string, string> = { uz: '🛑 Tugatish', ru: '🛑 Завершить', en: '🛑 End Interview' };
         const keyboard = new InlineKeyboard()
-          .text('⏭️ Skip', `skip_question_${sessionId}`)
-          .text('🛑 End Interview', `end_interview_${sessionId}`);
+          .text(skipBtnLabel[lang] || skipBtnLabel.en, `skip_question_${sessionId}`)
+          .text(endBtnLabel[lang] || endBtnLabel.en, `end_interview_${sessionId}`);
 
         await ctx.reply(skipText[lang] || skipText.en, {
           parse_mode: 'HTML',
@@ -3509,13 +3516,8 @@ Interview session has been ended. Use /profile to view your results.`,
       const sessionId = ctx.session.currentInterviewSessionId;
 
       try {
-        // Show processing message
-        const processingText: Record<string, string> = {
-          uz: '⏳ Javobingiz tahlil qilinmoqda...',
-          ru: '⏳ Анализируем ваш ответ...',
-          en: '⏳ Analyzing your answer...',
-        };
-        await ctx.reply(processingText[lang] || processingText.en);
+        // FIX #115: Removed misleading "analyzing" message — answers are stored immediately,
+        // AI feedback is generated at the end of interview (batch). No need to show "analyzing".
 
         // Get current session and question
         const currentSession = await this.interviewsService.getSession(userId, sessionId);
@@ -3578,6 +3580,10 @@ Congratulations! You've answered all questions.
         const nextQuestion = (updatedSession.questions as any)[updatedSession.currentQuestionIndex];
         ctx.session.currentQuestionIndex = updatedSession.currentQuestionIndex;
 
+        // FIX #113: Use nextQuestion.question (schema field name), fallback to .text for safety
+        const questionText = nextQuestion.question || nextQuestion.text || 'Savol yuklanmoqda...';
+        const codeBlock = nextQuestion.codeSnippet ? `\n<code>${nextQuestion.codeSnippet}</code>\n` : '';
+
         const nextText: Record<string, string> = {
           uz: `✅ <b>Javob qabul qilindi!</b>
 
@@ -3585,10 +3591,8 @@ Congratulations! You've answered all questions.
 
 <b>Savol ${updatedSession.currentQuestionIndex + 1}/${updatedSession.numQuestions}:</b>
 
-${nextQuestion.text}
-
-${nextQuestion.codeSnippet ? `\n\`\`\`\n${nextQuestion.codeSnippet}\n\`\`\`\n` : ''}
-
+${questionText}
+${codeBlock}
 💡 <i>Javobingizni yozing yoki ovozli xabar yuboring</i>`,
 
           ru: `✅ <b>Ответ принят!</b>
@@ -3597,10 +3601,8 @@ ${nextQuestion.codeSnippet ? `\n\`\`\`\n${nextQuestion.codeSnippet}\n\`\`\`\n` :
 
 <b>Вопрос ${updatedSession.currentQuestionIndex + 1}/${updatedSession.numQuestions}:</b>
 
-${nextQuestion.text}
-
-${nextQuestion.codeSnippet ? `\n\`\`\`\n${nextQuestion.codeSnippet}\n\`\`\`\n` : ''}
-
+${questionText}
+${codeBlock}
 💡 <i>Напишите ответ или отправьте голосовое сообщение</i>`,
 
           en: `✅ <b>Answer received!</b>
@@ -3609,16 +3611,17 @@ ${nextQuestion.codeSnippet ? `\n\`\`\`\n${nextQuestion.codeSnippet}\n\`\`\`\n` :
 
 <b>Question ${updatedSession.currentQuestionIndex + 1}/${updatedSession.numQuestions}:</b>
 
-${nextQuestion.text}
-
-${nextQuestion.codeSnippet ? `\n\`\`\`\n${nextQuestion.codeSnippet}\n\`\`\`\n` : ''}
-
+${questionText}
+${codeBlock}
 💡 <i>Type your answer or send a voice message</i>`,
         };
 
+        // FIX #114: Localized buttons
+        const skipBtnText: Record<string, string> = { uz: "⏭️ O'tkazish", ru: '⏭️ Пропустить', en: '⏭️ Skip' };
+        const endBtnText: Record<string, string> = { uz: '🛑 Tugatish', ru: '🛑 Завершить', en: '🛑 End Interview' };
         const answerKeyboard = new InlineKeyboard()
-          .text('⏭️ Skip', `skip_question_${sessionId}`)
-          .text('🛑 End Interview', `end_interview_${sessionId}`);
+          .text(skipBtnText[lang] || skipBtnText.en, `skip_question_${sessionId}`)
+          .text(endBtnText[lang] || endBtnText.en, `end_interview_${sessionId}`);
 
         await ctx.reply(nextText[lang] || nextText.en, {
           parse_mode: 'HTML',
