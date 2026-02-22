@@ -32,7 +32,9 @@ export interface BotContext extends Context {
       | 'company'
       | 'cv'
       | 'ready'
-      | 'answering';
+      | 'answering'
+      | 'waiting_cv'      // Waiting for user to upload CV (for CV-first interview flow)
+      | 'cv_confirmed';   // CV profile shown, user choosing duration
     // CV analysis flow state
     cvUploadStep?: 'waiting' | 'analyzing' | 'complete';
     currentCvId?: string;
@@ -366,10 +368,20 @@ export class TelegramService implements OnModuleInit {
   /**
    * Send notification to user
    */
-  async sendNotification(telegramChatId: number, message: string): Promise<void> {
+  /**
+   * Send a notification message to a user via Telegram.
+   * FIX #50: Added optional `options` parameter so callers can pass
+   * reply_markup (inline keyboards), parse_mode overrides, etc.
+   */
+  async sendNotification(
+    telegramChatId: number,
+    message: string,
+    options?: Record<string, any>,
+  ): Promise<void> {
     try {
       await this.bot.api.sendMessage(telegramChatId, message, {
         parse_mode: 'HTML',
+        ...options,
       });
     } catch (error) {
       this.logger.error(`Failed to send notification: ${error.message}`, error.stack);

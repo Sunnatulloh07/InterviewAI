@@ -95,9 +95,12 @@ export class UnregisteredUserService {
       const now = new Date();
 
       // SCALABILITY FIX: Count total users first
+      // FIX #36: `blockedAt` is a separate field from `isBotBlocked`.
+      // `markAsBlocked()` sets `isBotBlocked: true` + `botBlockedAt`, NOT `blockedAt`.
+      // Querying `blockedAt: { $exists: false }` was redundant / misleading.
+      // Using only `isBotBlocked: false` which is the canonical blocked flag.
       const totalUsers = await this.unregisteredUserModel.countDocuments({
         isBotBlocked: false,
-        blockedAt: { $exists: false },
       });
 
       this.logger.log(`Found ${totalUsers} unregistered users for engagement`);
@@ -112,7 +115,6 @@ export class UnregisteredUserService {
       while (true) {
         const query: any = {
           isBotBlocked: false,
-          blockedAt: { $exists: false },
         };
 
         if (lastId) {

@@ -1,7 +1,6 @@
 import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { Cron } from '@nestjs/schedule';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { TelegramService } from '../telegram/telegram.service';
 import { FailedNotificationRetryService } from './failed-notification-retry.service';
@@ -41,42 +40,27 @@ export class UserActivationService {
   ) {}
 
   /**
-   * Engage non-registered users
-   * Runs every 6 hours to send motivational messages
+   * FIX #96: REMOVED engageNonRegisteredUsers()
    *
-   * Note: Non-registered users don't have User document yet,
-   * so we track them via TelegramSession with a flag
+   * This was a dead TODO stub with a cron schedule identical to
+   * UnregisteredUserService.engageNonRegisteredUsers() (every 6 hours).
+   * Having two cron jobs with the same name/schedule causes confusion.
+   * The actual implementation lives in UnregisteredUserService.
    */
-  @Cron('0 */6 * * *', {
-    name: 'engage-non-registered-users',
-    timeZone: 'Asia/Tashkent',
-  })
-  async engageNonRegisteredUsers() {
-    try {
-      // TODO: Implement tracking for users who started bot but didn't register
-      // This requires adding a flag to TelegramSession or creating a separate collection
-      // For now, we'll skip this as it needs schema changes
-
-      this.logger.log('Non-registered user engagement - pending implementation');
-
-      // Implementation plan:
-      // 1. Track users who pressed /start in TelegramSession
-      // 2. Check if they completed registration (have User document)
-      // 3. Send random engagement message every 6 hours
-      // 4. Stop after registration or after 10 messages (60 hours)
-    } catch (error: any) {
-      this.logger.error(`Non-registered user engagement failed: ${error.message}`);
-    }
-  }
 
   /**
    * Remind free trial users about their trial
-   * Runs twice daily at 10:00 and 18:00 (Tashkent time)
+   *
+   * FIX #95: DISABLED CRON — This was a DUPLICATE of TrialNotificationService
+   * which runs at 10:00 AM Tashkent. Both services sent trial reminders to the
+   * same users, and when both ran at 10:00 there was a race condition on
+   * `lastTrialNotificationDate`. TrialNotificationService is kept because it
+   * has personalized messages (active vs inactive users) and upgrade keyboard.
+   *
+   * This method is kept for manual invocation via sendActivationMessage() but
+   * the cron is removed to prevent duplicate notifications.
    */
-  @Cron('0 10,18 * * *', {
-    name: 'trial-user-reminders',
-    timeZone: 'Asia/Tashkent',
-  })
+  // @Cron('0 10,18 * * *') — REMOVED (FIX #95: duplicate of TrialNotificationService)
   async sendTrialReminders() {
     try {
       const now = new Date();
@@ -135,8 +119,8 @@ export class UserActivationService {
           }
 
           // Get trial limits based on plan features
-          // ✅ FIX: 5 → 3 (per COMPLETE_PLAN_LIMITS and PROJECT_OVERVIEW_V2.md)
-          const totalInterviews = 3; // Free trial limit (text only)
+          // ALIGNED with COMPLETE_PLAN_LIMITS: free_trial = 1 mock interview
+          const totalInterviews = 1;
           const usedInterviews = user.usage?.mockInterviewsThisMonth || 0;
 
           let message: string;
@@ -252,8 +236,8 @@ export class UserActivationService {
           (trialEndsAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
         );
         const usedInterviews = user.usage?.mockInterviewsThisMonth || 0;
-        // ✅ FIX: 5 → 3 (per COMPLETE_PLAN_LIMITS)
-        const totalInterviews = 3;
+        // ALIGNED with COMPLETE_PLAN_LIMITS: free_trial = 1 mock interview
+        const totalInterviews = 1;
 
         message = getTrialReminderMessage(
           daysRemaining,

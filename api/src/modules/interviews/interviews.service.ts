@@ -435,8 +435,16 @@ export class InterviewsService {
   private getQuestionCount(duration: string, difficulty: string): number {
     const durationKey = duration as keyof typeof INTERVIEW_QUESTION_COUNTS;
     const counts = INTERVIEW_QUESTION_COUNTS[durationKey] || INTERVIEW_QUESTION_COUNTS.standard;
-    const difficultyKey = difficulty as keyof typeof counts;
-    return counts[difficultyKey] || counts.middle;
+
+    // Map interview difficulty ('mid') to question count key ('middle')
+    const difficultyToCountKey: Record<string, keyof typeof counts> = {
+      junior: 'junior',
+      mid: 'middle',
+      middle: 'middle',
+      senior: 'senior',
+    };
+    const countKey = difficultyToCountKey[difficulty] || 'middle';
+    return counts[countKey];
   }
 
   /**
@@ -580,17 +588,24 @@ export class InterviewsService {
 
     // Add CV Context if available (personalized questions based on candidate's CV)
     if (dto.cvContext) {
-      prompt += `\n## CANDIDATE CV CONTEXT (IMPORTANT - Use this for personalized questions)\n`;
+      prompt += `\n## CANDIDATE CV CONTEXT (CRITICAL - Personalize questions based on this)\n`;
       if (dto.cvContext.skills && dto.cvContext.skills.length > 0) {
-        prompt += `- **Candidate Skills:** ${dto.cvContext.skills.slice(0, 10).join(', ')}\n`;
+        prompt += `- **Candidate Technologies:** ${dto.cvContext.skills.slice(0, 15).join(', ')}\n`;
       }
       if (dto.cvContext.experience) {
-        prompt += `- **Experience Summary:** ${dto.cvContext.experience.substring(0, 500)}\n`;
+        prompt += `- **Work Experience:** ${dto.cvContext.experience.substring(0, 500)}\n`;
       }
       if (dto.cvContext.strengths && dto.cvContext.strengths.length > 0) {
         prompt += `- **Key Strengths:** ${dto.cvContext.strengths.slice(0, 5).join(', ')}\n`;
       }
-      prompt += `\n**IMPORTANT:** Generate questions that are directly relevant to the candidate's skills and experience listed above. Ask about their specific technologies and projects.\n`;
+      if (dto.cvContext.summary) {
+        prompt += `- **Areas to Improve:** ${dto.cvContext.summary}\n`;
+      }
+      prompt += `\n**PERSONALIZATION RULES:**\n`;
+      prompt += `1. At least 60% of questions MUST test the candidate's listed technologies directly\n`;
+      prompt += `2. If weak areas are listed, generate 1-2 questions targeting those weaknesses\n`;
+      prompt += `3. Reference specific technologies from the CV — do NOT ask generic questions\n`;
+      prompt += `4. For experienced candidates, ask about architecture decisions and trade-offs in their tech stack\n`;
     }
     prompt += `\n`;
 
@@ -968,6 +983,7 @@ Your response must be valid JSON that can be parsed directly. All questions must
     const names: Record<string, string> = {
       junior: 'junior/entry-level',
       mid: 'mid-level',
+      middle: 'mid-level',
       senior: 'senior',
     };
     return names[difficulty] || difficulty;

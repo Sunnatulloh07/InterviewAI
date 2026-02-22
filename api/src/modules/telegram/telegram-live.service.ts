@@ -81,6 +81,26 @@ export class TelegramLiveService {
       ctx.session.language = lang;
     }
 
+    // Auto-fill metadata from user profile (CV-enriched) if not yet collected.
+    // This skips the manual domain/technology/position wizard when user has
+    // a complete profile from CV analysis.
+    if (!ctx.session.liveSessionMetadata?.domain && user.profile) {
+      const profile = user.profile;
+      const hasCvProfile = (profile as any).domain && profile.techStack?.length > 0;
+      if (hasCvProfile) {
+        ctx.session.liveSessionMetadata = {
+          ...ctx.session.liveSessionMetadata,
+          domain: (profile as any).domain || 'general',
+          technologies: profile.techStack?.slice(0, 10) || [],
+          position: profile.position || 'junior',
+          // Company still needs to be asked — CV doesn't have target company
+        };
+        this.logger.debug(
+          `Auto-filled live session metadata from CV profile for user ${telegramId}`,
+        );
+      }
+    }
+
     // Check if metadata is already collected
     const hasMetadata =
       ctx.session.liveSessionMetadata?.domain &&
@@ -94,6 +114,25 @@ export class TelegramLiveService {
 
       // Start metadata collection flow
       ctx.session.liveSessionMetadata = ctx.session.liveSessionMetadata || {};
+
+      // If CV profile filled domain/tech/position, only ask for company
+      const hasCvPartial =
+        ctx.session.liveSessionMetadata.domain &&
+        (ctx.session.liveSessionMetadata.technologies?.length ?? 0) > 0 &&
+        ctx.session.liveSessionMetadata.position;
+
+      if (hasCvPartial && !ctx.session.liveSessionMetadata.company) {
+        // Only company is missing — skip straight to company question
+        ctx.session.liveSessionStep = 'company';
+        const companyText: Record<string, string> = {
+          uz: `🎯 <b>Live Intervyu</b>\n\nCV asosida profilingiz aniqlandi:\n📋 Yo'nalish: <b>${ctx.session.liveSessionMetadata.domain}</b>\n💻 Texnologiyalar: <b>${ctx.session.liveSessionMetadata.technologies?.join(', ')}</b>\n💼 Daraja: <b>${ctx.session.liveSessionMetadata.position}</b>\n\nQaysi kompaniyada intervyu berasiz?`,
+          ru: `🎯 <b>Live Интервью</b>\n\nНа основе CV ваш профиль определён:\n📋 Направление: <b>${ctx.session.liveSessionMetadata.domain}</b>\n💻 Технологии: <b>${ctx.session.liveSessionMetadata.technologies?.join(', ')}</b>\n💼 Уровень: <b>${ctx.session.liveSessionMetadata.position}</b>\n\nВ какой компании будет интервью?`,
+          en: `🎯 <b>Live Interview</b>\n\nBased on your CV:\n📋 Domain: <b>${ctx.session.liveSessionMetadata.domain}</b>\n💻 Technologies: <b>${ctx.session.liveSessionMetadata.technologies?.join(', ')}</b>\n💼 Level: <b>${ctx.session.liveSessionMetadata.position}</b>\n\nWhich company is the interview with?`,
+        };
+        await ctx.reply(companyText[lang] || companyText.en, { parse_mode: 'HTML' });
+        return;
+      }
+
       ctx.session.liveSessionStep = 'domain';
 
       const welcomeText: Record<string, string> = {

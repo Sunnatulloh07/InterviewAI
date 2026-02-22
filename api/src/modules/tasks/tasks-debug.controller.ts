@@ -1,17 +1,20 @@
 import { Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { JwtAuthGuard } from '@common/guards/jwt-auth.guard';
 import { DailyTask, DailyTaskDocument } from './schemas/daily-task.schema';
 import { GeneratedQuestion, GeneratedQuestionDocument } from './schemas/generated-question.schema';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { DailyTasksService } from './daily-tasks.service';
+import { getTashkentMidnight } from '@common/utils/tashkent-time';
 
 /**
- * 🔍 DEBUG CONTROLLER FOR DAILY TASKS
- * 
- * Endpoints to help diagnose issues with daily task delivery
- * IMPORTANT: Should be protected in production!
+ * Debug Controller for Daily Tasks
+ *
+ * Endpoints to help diagnose issues with daily task delivery.
+ * Protected with JWT auth guard to prevent unauthorized access.
  */
+@UseGuards(JwtAuthGuard)
 @Controller('api/v1/debug/tasks')
 export class TasksDebugController {
   constructor(
@@ -146,14 +149,10 @@ export class TasksDebugController {
   /**
    * Get Tashkent midnight helper
    */
+  /**
+   * Delegates to the shared getTashkentMidnight utility.
+   */
   private getTashkentMidnight(): Date {
-    const tashkentOffset = 5 * 60; // UTC+5 in minutes
-    const now = new Date();
-    const utcTime = now.getTime() + now.getTimezoneOffset() * 60000;
-    const tashkentTime = new Date(utcTime + tashkentOffset * 60000);
-    
-    tashkentTime.setHours(0, 0, 0, 0);
-    
-    return tashkentTime;
+    return getTashkentMidnight();
   }
 }

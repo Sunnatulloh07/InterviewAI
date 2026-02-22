@@ -65,7 +65,6 @@ export class NotificationLogRepository {
   }
 
   /**
-  /**
    * Mark notification as responded within 24h window
    */
   async markResponded(logId: string): Promise<void> {

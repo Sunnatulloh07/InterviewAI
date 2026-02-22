@@ -249,6 +249,68 @@ export class CvService {
         delete analysis.extractedData;
       }
 
+      // CRITICAL: Auto-update user profile if extractedProfile exists with high confidence
+      if (analysis.extractedProfile && analysis.extractedProfile.confidence >= 0.7) {
+        try {
+          const profileUpdate: any = {};
+
+          // Only update if domain is detected
+          if (analysis.extractedProfile.domain) {
+            profileUpdate['profile.domain'] = analysis.extractedProfile.domain;
+          }
+
+          // Only update if techStack is not empty
+          if (
+            analysis.extractedProfile.techStack &&
+            analysis.extractedProfile.techStack.length > 0
+          ) {
+            profileUpdate['profile.techStack'] = analysis.extractedProfile.techStack;
+          }
+
+          // Only update position if more senior than current (prevent downgrade)
+          const positionHierarchy = { junior: 1, middle: 2, senior: 3, lead: 4 };
+          const currentLevel = positionHierarchy[user.profile?.position || 'junior'];
+          const detectedLevel = positionHierarchy[analysis.extractedProfile.position];
+
+          if (detectedLevel >= currentLevel) {
+            profileUpdate['profile.position'] = analysis.extractedProfile.position;
+          }
+
+          // Apply update if any fields changed
+          if (Object.keys(profileUpdate).length > 0) {
+            // FIX #49: If position was updated from CV, also mark position
+            // as confirmed so the position-prompt cron doesn't spam the user
+            // asking them to "confirm your position" when CV already set it.
+            if (profileUpdate['profile.position']) {
+              profileUpdate['engagement.positionConfirmed'] = true;
+            }
+
+            await this.usersService.updateRaw(userId, { $set: profileUpdate });
+
+            this.logger.log(
+              `Auto-updated user profile from CV analysis (confidence: ${analysis.extractedProfile.confidence}): ` +
+                `domain=${analysis.extractedProfile.domain}, ` +
+                `techStack=[${analysis.extractedProfile.techStack.join(', ')}], ` +
+                `position=${analysis.extractedProfile.position}`,
+            );
+          }
+
+          // Remove extractedProfile from analysis to avoid saving to CV document
+          delete analysis.extractedProfile;
+        } catch (profileError) {
+          this.logger.error(
+            `Failed to update user profile from CV: ${profileError.message}`,
+            profileError.stack,
+          );
+          // Don't fail the entire analysis if profile update fails
+        }
+      } else if (analysis.extractedProfile) {
+        this.logger.warn(
+          `Skipped profile update due to low confidence (${analysis.extractedProfile.confidence})`,
+        );
+        delete analysis.extractedProfile;
+      }
+
       const updatedCv = await this.cvRepository.update(cvId, updateData);
 
       this.logger.log(`CV analysis completed for CV ${cvId}`);
@@ -278,12 +340,16 @@ export class CvService {
     const model = this.getModelByPlan(user.subscription?.plan);
 
     try {
+      // FIX #42: Pass user's language to optimization (was missing — always defaulted to 'en')
+      const language = dto.language || user.preferences?.language || user.language || 'en';
+
       const optimization = await this.performCvOptimization(
         cv.parsedText || '',
         cv.parsedData,
         cv.analysis,
         dto,
         model,
+        language,
       );
 
       this.logger.log(`CV optimization completed for CV ${cvId}`);
@@ -343,8 +409,9 @@ export class CvService {
         messages: [
           {
             role: 'system',
+            // FIX #63: Minimal system message — main role/expertise defined in prompt itself
             content:
-              'You are an expert CV analyst. Return ONLY valid JSON. No explanations, no markdown.',
+              'You are Dr. CV, an elite Career Document Strategist. Return ONLY valid JSON. No explanations, no markdown code blocks.',
           },
           {
             role: 'user',
@@ -477,7 +544,8 @@ export class CvService {
         }
       }
 
-      // Validate and normalize the response with new Senior-level fields
+      // Validate and normalize the response
+      // Supports both old format and new 100-point scoring format
       return {
         atsScore: typeof analysis.atsScore === 'number' ? analysis.atsScore : 0,
         overallRating: typeof analysis.overallRating === 'number' ? analysis.overallRating : 0,
@@ -487,9 +555,14 @@ export class CvService {
         criticalWeaknesses: Array.isArray(analysis.criticalWeaknesses)
           ? analysis.criticalWeaknesses
           : [],
+        // Legacy: flatten criticalWeaknesses objects to string[] for backward compat
         weaknesses: Array.isArray(analysis.weaknesses)
           ? analysis.weaknesses
-          : analysis.criticalWeaknesses || [],
+          : Array.isArray(analysis.criticalWeaknesses)
+            ? analysis.criticalWeaknesses.map((w: any) =>
+                typeof w === 'string' ? w : w?.issue || String(w),
+              )
+            : [],
         missingKeywords: Array.isArray(analysis.missingKeywords) ? analysis.missingKeywords : [],
         transformationRoadmap: Array.isArray(analysis.transformationRoadmap)
           ? analysis.transformationRoadmap
@@ -497,6 +570,10 @@ export class CvService {
         suggestions: Array.isArray(analysis.suggestions) ? analysis.suggestions : [],
         quickWins: Array.isArray(analysis.quickWins) ? analysis.quickWins : [],
         aiBypassTips: Array.isArray(analysis.aiBypassTips) ? analysis.aiBypassTips : [],
+        // New 100-point scoring breakdown (optional, used by new prompt)
+        scoreBreakdown: analysis.scoreBreakdown || null,
+        scoreExplanation: analysis.scoreExplanation || null,
+        improvementPotential: analysis.improvementPotential || null,
         sectionScores: analysis.sectionScores || {
           summary: 0,
           experience: 0,
@@ -505,6 +582,23 @@ export class CvService {
           formatting: 0,
         },
         extractedData: analysis.extractedData || null,
+        extractedProfile: analysis.extractedProfile
+          ? {
+              domain: this.validateDomain(analysis.extractedProfile.domain),
+              techStack: Array.isArray(analysis.extractedProfile.techStack)
+                ? analysis.extractedProfile.techStack.filter((t: any) => typeof t === 'string')
+                : [],
+              position: this.validatePosition(analysis.extractedProfile.position),
+              yearsOfExperience:
+                typeof analysis.extractedProfile.yearsOfExperience === 'number'
+                  ? analysis.extractedProfile.yearsOfExperience
+                  : 0,
+              confidence:
+                typeof analysis.extractedProfile.confidence === 'number'
+                  ? analysis.extractedProfile.confidence
+                  : 0,
+            }
+          : null,
         analyzedAt: new Date(),
         aiModel: usedModel,
       };
@@ -552,7 +646,33 @@ export class CvService {
     });
 
     const optimizationText = completion.choices[0].message.content || '{}';
-    const optimization = JSON.parse(optimizationText);
+
+    // FIX #41: Safely parse JSON (was raw JSON.parse without try-catch).
+    // AI models can return malformed JSON; performCvAnalysis handles this
+    // with extractJSON(), but optimization did not.
+    let optimization: any;
+    try {
+      optimization = JSON.parse(optimizationText);
+    } catch {
+      // Try to extract JSON from markdown code blocks or partial responses
+      const cleaned = optimizationText.replace(/```json\n?|```\n?/g, '').trim();
+      try {
+        optimization = JSON.parse(cleaned);
+      } catch {
+        const jsonMatch = optimizationText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          try {
+            optimization = JSON.parse(jsonMatch[0]);
+          } catch {
+            this.logger.error(`CV optimization returned invalid JSON: ${optimizationText.substring(0, 500)}`);
+            throw new BadRequestException('AI returned invalid JSON for CV optimization. Please try again.');
+          }
+        } else {
+          this.logger.error(`CV optimization returned non-JSON: ${optimizationText.substring(0, 500)}`);
+          throw new BadRequestException('AI returned invalid response for CV optimization. Please try again.');
+        }
+      }
+    }
 
     return {
       originalCvId: cvText.substring(0, 24),
@@ -565,9 +685,15 @@ export class CvService {
   }
 
   /**
-   * Build analysis prompt
-   * SENIOR CONTEXT ENGINEER LOGIC: Deep forensic analysis with actionable step-by-step fixes
-   * Focus: ATS bypass strategies, HR AI screening, power statements, quantification
+   * Build CV analysis prompt
+   *
+   * Professional Context Engineering:
+   * - 100-point scoring system with detailed breakdown (5 categories x 20 points)
+   * - Professional weakness explanation (not discouraging)
+   * - HR AI bypass strategies (actionable, specific)
+   * - Improvement roadmap with BEFORE/AFTER
+   * - Profile extraction for interview/tasks pipeline
+   * - Tri-lingual support (uz/ru/en)
    */
   private buildAnalysisPrompt(
     cvText: string,
@@ -577,113 +703,241 @@ export class CvService {
   ): string {
     const languageName = this.getLanguageName(language);
 
-    let prompt = `# ROLE & EXPERTISE\n`;
-    prompt += `You are a world-class CV Strategist and ATS Systems Expert with:\n`;
-    prompt += `- 15+ years recruiting at FAANG companies (Google, Meta, Amazon)\n`;
-    prompt += `- Deep knowledge of AI screening systems (Workday, Greenhouse, Lever, HireVue)\n`;
-    prompt += `- Expertise in bypassing automated rejection filters\n`;
-    prompt += `- Track record of transforming rejected CVs into interview-winning documents\n\n`;
+    const parts: string[] = [];
 
-    prompt += `# YOUR MISSION\n`;
-    prompt += `Perform a FORENSIC DEEP-DIVE analysis of this CV. Your goal is NOT just to find problems, but to:\n`;
-    prompt += `1. Identify EXACTLY why AI systems might reject this CV\n`;
-    prompt += `2. Provide STEP-BY-STEP fixes with BEFORE/AFTER examples\n`;
-    prompt += `3. Give a COMPLETE TRANSFORMATION ROADMAP to achieve 90%+ ATS score\n\n`;
+    // ═══════════════════════════════════════════════════════════════
+    // SECTION 1: ROLE DEFINITION
+    // ═══════════════════════════════════════════════════════════════
+    parts.push(`# ROLE & IDENTITY
 
-    prompt += `# LANGUAGE REQUIREMENT (CRITICAL)\n`;
-    prompt += `ALL your output MUST be in ${languageName} (${language.toUpperCase()}).\n`;
-    prompt += `Every field, message, suggestion, and example must be written in ${languageName}.\n\n`;
+You are **Dr. CV** — an elite Career Document Strategist who has:
+- Reviewed 50,000+ CVs across FAANG, startups, and enterprise companies
+- Built and reverse-engineered ATS systems (Workday, Greenhouse, Lever, SmartRecruiters, HireVue AI)
+- Published research on automated screening algorithms and keyword optimization
+- Transformed 4,000+ rejected CVs into interview-winning documents (92% success rate)
 
-    prompt += `# CV TO ANALYZE\n`;
-    prompt += `\`\`\`\n${cvText}\n\`\`\`\n\n`;
+Your analysis style: **Direct but encouraging.** You identify real problems without demoralizing the candidate. Every weakness comes with a concrete fix.`);
+
+    // ═══════════════════════════════════════════════════════════════
+    // SECTION 2: LANGUAGE CONSTRAINT
+    // ═══════════════════════════════════════════════════════════════
+    parts.push(`# LANGUAGE CONSTRAINT (MANDATORY)
+
+ALL output text MUST be in **${languageName}** (code: ${language}).
+This includes: strengths, weaknesses, roadmap items, examples, tips, summaries.
+Only JSON keys, enum values (like "frontend", "senior"), and technology names (React, Docker) stay in English.`);
+
+    // ═══════════════════════════════════════════════════════════════
+    // SECTION 3: INPUT DATA
+    // ═══════════════════════════════════════════════════════════════
+    parts.push(`# CV DOCUMENT TO ANALYZE
+
+\`\`\`
+${cvText}
+\`\`\``);
 
     if (jobDescription) {
-      prompt += `# TARGET JOB DESCRIPTION (Benchmark)\n`;
-      prompt += `\`\`\`\n${jobDescription}\n\`\`\`\n`;
-      prompt += `**IMPORTANT:** Analyze the CV specifically against this job. Missing keywords = automatic rejection.\n\n`;
+      parts.push(`# TARGET JOB DESCRIPTION (Benchmark for Keyword Gap Analysis)
+
+\`\`\`
+${jobDescription}
+\`\`\`
+
+CRITICAL: Compare CV keywords against this JD. Every missing keyword = lower ATS match score.`);
     }
 
-    prompt += `# ANALYSIS FRAMEWORK (Follow Each Step)\n\n`;
+    // ═══════════════════════════════════════════════════════════════
+    // SECTION 4: 100-POINT SCORING SYSTEM
+    // ═══════════════════════════════════════════════════════════════
+    parts.push(`# SCORING SYSTEM — 100 POINTS TOTAL
 
-    prompt += `## 1. THE 6-SECOND SCAN (What Recruiters See First)\n`;
-    prompt += `Recruiters spend only 6 seconds on initial scan. Analyze:\n`;
-    prompt += `- Is the candidate's VALUE PROPOSITION visible in first 3 lines?\n`;
-    prompt += `- Are KEY SKILLS immediately scannable?\n`;
-    prompt += `- Is contact info professional (GitHub, LinkedIn, clean email)?\n`;
-    prompt += `- Is there a powerful SUMMARY or just generic filler?\n\n`;
+Score the CV across 5 categories, each worth 20 points maximum.
+Be honest and calibrated — a 70/100 is a decent CV, 85+ is excellent.
 
-    prompt += `## 2. AI/ATS COMPATIBILITY AUDIT\n`;
-    prompt += `Modern AI screening rejects 75% of CVs. Check for:\n`;
-    prompt += `- **KEYWORD DENSITY:** Are job-critical keywords naturally integrated?\n`;
-    prompt += `- **FORMAT KILLERS:** Tables, columns, graphics, icons = parsing failures\n`;
-    prompt += `- **SECTION HEADERS:** Standard names (Experience, Education, Skills) vs creative names AI won't understand\n`;
-    prompt += `- **FILE STRUCTURE:** Can text be extracted cleanly?\n`;
-    prompt += `- **SKILLS MATCH:** For tech roles, specific tools (React, AWS, Docker) must be explicit\n\n`;
+## Category 1: PROFESSIONAL SUMMARY & FIRST IMPRESSION (0-20 points)
+Evaluate the first 3 lines a recruiter sees:
+- [0-5] Value proposition clarity — Can you tell WHAT this person does and WHY they're valuable in 6 seconds?
+- [0-5] Professional summary quality — Specific achievements vs generic filler ("passionate developer" = 0 pts)
+- [0-5] Contact completeness — Email, phone, LinkedIn, GitHub/portfolio, location
+- [0-5] Visual hierarchy — Is the most important info at the top? Clean section flow?
 
-    prompt += `## 3. POWER STATEMENT ANALYSIS (Experience Section)\n`;
-    prompt += `Each bullet should follow the XYZ Formula: "Accomplished X, as measured by Y, by doing Z"\n`;
-    prompt += `Analyze EACH work experience bullet for:\n`;
-    prompt += `- **ACTION VERB:** Weak (Worked, Helped, Did) vs Strong (Architected, Reduced, Deployed)\n`;
-    prompt += `- **QUANTIFICATION:** Numbers, percentages, dollars, time saved\n`;
-    prompt += `- **IMPACT:** Is the RESULT clear, or just activities listed?\n`;
-    prompt += `- **Example Fix:** "Worked on backend" → "Architected microservices backend serving 50K daily users, reducing latency by 40%"\n\n`;
+## Category 2: WORK EXPERIENCE & IMPACT (0-20 points)
+Analyze each bullet point for the XYZ Formula: "Accomplished [X], measured by [Y], by doing [Z]"
+- [0-5] Action verbs — Strong (Architected, Reduced, Deployed, Scaled) vs Weak (Worked, Helped, Did, Made)
+- [0-5] Quantification — Numbers, percentages, revenue, users, time saved (each bullet should have at least one metric)
+- [0-5] Result orientation — Is the OUTCOME clear, or just activities listed?
+- [0-5] Relevance & progression — Does experience show career growth? Are roles relevant to target position?
 
-    prompt += `## 4. MISSING ELEMENTS DETECTION\n`;
-    prompt += `Identify what's MISSING that top candidates include:\n`;
-    prompt += `- Certifications relevant to the role\n`;
-    prompt += `- Specific project outcomes and metrics\n`;
-    prompt += `- Keywords from the job description\n`;
-    prompt += `- Industry-specific terminology\n`;
-    prompt += `- Links to portfolio, GitHub, LinkedIn\n\n`;
+## Category 3: SKILLS & TECHNICAL COMPETENCE (0-20 points)
+- [0-5] Keyword coverage — Are industry-critical technologies explicitly listed? (React vs "frontend framework")
+- [0-5] Skill organization — Grouped by category (Languages, Frameworks, Tools, Cloud) vs random list
+- [0-5] Depth indicators — Proficiency levels, years of use, or project context for each skill
+- [0-5] Certification & education alignment — Do certs match the target role? Is education relevant?
 
-    prompt += `## 5. TRANSFORMATION ROADMAP\n`;
-    prompt += `For each weakness, provide:\n`;
-    prompt += `- **WHAT TO FIX:** Specific issue\n`;
-    prompt += `- **HOW TO FIX:** Step-by-step instructions\n`;
-    prompt += `- **BEFORE:** Current problematic text\n`;
-    prompt += `- **AFTER:** Improved version ready to copy-paste\n`;
-    prompt += `- **IMPACT:** How this fix increases ATS score\n\n`;
+## Category 4: ATS & AI SCREENING COMPATIBILITY (0-20 points)
+Modern HR AI rejects 75% of CVs before a human sees them. Check for:
+- [0-5] Standard section headers — "Experience" not "My Journey", "Skills" not "What I Know"
+- [0-5] Format parsability — No tables, columns, graphics, icons, or non-standard fonts that break OCR/parsing
+- [0-5] Keyword density — Job-critical terms naturally woven into experience bullets (not just skills section)
+- [0-5] File structure — Clean text extraction, no watermarks, no headers/footers with critical info
 
-    prompt += `# OUTPUT FORMAT (Strictly Valid JSON)\n`;
-    prompt += `{\n`;
-    prompt += `  "atsScore": <number 0-100>,\n`;
-    prompt += `  "overallRating": <1-5>,\n`;
-    prompt += `  "aiRejectionRisk": "<low|medium|high|critical> - likelihood of AI auto-rejection",\n`;
-    prompt += `  "sixSecondVerdict": "<pass|fail> - would recruiter continue reading?",\n`;
-    prompt += `  "strengths": ["<5-10 specific strengths in ${languageName}>"],\n`;
-    prompt += `  "criticalWeaknesses": ["<3-5 most damaging issues causing rejections in ${languageName}>"],\n`;
-    prompt += `  "missingKeywords": ["<keywords from JD not found in CV>"],\n`;
-    prompt += `  "transformationRoadmap": [\n`;
-    prompt += `    {\n`;
-    prompt += `      "priority": <1-5, where 1 is most urgent>,\n`;
-    prompt += `      "category": "ats_optimization|power_statement|quantification|keywords|formatting|summary|skills",\n`;
-    prompt += `      "problem": "<clear description of the issue in ${languageName}>",\n`;
-    prompt += `      "stepByStepFix": ["<step 1>", "<step 2>", "<step 3>"],\n`;
-    prompt += `      "before": "<current problematic text from CV>",\n`;
-    prompt += `      "after": "<improved version ready to use in ${languageName}>",\n`;
-    prompt += `      "impactOnScore": "<how many % this fix adds to ATS score>"\n`;
-    prompt += `    }\n`;
-    prompt += `  ],\n`;
-    prompt += `  "sectionScores": {\n`;
-    prompt += `    "summary": <0-100>,\n`;
-    prompt += `    "experience": <0-100>,\n`;
-    prompt += `    "skills": <0-100>,\n`;
-    prompt += `    "education": <0-100>,\n`;
-    prompt += `    "formatting": <0-100>\n`;
-    prompt += `  },\n`;
-    prompt += `  "quickWins": ["<3 changes that take <5 min but boost score significantly, in ${languageName}>"],\n`;
-    prompt += `  "aiBypassTips": ["<3 specific strategies to pass AI screening in ${languageName}>"]\n`;
-    prompt += `}\n\n`;
+## Category 5: COMPLETENESS & COMPETITIVE EDGE (0-20 points)
+What separates good CVs from great ones:
+- [0-5] Projects with measurable outcomes — Side projects, open source, hackathons with results
+- [0-5] Missing elements — Certifications, publications, languages, volunteer work relevant to role
+- [0-5] Industry terminology — Domain-specific jargon that signals insider knowledge
+- [0-5] Online presence — GitHub with stars, LinkedIn recommendations, portfolio, blog, Stack Overflow`);
 
-    prompt += `# CRITICAL REMINDERS\n`;
-    prompt += `1. ALL text in ${languageName} - strengths, weaknesses, roadmap, examples\n`;
-    prompt += `2. Provide MINIMUM 5 items in transformationRoadmap with BEFORE/AFTER\n`;
-    prompt += `3. Be SPECIFIC - don't say "improve summary", say EXACTLY how\n`;
-    prompt += `4. Include REAL NUMBERS in "after" examples (%, time, users)\n`;
-    prompt += `5. aiBypassTips must be ACTIONABLE, not generic advice\n`;
-    prompt += `6. Focus on what will get this CV PAST AI filters\n`;
+    // ═══════════════════════════════════════════════════════════════
+    // SECTION 5: ANALYSIS INSTRUCTIONS
+    // ═══════════════════════════════════════════════════════════════
+    parts.push(`# ANALYSIS INSTRUCTIONS
 
-    return prompt;
+## Step 1: Score each category independently (be calibrated, not generous)
+## Step 2: Identify the TOP 3 strengths (things this CV does well)
+## Step 3: Identify the TOP 3-5 critical weaknesses that are MOST LIKELY causing rejections
+## Step 4: For each weakness, create a transformation roadmap entry with:
+   - The exact problem (quote from CV)
+   - Step-by-step fix instructions
+   - BEFORE text (from CV) and AFTER text (improved version, ready to copy)
+   - How many points this fix would add
+
+## Step 5: Generate 3 "Quick Wins" — changes that take <5 minutes but have maximum impact
+## Step 6: Generate 3 HR AI Bypass strategies specific to THIS CV and target role
+## Step 7: Extract the candidate's professional profile for our interview preparation system
+
+IMPORTANT TONE RULES:
+- When describing weaknesses, explain WHY it's a problem (educate, don't just criticize)
+- Always pair each weakness with a concrete, actionable fix
+- Use encouraging framing: "This is a common issue that's easy to fix" not "This is terrible"
+- The "after" examples must be realistic and specific to this candidate's actual experience`);
+
+    // ═══════════════════════════════════════════════════════════════
+    // SECTION 6: PROFILE EXTRACTION RULES
+    // ═══════════════════════════════════════════════════════════════
+    parts.push(`# PROFILE EXTRACTION RULES (for Interview & Task Personalization)
+
+Extract these fields accurately — they power our interview question generation and daily practice tasks:
+
+**domain** — Primary professional domain. Choose ONE:
+  frontend | backend | mobile | fullstack | devops | ai_ml | data | qa | design | product | general
+  Decision logic:
+  - If 60%+ experience is React/Vue/Angular/CSS → "frontend"
+  - If 60%+ is Node/Python/Java/Go/databases → "backend"
+  - If both frontend+backend are significant → "fullstack"
+  - If iOS/Android/React Native/Flutter → "mobile"
+  - If CI/CD, Kubernetes, AWS infra focus → "devops"
+  - If ML/AI/NLP/CV/Data Science → "ai_ml"
+  - If analytics, BI, data engineering, SQL heavy → "data"
+
+**techStack** — List ALL specific technologies mentioned or strongly implied. Include:
+  - Programming languages (Python, TypeScript, Java, Go, etc.)
+  - Frameworks (React, NestJS, Django, Spring Boot, etc.)
+  - Databases (PostgreSQL, MongoDB, Redis, etc.)
+  - Cloud/DevOps (AWS, Docker, Kubernetes, etc.)
+  - Tools (Git, Jira, Figma, etc.)
+  Maximum 20 items, ordered by prominence in CV.
+
+**position** — Seniority level. Infer from:
+  - junior: 0-2 years total experience, entry-level titles
+  - middle: 2-5 years, independent contributor
+  - senior: 5-8 years, mentoring others, architectural decisions
+  - lead: 7+ years with explicit team leadership, tech lead, architect titles
+
+**yearsOfExperience** — Total years. Calculate from earliest work date to present. If unclear, estimate conservatively.
+
+**confidence** — How confident are you in domain + position classification (0.0-1.0). Below 0.6 if CV is ambiguous.`);
+
+    // ═══════════════════════════════════════════════════════════════
+    // SECTION 7: OUTPUT SCHEMA
+    // ═══════════════════════════════════════════════════════════════
+    parts.push(`# OUTPUT FORMAT — Strictly Valid JSON (no markdown, no comments)
+
+{
+  "atsScore": <number 0-100, sum of all 5 category scores>,
+  "overallRating": <1-5, where 1=poor, 3=average, 5=excellent>,
+  "scoreBreakdown": {
+    "summary": <0-20>,
+    "experience": <0-20>,
+    "skills": <0-20>,
+    "atsCompatibility": <0-20>,
+    "completeness": <0-20>
+  },
+  "scoreExplanation": "<2-3 sentence ${languageName} summary: what the score means and what tier it falls in>",
+  "aiRejectionRisk": "<low|medium|high|critical>",
+  "sixSecondVerdict": "<pass|fail>",
+  "strengths": [
+    "<specific strength 1 in ${languageName} — cite evidence from CV>",
+    "<strength 2>",
+    "<strength 3>"
+  ],
+  "criticalWeaknesses": [
+    {
+      "issue": "<what's wrong, in ${languageName}>",
+      "whyItMatters": "<why this causes rejections — educate the user, in ${languageName}>",
+      "severity": "<high|medium>"
+    }
+  ],
+  "missingKeywords": ["<keywords from JD not found in CV, if JD provided>"],
+  "transformationRoadmap": [
+    {
+      "priority": <1-5, where 1 = fix first>,
+      "category": "summary|experience|skills|ats_format|keywords|quantification|completeness",
+      "problem": "<exact problem description in ${languageName}>",
+      "stepByStepFix": ["<step 1 in ${languageName}>", "<step 2>", "<step 3>"],
+      "before": "<current text from CV>",
+      "after": "<improved version in ${languageName}, ready to copy-paste>",
+      "pointsGained": "<estimated points this fix adds to atsScore>"
+    }
+  ],
+  "sectionScores": {
+    "summary": <0-100, legacy compatibility>,
+    "experience": <0-100>,
+    "skills": <0-100>,
+    "education": <0-100>,
+    "formatting": <0-100>
+  },
+  "quickWins": [
+    "<quick win 1 in ${languageName}: specific 5-min change with high impact>",
+    "<quick win 2>",
+    "<quick win 3>"
+  ],
+  "aiBypassTips": [
+    "<strategy 1: specific to THIS CV, not generic advice, in ${languageName}>",
+    "<strategy 2>",
+    "<strategy 3>"
+  ],
+  "improvementPotential": {
+    "currentTier": "<poor (0-39) | below_average (40-54) | average (55-69) | good (70-84) | excellent (85-100)>",
+    "reachableTier": "<tier achievable by implementing all roadmap fixes>",
+    "estimatedNewScore": <number 0-100 after fixes>,
+    "effortRequired": "<1-2 hours | 3-5 hours | full rewrite>"
+  },
+  "extractedProfile": {
+    "domain": "<frontend|backend|mobile|fullstack|devops|ai_ml|data|qa|design|product|general>",
+    "techStack": ["Tech1", "Tech2", "Tech3"],
+    "position": "<junior|middle|senior|lead>",
+    "yearsOfExperience": <number>,
+    "confidence": <0.0-1.0>
+  }
+}`);
+
+    // ═══════════════════════════════════════════════════════════════
+    // SECTION 8: QUALITY GATES
+    // ═══════════════════════════════════════════════════════════════
+    parts.push(`# QUALITY GATES — Your response MUST pass ALL of these:
+
+1. atsScore = sum of scoreBreakdown values (summary + experience + skills + atsCompatibility + completeness)
+2. transformationRoadmap has MINIMUM 5 entries, each with non-empty before AND after fields
+3. "after" examples are realistic for THIS candidate — don't invent experience they don't have
+4. ALL user-facing text is in ${languageName} — no English text in strengths, weaknesses, tips
+5. extractedProfile.techStack has at least 3 technologies (or fewer if CV genuinely lists fewer)
+6. criticalWeaknesses has 3-5 entries, each with whyItMatters explanation
+7. quickWins are truly quick (5 minutes) and specific — not "improve your summary"
+8. aiBypassTips are specific to THIS CV — reference actual sections or keywords from the document
+9. No trailing commas in JSON, no comments, no markdown code blocks — pure valid JSON only`);
+
+    return parts.join('\n\n');
   }
 
   /**
@@ -860,13 +1114,31 @@ export class CvService {
 
   /**
    * Check usage limits
-   * ✅ STEP 3 FIX: Now uses COMPLETE_PLAN_LIMITS for accurate enforcement
+   * FIX #66: Also checks trial expiry before allowing CV analysis
    */
   private async checkUsageLimits(userId: string): Promise<void> {
     const user = await this.usersService.findById(userId);
     const plan = user.subscription?.plan || 'free_trial';
 
-    // ✅ Use COMPLETE_PLAN_LIMITS (single source of truth)
+    // FIX #66: Check trial expiry first
+    if (plan === 'free_trial' && user.subscription?.trialEndsAt) {
+      const now = new Date();
+      const trialEnd = new Date(user.subscription.trialEndsAt);
+      if (now > trialEnd) {
+        throw new ForbiddenException(
+          'Your free trial has expired. Please upgrade to continue using CV analysis.',
+        );
+      }
+    }
+
+    // Check subscription status
+    if (user.subscription?.status === 'expired') {
+      throw new ForbiddenException(
+        'Your subscription has expired. Please renew to continue using CV analysis.',
+      );
+    }
+
+    // Use COMPLETE_PLAN_LIMITS (single source of truth)
     const monthlyLimit = getCvAnalysisMonthlyLimit(plan);
 
     // Check if limit reached (-1 means unlimited)
@@ -893,9 +1165,55 @@ export class CvService {
 
   /**
    * Get AI model based on subscription plan
-   * Supports OpenRouter with automatic model mapping
+   * FIX #61: Free trial uses cost-effective z-ai/glm-4-32b model
+   * Starter uses GPT-4o-mini, Pro/Elite use GPT-4o
    */
   private getModelByPlan(plan?: string): string {
-    return getModelForPlan(this.configService, plan || 'free', AI_MODELS.GPT35, AI_MODELS.GPT4);
+    const normalizedPlan = plan || 'free_trial';
+
+    // Free trial: use cheapest model ($0.10/1M tokens)
+    if (normalizedPlan === 'free_trial' || normalizedPlan === 'free') {
+      return getModelName(this.configService, 'z-ai/glm-4-32b', 'z-ai/glm-4-32b');
+    }
+
+    // Starter: use GPT-4o-mini (cost-effective but quality)
+    if (normalizedPlan === 'starter') {
+      return getModelName(this.configService, AI_MODELS.GPT35, AI_MODELS.GPT35);
+    }
+
+    // Pro/Elite: use premium model
+    return getModelName(this.configService, AI_MODELS.GPT4, AI_MODELS.GPT4);
+  }
+
+  /**
+   * Validate and normalize domain enum
+   */
+  /**
+   * Validate and normalize domain enum
+   * FIX #62: Added 'design' and 'product' to match prompt extraction options
+   */
+  private validateDomain(domain: any): string {
+    const validDomains = [
+      'frontend',
+      'backend',
+      'mobile',
+      'fullstack',
+      'devops',
+      'ai_ml',
+      'data',
+      'qa',
+      'design',
+      'product',
+      'general',
+    ];
+    return validDomains.includes(domain) ? domain : 'general';
+  }
+
+  /**
+   * Validate and normalize position enum
+   */
+  private validatePosition(position: any): string {
+    const validPositions = ['junior', 'middle', 'senior', 'lead'];
+    return validPositions.includes(position) ? position : 'junior';
   }
 }

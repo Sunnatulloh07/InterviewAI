@@ -1,9 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Bot, InlineKeyboard } from 'grammy';
+import { InlineKeyboard } from 'grammy';
 import { UsersService } from '../users/users.service';
+import { TelegramService } from '../telegram/telegram.service';
 import { JobSeekingStatus } from './dto/job-seeking-status.enum';
-import { BotContext } from '../telegram/telegram.service';
 
 /**
  * Survey text content for all supported languages
@@ -73,28 +73,13 @@ const SURVEY_CONTENT = {
 @Injectable()
 export class SurveyHandlerService {
   private readonly logger = new Logger(SurveyHandlerService.name);
-  private bot: Bot<BotContext> | null = null;
 
   constructor(
     private readonly configService: ConfigService,
     private readonly usersService: UsersService,
+    @Inject(forwardRef(() => TelegramService))
+    private readonly telegramService: TelegramService,
   ) {}
-
-  /**
-   * Lazy initialize bot instance
-   * Avoids circular dependency issues during module initialization
-   */
-  private getBot(): Bot<BotContext> | null {
-    if (!this.bot) {
-      const token = this.configService.get<string>('TELEGRAM_BOT_TOKEN');
-      if (!token || token === 'your_telegram_bot_token_here') {
-        this.logger.warn('Bot token not configured, survey sending disabled');
-        return null;
-      }
-      this.bot = new Bot<BotContext>(token);
-    }
-    return this.bot;
-  }
 
   /**
    * Send the onboarding survey to a user
@@ -105,8 +90,9 @@ export class SurveyHandlerService {
    * @returns true if sent successfully, false otherwise
    */
   async sendSurvey(userId: string, telegramId: number, lang: string): Promise<boolean> {
-    const bot = this.getBot();
+    const bot = this.telegramService.getBot();
     if (!bot) {
+      this.logger.warn('Bot not available, survey sending disabled');
       return false;
     }
 

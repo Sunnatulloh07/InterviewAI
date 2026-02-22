@@ -6,6 +6,8 @@ import Stripe from 'stripe';
 import { Subscription, SubscriptionDocument } from './schemas/subscription.schema';
 import { Payment, PaymentDocument } from './schemas/payment.schema';
 import { UsersService } from '../users/users.service';
+import { SubscriptionService } from './subscription.service';
+import { SubscriptionPlan } from '@common/constants';
 
 @Injectable()
 export class PaymentsService {
@@ -19,6 +21,7 @@ export class PaymentsService {
     @InjectModel(Payment.name)
     private readonly paymentModel: Model<PaymentDocument>,
     private readonly usersService: UsersService,
+    private readonly subscriptionService: SubscriptionService,
     private readonly configService: ConfigService,
   ) {
     const stripeApiKey = this.configService.get<string>('STRIPE_API_KEY');
@@ -96,16 +99,27 @@ export class PaymentsService {
     }
   }
 
+  /**
+   * FIX #44 (CRITICAL): Previously only updated the Subscription collection
+   * but NOT the User document.  All other services (task delivery, engagement,
+   * CV analysis, etc.) read from `User.subscription.plan` — so the user
+   * would remain on 'free_trial' even after paying.
+   *
+   * Now calls `subscriptionService.upgradePlan()` to properly update
+   * User.subscription, reset voice quotas, and reset usage counters.
+   */
   private async handleCheckoutComplete(session: Stripe.Checkout.Session) {
     if (!this.stripe) return;
 
     const userId = session.metadata?.userId as string;
+    const planId = session.metadata?.planId as string;
     const subscription = await this.stripe.subscriptions.retrieve(session.subscription as string);
 
+    // 1. Update Subscription collection (Stripe tracking)
     await this.subscriptionModel.findOneAndUpdate(
       { userId },
       {
-        plan: session.metadata?.planId as string,
+        plan: planId,
         status: 'active',
         stripeCustomerId: session.customer as string,
         stripeSubscriptionId: subscription.id,
@@ -115,12 +129,42 @@ export class PaymentsService {
       { upsert: true },
     );
 
-    // Note: User subscription is already updated via subscription model above
-    this.logger.log(`Subscription activated for user: ${userId}`);
+    // 2. FIX #44: Update User document (the source of truth for all services)
+    // Determine billing cycle from Stripe subscription interval
+    const interval = (subscription as any).items?.data?.[0]?.plan?.interval;
+    const billingCycle: 'monthly' | 'annual' = interval === 'year' ? 'annual' : 'monthly';
+
+    try {
+      await this.subscriptionService.upgradePlan(
+        userId,
+        planId as SubscriptionPlan,
+        billingCycle,
+      );
+      this.logger.log(
+        `Subscription activated for user ${userId}: plan=${planId}, billing=${billingCycle}`,
+      );
+    } catch (error: any) {
+      // If upgradePlan fails, at least save stripeCustomerId to User
+      this.logger.error(
+        `Failed to update User document for ${userId} after checkout: ${error.message}`,
+        error.stack,
+      );
+      // Fallback: minimal User update so at least the Stripe customer is linked
+      await this.usersService.updateRaw(userId, {
+        $set: {
+          'subscription.plan': planId,
+          'subscription.status': 'active',
+          'subscription.stripeCustomerId': session.customer as string,
+        },
+      });
+    }
   }
 
+  /**
+   * FIX #44: Also sync status to User document when Stripe subscription updates
+   */
   private async handleSubscriptionUpdated(subscription: any) {
-    await this.subscriptionModel.findOneAndUpdate(
+    const subDoc = await this.subscriptionModel.findOneAndUpdate(
       { stripeSubscriptionId: subscription.id },
       {
         status: subscription.status,
@@ -128,14 +172,53 @@ export class PaymentsService {
         currentPeriodEnd: new Date((subscription as any).current_period_end * 1000),
         cancelAtPeriodEnd: subscription.cancel_at_period_end,
       },
+      { new: true },
     );
+
+    // Sync status to User document
+    if (subDoc?.userId) {
+      try {
+        await this.usersService.updateRaw(subDoc.userId.toString(), {
+          $set: {
+            'subscription.status': subscription.status,
+            'subscription.endDate': new Date(
+              (subscription as any).current_period_end * 1000,
+            ),
+          },
+        });
+      } catch (error: any) {
+        this.logger.error(
+          `Failed to sync subscription status to User ${subDoc.userId}: ${error.message}`,
+        );
+      }
+    }
   }
 
+  /**
+   * FIX #44: Also sync cancellation to User document
+   */
   private async handleSubscriptionDeleted(subscription: Stripe.Subscription) {
-    await this.subscriptionModel.findOneAndUpdate(
+    const subDoc = await this.subscriptionModel.findOneAndUpdate(
       { stripeSubscriptionId: subscription.id },
       { status: 'canceled' },
+      { new: true },
     );
+
+    // Sync cancellation to User document
+    if (subDoc?.userId) {
+      try {
+        await this.usersService.updateRaw(subDoc.userId.toString(), {
+          $set: {
+            'subscription.status': 'canceled',
+          },
+        });
+        this.logger.log(`Subscription canceled for user ${subDoc.userId}`);
+      } catch (error: any) {
+        this.logger.error(
+          `Failed to sync cancellation to User ${subDoc.userId}: ${error.message}`,
+        );
+      }
+    }
   }
 
   private async handlePaymentSucceeded(invoice: Stripe.Invoice) {

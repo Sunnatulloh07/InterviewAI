@@ -35,8 +35,8 @@ export class LimitExhaustedUserService {
           'engagement.isBotBlocked': { $ne: true },
           'engagement.notificationsPaused': { $ne: true },
           $or: [
-            // ✅ FIX: 5 → 3 (per COMPLETE_PLAN_LIMITS)
-            { 'usage.mockInterviewsThisMonth': { $gte: 3 } },
+            // ALIGNED with COMPLETE_PLAN_LIMITS: free_trial = 1 mock interview
+            { 'usage.mockInterviewsThisMonth': { $gte: 1 } },
             { 'voiceQuota.mockVoice.remaining': 0 },
           ],
         })
@@ -63,8 +63,8 @@ export class LimitExhaustedUserService {
 
           const mockInterviewsUsed = user.usage?.mockInterviewsThisMonth || 0;
           const voiceMinutesRemaining = user.voiceQuota?.mockVoice?.remaining || 0;
-          // ✅ FIX: 5 → 3 (per COMPLETE_PLAN_LIMITS)
-          const isMockExhausted = mockInterviewsUsed >= 3;
+          // ALIGNED with COMPLETE_PLAN_LIMITS: free_trial = 1 mock interview
+          const isMockExhausted = mockInterviewsUsed >= 1;
           const isVoiceExhausted = voiceMinutesRemaining === 0;
 
           const lang = user.language || 'uz';
@@ -149,59 +149,56 @@ export class LimitExhaustedUserService {
 
   private getMockExhaustedMessage(lang: string, usedCount: number): string {
     const messages: Record<string, string> = {
-      uz: `🎯 Tabriklaymiz! Siz ${usedCount} ta mock interview bajardingiz!
+      uz: `🎯 Siz bepul mock interview limitingizni tugatdingiz!
 
-✅ Siz intervyu tayyorgarligini jiddiy olayotganingizni ko'rsatdingiz.
+💪 Davom etish uchun Premium rejani tanlang:
 
-💪 Endi haqiqiy o'sish vaqti!
+💼 <b>STARTER</b> - $10/oy:
+• 10 ta mock interview/oy
+• Kunlik savol va topshiriqlar
+• 10 daqiqa ovozli javoblar
+• 5 ta CV tahlili
 
-🚀 PREMIUM bilan quyidagilarga ega bo'lasiz:
-• Cheksiz mock interviews
-• 45 daqiqa ovozli javoblar/oy
-• Advanced AI tahlil
-• Shaxsiy mentorlik
+🚀 <b>PRO</b> - $20/oy:
+• 30 ta mock interview/oy
+• 30 daqiqa ovozli javoblar
+• Haftalik AI tavsiyalar
 
-💰 Faqat $9.99/oy (~125,000 so'm)
+Rejalarni ko'rish: /plans`,
 
-📞 @interviewai_support_bot
+      ru: `🎯 Вы исчерпали лимит бесплатных mock интервью!
 
-🔥 Chegirma faqat 3 kun!`,
+💪 Для продолжения выберите Premium план:
 
-      ru: `🎯 Поздравляем! Вы прошли ${usedCount} mock интервью!
+💼 <b>STARTER</b> - $10/мес:
+• 10 mock интервью/мес
+• Ежедневные вопросы и задания
+• 10 минут голосовых ответов
+• 5 анализов CV
 
-✅ Вы показали, что серьезно относитесь к подготовке.
+🚀 <b>PRO</b> - $20/мес:
+• 30 mock интервью/мес
+• 30 минут голосовых ответов
+• Еженедельные AI рекомендации
 
-💪 Теперь время для реального роста!
+Смотреть планы: /plans`,
 
-🚀 С PREMIUM вы получите:
-• Неограниченные mock интервью
-• 45 минут голосовых ответов/мес
-• Продвинутый AI анализ
-• Персональное менторство
+      en: `🎯 You've used your free mock interview limit!
 
-💰 Всего $9.99/мес (~125,000 сум)
+💪 Choose a Premium plan to continue:
 
-📞 @interviewai_support_bot
+💼 <b>STARTER</b> - $10/mo:
+• 10 mock interviews/mo
+• Daily questions and tasks
+• 10 minutes voice responses
+• 5 CV analyses
 
-🔥 Скидка только 3 дня!`,
+🚀 <b>PRO</b> - $20/mo:
+• 30 mock interviews/mo
+• 30 minutes voice responses
+• Weekly AI recommendations
 
-      en: `🎯 Congratulations! You completed ${usedCount} mock interviews!
-
-✅ You've shown you're serious about preparation.
-
-💪 Now it's time for real growth!
-
-🚀 With PREMIUM you get:
-• Unlimited mock interviews
-• 45 minutes voice answers/mo
-• Advanced AI analysis
-• Personal mentorship
-
-💰 Only $9.99/mo (~125,000 sum)
-
-📞 @interviewai_support_bot
-
-🔥 Discount only for 3 days!`,
+View plans: /plans`,
     };
 
     return messages[lang] || messages.uz;
@@ -209,56 +206,53 @@ export class LimitExhaustedUserService {
 
   private getVoiceExhaustedMessage(lang: string): string {
     const messages: Record<string, string> = {
-      uz: `🎙️ Ovozli javob limiti tugadi!
+      uz: `🎙️ Bepul 2 daqiqa ovozli javob limitingiz tugadi!
 
-Sizning bepul 5 daqiqa ovozli javob limitingiz tugagan.
+🚀 Premium bilan ko'proq ovozli mashq:
 
-💡 Ovozli javoblar 85% intervyu muvaffaqiyatini oshiradi!
-
-🚀 Premium bilan quyidagilarga ega bo'lasiz:
-• 45 daqiqa ovozli javoblar/oy
+💼 <b>STARTER</b> - $10/oy:
+• 10 daqiqa ovozli javoblar
 • Avtomatik transkripsiya
-• Ovozli tahlil va feedback
+• 10 ta mock interview
 
-💰 STARTER: $9.99/oy (~125,000 so'm)
+🚀 <b>PRO</b> - $20/oy:
+• 30 daqiqa ovozli javoblar
+• AI ovozli tahlil va feedback
+• 30 ta mock interview
 
-📞 @interviewai_support_bot
+Rejalarni ko'rish: /plans`,
 
-⏰ Hozir yangilang va intervyuda yaxshiroq natijalar ga erishing!`,
+      ru: `🎙️ Бесплатный лимит 2 минуты голосовых ответов исчерпан!
 
-      ru: `🎙️ Лимит голосовых ответов исчерпан!
+🚀 Premium для больше голосовой практики:
 
-Ваш бесплатный лимит 5 минут голосовых ответов закончился.
-
-💡 Голосовые ответы повышают успех интервью на 85%!
-
-🚀 С Premium вы получите:
-• 45 минут голосовых ответов/мес
+💼 <b>STARTER</b> - $10/мес:
+• 10 минут голосовых ответов
 • Автоматическая транскрипция
-• Голосовой анализ и feedback
+• 10 mock интервью
 
-💰 STARTER: $9.99/мес (~125,000 сум)
+🚀 <b>PRO</b> - $20/мес:
+• 30 минут голосовых ответов
+• AI голосовой анализ и feedback
+• 30 mock интервью
 
-📞 @interviewai_support_bot
+Смотреть планы: /plans`,
 
-⏰ Обновитесь сейчас и достигните лучших результатов на собеседовании!`,
+      en: `🎙️ Your free 2-minute voice answer limit is exhausted!
 
-      en: `🎙️ Voice answer limit exhausted!
+🚀 Premium for more voice practice:
 
-Your free 5-minute voice answer limit has ended.
-
-💡 Voice answers increase interview success by 85%!
-
-🚀 With Premium you get:
-• 45 minutes voice answers/mo
+💼 <b>STARTER</b> - $10/mo:
+• 10 minutes voice responses
 • Automatic transcription
-• Voice analysis and feedback
+• 10 mock interviews
 
-💰 STARTER: $9.99/mo (~125,000 sum)
+🚀 <b>PRO</b> - $20/mo:
+• 30 minutes voice responses
+• AI voice analysis and feedback
+• 30 mock interviews
 
-📞 @interviewai_support_bot
-
-⏰ Upgrade now and achieve better interview results!`,
+View plans: /plans`,
     };
 
     return messages[lang] || messages.uz;
@@ -266,59 +260,74 @@ Your free 5-minute voice answer limit has ended.
 
   private getBothExhaustedMessage(lang: string, usedCount: number): string {
     const messages: Record<string, string> = {
-      uz: `🚀 Siz ajoyib ish qildingiz! ${usedCount} ta mock interview + 5 daqiqa ovozli javob!
+      uz: `🚀 Barcha bepul imkoniyatlardan foydalandingiz!
 
-✅ Bepul imkoniyatlardan to'liq foydalandingiz.
+✅ ${usedCount} ta mock interview + 2 daqiqa ovozli javob
 
-🔥 Endi Premiumga o'tish vaqti!
+💎 Premium bilan karyerangizni oshiring:
 
-💎 PREMIUM imkoniyatlari:
-✅ Cheksiz mock interviews
-✅ 45 daqiqa ovozli javoblar/oy
-✅ CV tahlili va optimallashtirish
-✅ Kunlik topshiriqlar
-✅ 24/7 AI yordamchisi
+💼 <b>STARTER</b> - $10/oy:
+• 10 ta mock interview + 10 min voice
+• Kunlik AI savollari
+• 5 ta CV tahlili
 
-💰 Maxsus taklif: 50% chegirma
-📞 @interviewai_support_bot
+🚀 <b>PRO</b> - $20/oy:
+• 30 ta mock interview + 30 min voice
+• Haftalik AI tavsiyalar
+• 15 ta CV tahlili
 
-⏰ Faqat 3 kun!`,
+👑 <b>ELITE</b> - $30/oy:
+• Cheksiz mock interview
+• 2 ta kunlik topshiriq
+• Shaxsiy karyera rejasi
 
-      ru: `🚀 Отличная работа! ${usedCount} mock интервью + 5 минут голосовых ответов!
+Rejalarni ko'rish: /plans`,
 
-✅ Вы полностью использовали бесплатные возможности.
+      ru: `🚀 Вы использовали все бесплатные возможности!
 
-🔥 Теперь время перейти на Premium!
+✅ ${usedCount} mock интервью + 2 минуты голосовых ответов
 
-💎 Возможности PREMIUM:
-✅ Неограниченные mock интервью
-✅ 45 минут голосовых ответов/мес
-✅ Анализ и оптимизация CV
-✅ Ежедневные задания
-✅ AI помощник 24/7
+💎 Поднимите карьеру с Premium:
 
-💰 Специальное предложение: скидка 50%
-📞 @interviewai_support_bot
+💼 <b>STARTER</b> - $10/мес:
+• 10 mock интервью + 10 мин voice
+• Ежедневные AI вопросы
+• 5 анализов CV
 
-⏰ Только 3 дня!`,
+🚀 <b>PRO</b> - $20/мес:
+• 30 mock интервью + 30 мин voice
+• Еженедельные AI рекомендации
+• 15 анализов CV
 
-      en: `🚀 Great job! ${usedCount} mock interviews + 5 minutes voice answers!
+👑 <b>ELITE</b> - $30/мес:
+• Безлимит mock интервью
+• 2 ежедневных задания
+• Персональный план карьеры
 
-✅ You've fully used free opportunities.
+Смотреть планы: /plans`,
 
-🔥 Now it's time to upgrade to Premium!
+      en: `🚀 You've used all free features!
 
-💎 PREMIUM features:
-✅ Unlimited mock interviews
-✅ 45 minutes voice answers/mo
-✅ CV analysis and optimization
-✅ Daily tasks
-✅ 24/7 AI assistant
+✅ ${usedCount} mock interviews + 2 minutes voice answers
 
-💰 Special offer: 50% discount
-📞 @interviewai_support_bot
+💎 Level up your career with Premium:
 
-⏰ Only 3 days!`,
+💼 <b>STARTER</b> - $10/mo:
+• 10 mock interviews + 10 min voice
+• Daily AI questions
+• 5 CV analyses
+
+🚀 <b>PRO</b> - $20/mo:
+• 30 mock interviews + 30 min voice
+• Weekly AI recommendations
+• 15 CV analyses
+
+👑 <b>ELITE</b> - $30/mo:
+• Unlimited mock interviews
+• 2 daily tasks
+• Personal career roadmap
+
+View plans: /plans`,
     };
 
     return messages[lang] || messages.uz;
@@ -339,20 +348,20 @@ Your free 5-minute voice answer limit has ended.
       const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
 
       const [mockExhausted, voiceExhausted, bothExhausted, totalNotified] = await Promise.all([
-        // ✅ FIX: 5 → 3 (per COMPLETE_PLAN_LIMITS)
+        // ALIGNED with COMPLETE_PLAN_LIMITS: free_trial = 1 mock interview
         this.userModel.countDocuments({
           'subscription.plan': 'free_trial',
-          'usage.mockInterviewsThisMonth': { $gte: 3 },
+          'usage.mockInterviewsThisMonth': { $gte: 1 },
           'voiceQuota.mockVoice.remaining': { $gt: 0 },
         }),
         this.userModel.countDocuments({
           'subscription.plan': 'free_trial',
-          'usage.mockInterviewsThisMonth': { $lt: 3 },
+          'usage.mockInterviewsThisMonth': { $lt: 1 },
           'voiceQuota.mockVoice.remaining': 0,
         }),
         this.userModel.countDocuments({
           'subscription.plan': 'free_trial',
-          'usage.mockInterviewsThisMonth': { $gte: 3 },
+          'usage.mockInterviewsThisMonth': { $gte: 1 },
           'voiceQuota.mockVoice.remaining': 0,
         }),
         this.userModel.countDocuments({

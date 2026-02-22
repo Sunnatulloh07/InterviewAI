@@ -154,13 +154,14 @@ export class User {
   };
 
   // Voice quota tracking (separate for mock practice vs real interview help)
+  // ALIGNED with COMPLETE_PLAN_LIMITS: free_trial = 2 min mock, 0 real
   @Prop({
     type: Object,
     default: () => ({
       mockVoice: {
-        total: 5,
+        total: 2,
         used: 0,
-        remaining: 5,
+        remaining: 2,
         resetDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       },
       realVoice: {
@@ -188,6 +189,7 @@ export class User {
   profile: {
     position: 'junior' | 'middle' | 'senior' | 'lead';
     goal: 'job_search' | 'career_growth' | 'learning';
+    domain?: 'frontend' | 'backend' | 'mobile' | 'fullstack' | 'devops' | 'ai_ml' | 'data' | 'qa' | 'general';
     techStack: string[];
   };
 
@@ -467,8 +469,9 @@ UserSchema.pre('save', function (next) {
     // CRITICAL: Initialize voice quota based on subscription plan
     if (!user.voiceQuota) {
       const plan = user.subscription?.plan || 'free_trial';
+      // ALIGNED with COMPLETE_PLAN_LIMITS (single source of truth)
       const quotas: Record<string, { mock: number; real: number }> = {
-        free_trial: { mock: 5, real: 0 },
+        free_trial: { mock: 2, real: 0 },
         starter: { mock: 10, real: 15 },
         pro: { mock: 30, real: 45 },
         elite: { mock: 60, real: 120 },

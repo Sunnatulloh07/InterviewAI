@@ -8,6 +8,7 @@ import { SurveyHandlerService } from './survey-handler.service';
 import { PositionPromptService } from './position-prompt.service';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { JobSeekingStatus } from './dto/job-seeking-status.enum';
+import { getTashkentMidnight } from '@common/utils/tashkent-time';
 
 /**
  * Scheduler configuration
@@ -186,8 +187,7 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
 
     try {
       const now = new Date();
-      const startOfToday = new Date();
-      startOfToday.setHours(0, 0, 0, 0);
+      const startOfToday = getTashkentMidnight(now);
 
       const BATCH_SIZE = 1000;
 

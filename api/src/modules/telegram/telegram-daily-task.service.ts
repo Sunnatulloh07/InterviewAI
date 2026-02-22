@@ -2,7 +2,7 @@ import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import axios, { AxiosError } from 'axios';
+// FIX #88: Removed unused axios import (was dead code)
 import { AiOcrService } from '../ai/ai-ocr.service';
 import { AiTtsService } from '../ai/ai-tts.service';
 import { TelegramService, BotContext } from './telegram.service';
@@ -84,17 +84,17 @@ export class TelegramDailyTaskService {
 
 🎯 <b>Premium bilan nimalar olasiz:</b>
 
-💎 <b>STARTER ($9.99/oy):</b>
+💎 <b>STARTER ($10/oy):</b>
 • Har kuni 1 ta professional savol
 • 📊 Oylik AI tahlil va feedback
 • 🎤 Voice va 🖼 image javoblar
 
-🚀 <b>PRO ($19.99/oy):</b>
+🚀 <b>PRO ($20/oy):</b>
 • Har kuni 1 ta savol + kunlik progress
 • 📈 Haftalik AI tavsiyalar
 • Kengaytirilgan statistika
 
-👑 <b>ELITE ($29.99/oy):</b>
+👑 <b>ELITE ($30/oy):</b>
 • Har kuni 2 ta savol (2x ko'proq!)
 • 🗺 Haftalik career roadmap
 • Karyera o'sish tahlili
@@ -107,17 +107,17 @@ export class TelegramDailyTaskService {
 
 🎯 <b>Что вы получите с Premium:</b>
 
-💎 <b>STARTER ($9.99/мес):</b>
+💎 <b>STARTER ($10/мес):</b>
 • 1 профессиональный вопрос в день
 • 📊 Месячный AI отчет и feedback
 • 🎤 Голосовые и 🖼 ответы фото
 
-🚀 <b>PRO ($19.99/мес):</b>
+🚀 <b>PRO ($20/мес):</b>
 • 1 вопрос в день + ежедневный прогресс
 • 📈 Еженедельные AI рекомендации
 • Расширенная статистика
 
-👑 <b>ELITE ($29.99/мес):</b>
+👑 <b>ELITE ($30/мес):</b>
 • 2 вопроса в день (в 2 раза больше!)
 • 🗺 Еженедельная карьерная roadmap
 • Анализ роста карьеры
@@ -130,17 +130,17 @@ export class TelegramDailyTaskService {
 
 🎯 <b>What you get with Premium:</b>
 
-💎 <b>STARTER ($9.99/month):</b>
+💎 <b>STARTER ($10/month):</b>
 • 1 professional question per day
 • 📊 Monthly AI report & feedback
 • 🎤 Voice & 🖼 image answers
 
-🚀 <b>PRO ($19.99/month):</b>
+🚀 <b>PRO ($20/month):</b>
 • 1 question/day + daily progress
 • 📈 Weekly AI recommendations
 • Advanced statistics
 
-👑 <b>ELITE ($29.99/month):</b>
+👑 <b>ELITE ($30/month):</b>
 • 2 questions per day (2x more!)
 • 🗺 Weekly career roadmap
 • Career growth insights
@@ -405,11 +405,13 @@ export class TelegramDailyTaskService {
 
       if (currentTaskIndex === -1) {
         this.logger.log(`All tasks completed for userId: ${userId}`);
-        // All tasks completed
+        // All tasks completed — get actual streak from user document
+        const user = await this.usersService.findById(userId);
+        const currentStreak = user?.dailyTasks?.currentStreak || 0;
         const completedText = {
-          uz: `✅ Bugun barcha vazifalar bajarilgan!\n\n🔥 Joriy ketma-ketlik: ${dailyTask.tasks.length} kun`,
-          ru: `✅ Все задачи на сегодня выполнены!\n\n🔥 Текущая серия: ${dailyTask.tasks.length} дней`,
-          en: `✅ All tasks for today are completed!\n\n🔥 Current streak: ${dailyTask.tasks.length} days`,
+          uz: `✅ Bugun barcha vazifalar bajarilgan!\n\n🔥 Joriy ketma-ketlik: ${currentStreak} kun`,
+          ru: `✅ Все задачи на сегодня выполнены!\n\n🔥 Текущая серия: ${currentStreak} дней`,
+          en: `✅ All tasks for today are completed!\n\n🔥 Current streak: ${currentStreak} days`,
         };
         const lang = ctx.session?.language || 'uz';
         await ctx.reply(completedText[lang as keyof typeof completedText] || completedText.uz);
@@ -479,7 +481,7 @@ export class TelegramDailyTaskService {
   private async showCurrentTask(
     ctx: BotContext,
     dailyTask: any,
-    currentTaskIndex: number,
+    _currentTaskIndex: number, // Unused: all tasks shown in overview with individual buttons
   ): Promise<void> {
     const lang = ctx.session?.language || 'uz';
 
@@ -588,15 +590,17 @@ export class TelegramDailyTaskService {
         continue; // Skip invalid tasks
       }
 
+      // Get task title — use title field if available, otherwise first 60 chars of question
+      const taskTitle = task.title
+        ? this.escapeHtml(task.title)
+        : this.escapeHtml(
+            task.question.length > 60 ? task.question.substring(0, 60) + '...' : task.question,
+          );
+
       if (task.completed) {
-        // Completed task: show only title with checkmark and score
+        // Completed task: show title with checkmark and score
         const score = task.score || 0;
         const scoreEmoji = score >= 8 ? '🟢' : score >= 5 ? '🟡' : '🔴';
-
-        // SENIOR FIX: Safe substring with proper length check
-        const rawQuestion =
-          task.question.length > 60 ? task.question.substring(0, 60) + '...' : task.question;
-        const questionPreview = this.escapeHtml(rawQuestion);
 
         const scoreLabel = {
           uz: 'ball',
@@ -604,16 +608,16 @@ export class TelegramDailyTaskService {
           en: 'pts',
         };
 
-        tasksText += `✅ <b>${i + 1}. ${questionPreview}</b>\n   ${scoreEmoji} ${score}/10 ${scoreLabel[lang]}\n\n`;
+        tasksText += `✅ <b>${i + 1}. ${taskTitle}</b>\n   ${scoreEmoji} ${score}/10 ${scoreLabel[lang]}\n\n`;
       } else {
-        // Incomplete task: show full question + button
-        tasksText += `🔄 <b>${i + 1}. ${this.escapeHtml(task.question)}</b>\n\n`;
+        // Incomplete task: show TITLE ONLY (full question shown on button click)
+        tasksText += `🔄 <b>${i + 1}. ${taskTitle}</b>\n\n`;
 
-        // Add answer button for this specific task
+        // Add answer button for this specific task — opens full task view
         const buttonLabel = {
-          uz: `📝 Javob berish (${i + 1})`,
-          ru: `📝 Ответить (${i + 1})`,
-          en: `📝 Answer (${i + 1})`,
+          uz: `📝 Ko'rish va javob (${i + 1})`,
+          ru: `📝 Открыть и ответить (${i + 1})`,
+          en: `📝 View & Answer (${i + 1})`,
         };
 
         keyboard.text(buttonLabel[lang] || buttonLabel.uz, `daily_task_answer_${i}`);
@@ -738,7 +742,14 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
       }
     } catch (error: any) {
       this.logger.error(`Failed to handle text answer: ${error.message}`);
-      await ctx.reply("❌ Javobni qayta ishlashda xatolik. Iltimos, qayta urinib ko'ring.");
+      // FIX #87: Use lang variable instead of hardcoded Uzbek
+      const lang = ctx.session?.language || 'uz';
+      const errorText: Record<string, string> = {
+        uz: "❌ Javobni qayta ishlashda xatolik. Iltimos, qayta urinib ko'ring.",
+        ru: '❌ Ошибка обработки ответа. Пожалуйста, попробуйте ещё раз.',
+        en: '❌ Error processing answer. Please try again.',
+      };
+      await ctx.reply(errorText[lang] || errorText.uz);
     }
   }
 
@@ -782,9 +793,9 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
       // ═══════════════════════════════════════════════════════════════════
       if (!this.canUseDailyTaskVoiceAnswer(plan)) {
         const noVoiceText = {
-          uz: '❌ Ovozli javob faqat Starter va yuqori tariflarda!\\n\\nMatn shaklida javob yuboring.',
-          ru: '❌ Голосовые ответы только в Starter и выше!\\n\\nОтправьте текстовый ответ.',
-          en: '❌ Voice answers only in Starter and higher plans!\\n\\nPlease send a text answer.',
+          uz: '❌ Ovozli javob faqat Starter va yuqori tariflarda!\n\nMatn shaklida javob yuboring.',
+          ru: '❌ Голосовые ответы только в Starter и выше!\n\nОтправьте текстовый ответ.',
+          en: '❌ Voice answers only in Starter and higher plans!\n\nPlease send a text answer.',
         };
         await ctx.reply(noVoiceText[lang as keyof typeof noVoiceText] || noVoiceText.uz);
         return;
@@ -803,19 +814,19 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
       if (!preflight.allowed) {
         const noQuotaText = {
           uz:
-            `❌ Ovozli javob uchun yetarli daqiqa yo'q!\\n\\n` +
-            `Kerak: ${preflight.estimatedMinutes} daq\\n` +
-            `Mavjud: ${preflight.quotaInfo.remaining} daq\\n\\n` +
+            `❌ Ovozli javob uchun yetarli daqiqa yo'q!\n\n` +
+            `Kerak: ${preflight.estimatedMinutes} daq\n` +
+            `Mavjud: ${preflight.quotaInfo.remaining} daq\n\n` +
             `Matn shaklida javob yuboring yoki /upgrade orqali tarifni yangilang.`,
           ru:
-            `❌ Недостаточно минут для голосового ответа!\\n\\n` +
-            `Нужно: ${preflight.estimatedMinutes} мин\\n` +
-            `Доступно: ${preflight.quotaInfo.remaining} мин\\n\\n` +
+            `❌ Недостаточно минут для голосового ответа!\n\n` +
+            `Нужно: ${preflight.estimatedMinutes} мин\n` +
+            `Доступно: ${preflight.quotaInfo.remaining} мин\n\n` +
             `Продолжите текстом или обновите тариф через /upgrade.`,
           en:
-            `❌ Not enough voice minutes!\\n\\n` +
-            `Need: ${preflight.estimatedMinutes} min\\n` +
-            `Available: ${preflight.quotaInfo.remaining} min\\n\\n` +
+            `❌ Not enough voice minutes!\n\n` +
+            `Need: ${preflight.estimatedMinutes} min\n` +
+            `Available: ${preflight.quotaInfo.remaining} min\n\n` +
             `Continue with text or upgrade via /upgrade.`,
         };
         await ctx.reply(noQuotaText[lang] || noQuotaText.uz);
@@ -1066,7 +1077,14 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
       }
     } catch (error: any) {
       this.logger.error(`Failed to handle image answer: ${error.message}`);
-      await ctx.reply("❌ Rasmni qayta ishlashda xatolik. Iltimos, matn bilan urinib ko'ring.");
+      // FIX #90: Use lang variable instead of hardcoded Uzbek
+      const lang = ctx.session?.language || 'uz';
+      const errorText: Record<string, string> = {
+        uz: "❌ Rasmni qayta ishlashda xatolik. Iltimos, matn bilan urinib ko'ring.",
+        ru: '❌ Ошибка обработки изображения. Попробуйте отправить текст.',
+        en: '❌ Error processing image. Please try with text.',
+      };
+      await ctx.reply(errorText[lang] || errorText.uz);
     }
   }
 
@@ -1122,12 +1140,19 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
 
   /**
    * Send voice explanation (TTS) for users with eligible plans
+   *
+   * FIX #69: Voice explanations now deduct from mockVoice quota.
+   * TTS audio typically ~15-30 seconds. We estimate 0.5 min per explanation
+   * and deduct from mockVoice quota using pre-flight + reserve + commit pattern.
+   * If user has no remaining quota, voice explanation is silently skipped.
    */
   private async sendVoiceExplanation(
     ctx: BotContext,
     result: { score: number; feedback: string },
     lang: string,
   ): Promise<void> {
+    let reservationId: string | null = null;
+
     try {
       const userId = ctx.session?.userId;
       if (!userId) {
@@ -1151,6 +1176,34 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
         return;
       }
 
+      // FIX #69: Check voice quota before generating TTS
+      // TTS explanations are short (~15-30 sec), estimate 0.5 min
+      const estimatedMinutes = 0.5;
+      const preflight = await this.voiceQuotaGuardService.preFlightCheck(
+        userId,
+        'mock', // Voice explanations use mockVoice quota
+        30, // ~30 seconds estimated
+      );
+
+      if (!preflight.allowed) {
+        this.logger.debug(
+          `Skipping voice explanation for user ${userId}: insufficient mockVoice quota ` +
+            `(remaining: ${preflight.quotaInfo.remaining} min, need: ${estimatedMinutes} min)`,
+        );
+        return; // Silently skip — user still gets text feedback
+      }
+
+      // Reserve quota before TTS generation
+      reservationId = await this.voiceQuotaGuardService.reserveQuota(
+        userId,
+        'mock',
+        estimatedMinutes,
+        {
+          flow: 'daily_task',
+          estimatedDurationSeconds: 30,
+        },
+      );
+
       const { audioBuffer } = await this.ttsService.synthesize(result.feedback, {
         language: lang,
         voice: 'alloy',
@@ -1160,14 +1213,31 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
         caption: '🔊 Ovozli izoh (Voice explanation)',
       });
 
-      this.logger.log(`Voice explanation sent to user ${userId}`);
+      // Commit quota after successful delivery
+      await this.voiceQuotaGuardService.commitReservation(reservationId);
+      reservationId = null; // Already committed
+
+      this.logger.log(`Voice explanation sent to user ${userId} (${estimatedMinutes} min deducted)`);
     } catch (error: any) {
       this.logger.error(`Failed to send voice explanation: ${error.message}`);
+
+      // Rollback quota if reserved but not committed
+      if (reservationId) {
+        try {
+          await this.voiceQuotaGuardService.rollbackReservation(reservationId, 'ai_failed');
+        } catch (rollbackError: any) {
+          this.logger.error(`Failed to rollback voice explanation quota: ${rollbackError.message}`);
+        }
+      }
     }
   }
 
   /**
    * Move to next task
+   *
+   * FIX #78: Find next INCOMPLETE task instead of blindly using nextTaskIndex.
+   * User may answer tasks out of order (e.g., task 1 first, then task 0).
+   * We must show the overview with remaining incomplete tasks.
    */
   private async moveToNextTask(
     ctx: BotContext,
@@ -1181,17 +1251,28 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
         session.dailyTaskSession?.date,
       );
 
-      if (!dailyTask || nextTaskIndex >= dailyTask.tasks.length) {
+      if (!dailyTask) {
         return;
       }
 
-      // Show next task
-      await this.showCurrentTask(ctx, dailyTask, nextTaskIndex);
+      // Find the next incomplete task (may not be nextTaskIndex if answered out of order)
+      const actualNextIndex = dailyTask.tasks.findIndex((t, i) => i >= nextTaskIndex && !t.completed);
+      const fallbackIndex = actualNextIndex === -1
+        ? dailyTask.tasks.findIndex((t) => !t.completed) // Check any remaining incomplete
+        : actualNextIndex;
 
-      // Update session
+      if (fallbackIndex === -1) {
+        // All tasks completed — shouldn't reach here (endDailyTaskSession handles this)
+        return;
+      }
+
+      // Show tasks overview (all tasks with individual buttons for incomplete ones)
+      await this.showCurrentTask(ctx, dailyTask, fallbackIndex);
+
+      // Update session with next incomplete task index
       await this.sessionModel.findByIdAndUpdate(session._id, {
         $set: {
-          'dailyTaskSession.currentTaskIndex': nextTaskIndex,
+          'dailyTaskSession.currentTaskIndex': fallbackIndex,
           'dailyTaskSession.totalTasks': dailyTask.tasks.length,
           lastActivityAt: new Date(),
         },
@@ -1203,6 +1284,10 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
 
   /**
    * End daily task session
+   *
+   * FIX #73: Now triggers engagement reports:
+   * - ELITE: Daily AI engagement report (after all daily tasks completed)
+   * - ALL PAID (Starter/Pro/Elite): Monthly AI engagement report on plan's last day
    */
   private async endDailyTaskSession(
     ctx: BotContext,
@@ -1210,13 +1295,15 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
     result: { score: number; feedback: string; allCompleted: boolean },
   ): Promise<void> {
     const lang = ctx.session?.language || 'uz';
+    const userId = session.userId.toString();
 
     // Get user streak info
-    const user = await this.usersService.findById(session.userId.toString());
+    const user = await this.usersService.findById(userId);
     const streak = user?.dailyTasks?.currentStreak || 0;
+    const plan = user?.subscription?.plan || 'free_trial';
 
     const completionText = {
-      uz: `🎉 <b>Tabriklaymiz!</b>\n\n✅ Barcha kunlik vazifalar bajarildi!\n\n🔥 Joriy ketma-ketlik: ${streak} kun\n\nErtaga yangi vazifalar bilan ko'rishguncha u yuborish! 👋`,
+      uz: `🎉 <b>Tabriklaymiz!</b>\n\n✅ Barcha kunlik vazifalar bajarildi!\n\n🔥 Joriy ketma-ketlik: ${streak} kun\n\nErtaga yangi vazifalar bilan ko'rishguncha! 👋`,
       ru: `🎉 <b>Поздравляем!</b>\n\n✅ Все ежедневные задания выполнены!\n\n🔥 Текущая серия: ${streak} дней\n\nДо завтра с новыми заданиями! 👋`,
       en: `🎉 <b>Congratulations!</b>\n\n✅ All daily tasks completed!\n\n🔥 Current streak: ${streak} days\n\nSee you tomorrow with new tasks! 👋`,
     };
@@ -1233,6 +1320,294 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
         lastActivityAt: new Date(),
       },
     });
+
+    // ═══════════════════════════════════════════════════════════════════
+    // ENGAGEMENT REPORTS (fire-and-forget, don't block user flow)
+    // ═══════════════════════════════════════════════════════════════════
+
+    // ELITE ONLY: Daily AI engagement report after all tasks completed
+    if (plan === 'elite') {
+      this.generateDailyEngagementReport(ctx, userId, lang).catch((err) => {
+        this.logger.error(`Failed to generate daily engagement report: ${err.message}`);
+      });
+    }
+
+    // ALL PAID PLANS: Monthly report on plan's last day
+    if (['starter', 'pro', 'elite'].includes(plan)) {
+      this.checkAndSendMonthlyReport(ctx, user, userId, lang).catch((err) => {
+        this.logger.error(`Failed to check/send monthly engagement report: ${err.message}`);
+      });
+    }
+  }
+
+  /**
+   * ELITE ONLY: Generate daily AI engagement report
+   *
+   * Sent after all daily tasks are completed. Includes:
+   * - Today's task scores summary
+   * - Short AI feedback with strengths/improvements
+   * - Daily roadmap recommendation
+   * - Streak and consistency stats
+   */
+  private async generateDailyEngagementReport(
+    ctx: BotContext,
+    userId: string,
+    lang: string,
+  ): Promise<void> {
+    try {
+      // FIX #89: Poll for scoring completion instead of fixed 3s delay.
+      // scoreTaskInBackground runs async after completeTask returns.
+      // Polling checks every 1s for up to 10s whether all tasks have been scored.
+      // Falls back gracefully if scoring is still pending after timeout.
+      const today = this.dailyTasksService.getTashkentMidnightPublic();
+      let dailyTask = await this.dailyTasksService.getTodayTasks(userId, today);
+
+      if (!dailyTask) return;
+
+      // Poll until all tasks are scored or timeout (10 seconds max)
+      const MAX_POLLS = 10;
+      const POLL_INTERVAL_MS = 1000;
+      for (let poll = 0; poll < MAX_POLLS; poll++) {
+        const allScored = dailyTask.tasks.every(
+          (t) => (t as any).scoringStatus === 'completed' || (t as any).scoringStatus === 'failed',
+        );
+        if (allScored) break;
+
+        await this.delay(POLL_INTERVAL_MS);
+        dailyTask = await this.dailyTasksService.getTodayTasks(userId, today);
+        if (!dailyTask) return;
+      }
+
+      const user = await this.usersService.findById(userId);
+      if (!user) return;
+
+      // FIX #86: Build today's scores summary — HTML-escape titles to prevent rendering issues
+      const taskSummaries = dailyTask.tasks.map((t, i) => {
+        const rawTitle = (t as any).title || t.question.substring(0, 50);
+        const title = this.escapeHtml(rawTitle);
+        const score = t.score || 0;
+        const emoji = score >= 8 ? '🟢' : score >= 5 ? '🟡' : '🔴';
+        return `${emoji} ${i + 1}. ${title}: ${score}/10`;
+      });
+
+      const avgScore =
+        dailyTask.tasks.length > 0
+          ? Math.round(
+              (dailyTask.tasks.reduce((sum, t) => sum + (t.score || 0), 0) /
+                dailyTask.tasks.length) *
+                10,
+            ) / 10
+          : 0;
+
+      const streak = user.dailyTasks?.currentStreak || 0;
+      const position = user.profile?.position || 'junior';
+
+      const reportText: Record<string, string> = {
+        uz: `━━━━━━━━━━━━━━━━━━
+📊 <b>KUNLIK AI HISOBOT (Elite)</b>
+━━━━━━━━━━━━━━━━━━
+
+📋 <b>Bugungi natijalar:</b>
+${taskSummaries.join('\n')}
+
+📈 <b>O'rtacha ball:</b> ${avgScore}/10
+🔥 <b>Streak:</b> ${streak} kun
+
+💡 <b>AI tavsiya:</b>
+${avgScore >= 8 ? `Ajoyib natija! ${position} darajangizda siz juda yaxshi natijalarga erishyapsiz. Shu tezlikda davom eting!` : avgScore >= 5 ? `Yaxshi harakat! Javoblaringizni yanada chuqurroq va aniqroq qilishga e'tibor bering. Misollar va metrikalar qo'shing.` : `Mashq qilishda davom eting! Savollarni yaxshilab o'qib, strukturali javob berishga harakat qiling (STAR metodi).`}
+
+━━━━━━━━━━━━━━━━━━`,
+
+        ru: `━━━━━━━━━━━━━━━━━━
+📊 <b>ЕЖЕДНЕВНЫЙ AI ОТЧЕТ (Elite)</b>
+━━━━━━━━━━━━━━━━━━
+
+📋 <b>Результаты за сегодня:</b>
+${taskSummaries.join('\n')}
+
+📈 <b>Средний балл:</b> ${avgScore}/10
+🔥 <b>Серия:</b> ${streak} дней
+
+💡 <b>AI рекомендация:</b>
+${avgScore >= 8 ? `Отличный результат! На уровне ${position} вы показываете великолепные результаты. Продолжайте в том же духе!` : avgScore >= 5 ? `Хорошая работа! Обратите внимание на глубину и точность ответов. Добавляйте примеры и метрики.` : `Продолжайте практику! Внимательно читайте вопросы и старайтесь отвечать структурированно (метод STAR).`}
+
+━━━━━━━━━━━━━━━━━━`,
+
+        en: `━━━━━━━━━━━━━━━━━━
+📊 <b>DAILY AI REPORT (Elite)</b>
+━━━━━━━━━━━━━━━━━━
+
+📋 <b>Today's results:</b>
+${taskSummaries.join('\n')}
+
+📈 <b>Average score:</b> ${avgScore}/10
+🔥 <b>Streak:</b> ${streak} days
+
+💡 <b>AI recommendation:</b>
+${avgScore >= 8 ? `Excellent results! At ${position} level, you're performing outstandingly. Keep up the great work!` : avgScore >= 5 ? `Good effort! Focus on depth and specificity in your answers. Add concrete examples and metrics.` : `Keep practicing! Read questions carefully and try to answer in a structured way (STAR method).`}
+
+━━━━━━━━━━━━━━━━━━`,
+      };
+
+      await ctx.reply(reportText[lang] || reportText.uz, { parse_mode: 'HTML' });
+      this.logger.log(`Daily engagement report sent to Elite user ${userId}`);
+    } catch (error: any) {
+      this.logger.error(`Failed to generate daily engagement report: ${error.message}`);
+    }
+  }
+
+  /**
+   * ALL PAID PLANS: Check if today is plan's last day and send monthly report
+   *
+   * Triggers when:
+   * - User has endDate set on subscription
+   * - endDate is today or tomorrow (within 24 hours)
+   * - Report not already sent this period (checked via Redis)
+   *
+   * Report includes:
+   * - 30-day task completion stats
+   * - Average scores and trends
+   * - AI-generated roadmap with strengths/weaknesses
+   * - Growth forecast and recommendations
+   */
+  private async checkAndSendMonthlyReport(
+    ctx: BotContext,
+    user: any,
+    userId: string,
+    lang: string,
+  ): Promise<void> {
+    try {
+      const endDate = user?.subscription?.endDate;
+      if (!endDate) return; // No end date set, skip
+
+      const now = new Date();
+      const end = new Date(endDate);
+      const hoursUntilEnd = (end.getTime() - now.getTime()) / (1000 * 60 * 60);
+
+      // Only trigger if within last 24 hours of plan period
+      if (hoursUntilEnd > 24 || hoursUntilEnd < -24) return;
+
+      // FIX #84: Check if monthly report already sent this period (prevent duplicates)
+      // Use public API instead of breaking encapsulation with this.dailyTasksService['redis']
+      const reportKey = `engagement:monthly-report:${userId}:${end.toISOString().split('T')[0]}`;
+      const alreadySent = await this.dailyTasksService.getRedisKey(reportKey);
+      if (alreadySent) {
+        this.logger.debug(`Monthly report already sent for user ${userId}`);
+        return;
+      }
+
+      // Get 30-day stats
+      const stats = await this.dailyTasksService.getMonthlyStats(userId);
+      const plan = user.subscription?.plan || 'free_trial';
+      const position = user.profile?.position || 'junior';
+      const domain = user.profile?.domain || '';
+      const streak = user.dailyTasks?.currentStreak || 0;
+      const longestStreak = user.dailyTasks?.longestStreak || 0;
+
+      // Calculate growth indicators
+      const consistencyRate = stats.totalTasks > 0
+        ? Math.round((stats.completed / stats.totalTasks) * 100)
+        : 0;
+
+      const growthEmoji = stats.averageScore >= 7 ? '📈' : stats.averageScore >= 5 ? '➡️' : '📉';
+
+      const reportText: Record<string, string> = {
+        uz: `━━━━━━━━━━━━━━━━━━
+📊 <b>30 KUNLIK AI ENGAGEMENT HISOBOT</b>
+━━━━━━━━━━━━━━━━━━
+
+👤 <b>Profil:</b> ${position}${domain ? ` | ${domain}` : ''}
+📋 <b>Plan:</b> ${plan.toUpperCase()}
+
+📈 <b>30 kunlik statistika:</b>
+• Jami vazifalar: <b>${stats.totalTasks}</b>
+• Bajarilgan: <b>${stats.completed}</b> (${stats.completionRate}%)
+• Bajarilmagan: <b>${stats.failed}</b>
+• O'rtacha ball: <b>${stats.averageScore}/10</b>
+• AI javoblar: <b>${stats.aiAnswered}</b>
+
+🔥 <b>Streak:</b>
+• Joriy: <b>${streak} kun</b>
+• Eng uzun: <b>${longestStreak} kun</b>
+
+${growthEmoji} <b>O'sish prognozi:</b>
+${consistencyRate >= 80 ? `Ajoyib! Siz ${consistencyRate}% izchillik bilan mashq qilyapsiz. Bu tezlikda 2-3 oy ichida ${position === 'junior' ? 'middle' : position === 'middle' ? 'senior' : 'lead'} darajaga yetishingiz mumkin.` : consistencyRate >= 50 ? `Yaxshi boshlangich! ${consistencyRate}% izchillik yetarli, lekin har kuni mashq qilish natijalarni 2x yaxshilaydi. Kunlik streak ni uzmang!` : `Mashq qilishni ko'paytiring! Hozirgi ${consistencyRate}% izchillik past. Kunlik vazifalarni bajarishni odat qiling.`}
+
+💡 <b>AI tavsiyalar:</b>
+${stats.averageScore >= 8 ? `1. Yanada murakkab savollarga o'ting\n2. System design va behavioral savollarni ko'proq mashq qiling\n3. Haqiqiy intervyuga tayyorlaning — siz tayyor!` : stats.averageScore >= 5 ? `1. Javoblaringizga aniq misollar qo'shing\n2. STAR metodidan foydalaning\n3. Texnik terminlarni to'g'ri ishlating\n4. Haftalik 2-3 mock intervyu o'tkazing` : `1. Asosiy tushunchalarni qayta o'rganing\n2. Har bir javobni yozib, keyin tahlil qiling\n3. Oddiy savollardan boshlang, murakkablikni oshiring\n4. Kunlik mashqni uzluksiz davom ettiring`}
+
+━━━━━━━━━━━━━━━━━━
+<i>Keyingi oy ham muvaffaqiyatli bo'lsin!</i>`,
+
+        ru: `━━━━━━━━━━━━━━━━━━
+📊 <b>30-ДНЕВНЫЙ AI ENGAGEMENT ОТЧЕТ</b>
+━━━━━━━━━━━━━━━━━━
+
+👤 <b>Профиль:</b> ${position}${domain ? ` | ${domain}` : ''}
+📋 <b>План:</b> ${plan.toUpperCase()}
+
+📈 <b>Статистика за 30 дней:</b>
+• Всего заданий: <b>${stats.totalTasks}</b>
+• Выполнено: <b>${stats.completed}</b> (${stats.completionRate}%)
+• Не выполнено: <b>${stats.failed}</b>
+• Средний балл: <b>${stats.averageScore}/10</b>
+• AI ответы: <b>${stats.aiAnswered}</b>
+
+🔥 <b>Серия:</b>
+• Текущая: <b>${streak} дней</b>
+• Максимальная: <b>${longestStreak} дней</b>
+
+${growthEmoji} <b>Прогноз роста:</b>
+${consistencyRate >= 80 ? `Отлично! ${consistencyRate}% последовательности. При таком темпе через 2-3 месяца вы можете достичь уровня ${position === 'junior' ? 'middle' : position === 'middle' ? 'senior' : 'lead'}.` : consistencyRate >= 50 ? `Хорошее начало! ${consistencyRate}% — неплохо, но ежедневная практика улучшит результаты в 2 раза. Не прерывайте серию!` : `Нужно больше практики! Текущая последовательность ${consistencyRate}% низкая. Сделайте ежедневные задания привычкой.`}
+
+💡 <b>AI рекомендации:</b>
+${stats.averageScore >= 8 ? `1. Переходите к более сложным вопросам\n2. Больше практикуйте system design и behavioral\n3. Готовьтесь к реальному интервью — вы готовы!` : stats.averageScore >= 5 ? `1. Добавляйте конкретные примеры в ответы\n2. Используйте метод STAR\n3. Правильно применяйте технические термины\n4. Проводите 2-3 mock-интервью в неделю` : `1. Повторите основные концепции\n2. Записывайте ответы и анализируйте\n3. Начните с простых вопросов\n4. Продолжайте ежедневную практику`}
+
+━━━━━━━━━━━━━━━━━━
+<i>Успехов в следующем месяце!</i>`,
+
+        en: `━━━━━━━━━━━━━━━━━━
+📊 <b>30-DAY AI ENGAGEMENT REPORT</b>
+━━━━━━━━━━━━━━━━━━
+
+👤 <b>Profile:</b> ${position}${domain ? ` | ${domain}` : ''}
+📋 <b>Plan:</b> ${plan.toUpperCase()}
+
+📈 <b>30-Day Statistics:</b>
+• Total tasks: <b>${stats.totalTasks}</b>
+• Completed: <b>${stats.completed}</b> (${stats.completionRate}%)
+• Failed: <b>${stats.failed}</b>
+• Average score: <b>${stats.averageScore}/10</b>
+• AI answers: <b>${stats.aiAnswered}</b>
+
+🔥 <b>Streak:</b>
+• Current: <b>${streak} days</b>
+• Longest: <b>${longestStreak} days</b>
+
+${growthEmoji} <b>Growth Forecast:</b>
+${consistencyRate >= 80 ? `Excellent! ${consistencyRate}% consistency. At this pace, you could reach ${position === 'junior' ? 'middle' : position === 'middle' ? 'senior' : 'lead'} level in 2-3 months.` : consistencyRate >= 50 ? `Good start! ${consistencyRate}% is decent, but daily practice doubles results. Don't break your streak!` : `Need more practice! Current ${consistencyRate}% consistency is low. Make daily tasks a habit.`}
+
+💡 <b>AI Recommendations:</b>
+${stats.averageScore >= 8 ? `1. Move to more complex questions\n2. Practice more system design & behavioral\n3. Prepare for real interviews — you're ready!` : stats.averageScore >= 5 ? `1. Add specific examples to your answers\n2. Use the STAR method\n3. Apply technical terms correctly\n4. Do 2-3 mock interviews per week` : `1. Review fundamental concepts\n2. Write down answers and analyze them\n3. Start with simple questions\n4. Keep practicing daily consistently`}
+
+━━━━━━━━━━━━━━━━━━
+<i>Good luck next month!</i>`,
+      };
+
+      await ctx.reply(reportText[lang] || reportText.uz, { parse_mode: 'HTML' });
+
+      // FIX #84: Mark report as sent (prevent duplicates for 48 hours)
+      // Use public API instead of breaking encapsulation
+      try {
+        await this.dailyTasksService.setRedisKey(reportKey, '1', 172800);
+      } catch {
+        // Redis failure is non-critical
+      }
+
+      this.logger.log(`Monthly engagement report sent to user ${userId} (plan: ${plan})`);
+    } catch (error: any) {
+      this.logger.error(`Failed to send monthly engagement report: ${error.message}`);
+    }
   }
 
   /**
@@ -1270,7 +1645,6 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
    * Helper: Get plan limits from COMPLETE_PLAN_LIMITS
    */
   private getPlanLimits(plan: string) {
-    const { COMPLETE_PLAN_LIMITS } = require('@common/constants');
     return COMPLETE_PLAN_LIMITS[plan] || COMPLETE_PLAN_LIMITS.free_trial;
   }
 

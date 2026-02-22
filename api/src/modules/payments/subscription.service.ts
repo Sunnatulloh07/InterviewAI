@@ -108,14 +108,22 @@ export class SubscriptionService {
   }
 
   /**
-   * Check and update usage, returns true if within limits
+   * Check and update usage, returns true if within limits.
+   *
+   * FIX #51 (CRITICAL): Previously `limits[usageType]` returned a nested
+   * object (e.g. `{ perMonth: 10, questionsPerInterview: 15 }`) or
+   * `undefined`, not a number.  `typeof limit === 'number'` was always
+   * false, so limits were NEVER enforced — users could use features
+   * unlimited.
+   *
+   * Now correctly extracts the numeric limit from the PlanLimits structure.
    */
   async checkAndIncrementUsage(
     userId: string,
     usageType: 'mockInterviews' | 'liveInterviewMinutes' | 'cvAnalyses' | 'chromeQuestions',
     amount: number = 1,
   ): Promise<{ allowed: boolean; current: number; limit: number }> {
-    const user = await this.userModel.findById(userId).select('subscription usage');
+    const user = await this.userModel.findById(userId).select('subscription usage voiceQuota');
     if (!user) {
       return { allowed: false, current: 0, limit: 0 };
     }
@@ -127,7 +135,26 @@ export class SubscriptionService {
 
     const plan = (user.subscription?.plan || 'free_trial') as SubscriptionPlan;
     const limits = this.getPlanLimits(plan);
-    const limit = limits[usageType as keyof typeof limits];
+
+    // FIX #51: Correctly extract numeric limit from nested PlanLimits structure
+    let numericLimit: number;
+    switch (usageType) {
+      case 'mockInterviews':
+        numericLimit = limits.mockInterviews.perMonth;
+        break;
+      case 'liveInterviewMinutes':
+        numericLimit = limits.voice.realVoice; // live interview uses realVoice quota
+        break;
+      case 'cvAnalyses':
+        numericLimit = limits.cvAnalysis.perMonth;
+        break;
+      case 'chromeQuestions':
+        // chromeQuestions not in PlanLimits — treat as unlimited for now
+        numericLimit = -1;
+        break;
+      default:
+        numericLimit = -1;
+    }
 
     const usageFieldMap: Record<string, string> = {
       mockInterviews: 'mockInterviewsThisMonth',
@@ -137,14 +164,14 @@ export class SubscriptionService {
     };
 
     const field = usageFieldMap[usageType];
-    const currentUsage = user.usage?.[field as keyof typeof user.usage] || 0;
+    const currentUsage = (user.usage?.[field as keyof typeof user.usage] as number) || 0;
 
     // -1 means unlimited
-    if (typeof limit === 'number' && (currentUsage as number) + amount > limit) {
+    if (numericLimit !== -1 && currentUsage + amount > numericLimit) {
       return {
         allowed: false,
-        current: currentUsage as number,
-        limit: limit as number,
+        current: currentUsage,
+        limit: numericLimit,
       };
     }
 
@@ -155,8 +182,8 @@ export class SubscriptionService {
 
     return {
       allowed: true,
-      current: (currentUsage as number) + amount,
-      limit: typeof limit === 'number' ? limit : -1,
+      current: currentUsage + amount,
+      limit: numericLimit,
     };
   }
 

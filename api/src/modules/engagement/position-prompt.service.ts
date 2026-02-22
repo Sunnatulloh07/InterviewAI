@@ -37,6 +37,12 @@ export class PositionPromptService {
     try {
       const bot = this.telegramService.getBot();
 
+      // FIX #99: Null check on bot before calling sendMessage
+      if (!bot) {
+        this.logger.warn(`Bot not available, cannot send position prompt to user ${userId}`);
+        return { success: false, error: 'Bot not available' };
+      }
+
       // Get position prompt messages in user's language
       const messages = this.getPositionPromptMessages(language);
 

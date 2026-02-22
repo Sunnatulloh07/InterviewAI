@@ -5,12 +5,11 @@ import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import { InjectRedis } from '@nestjs-modules/ioredis';
 import Redis from 'ioredis';
-import { OpenAI } from 'openai';
 import { DailyTask, DailyTaskDocument } from '../tasks/schemas/daily-task.schema';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { TelegramService } from '../telegram/telegram.service';
 import { FailedNotificationRetryService } from './failed-notification-retry.service';
-import { createOpenAIClient } from '@common/utils/openai-client.factory';
+import { getTashkentMidnight } from '@common/utils/tashkent-time';
 
 /**
  * Task Reminder Service
@@ -29,7 +28,6 @@ import { createOpenAIClient } from '@common/utils/openai-client.factory';
 @Injectable()
 export class TaskReminderService {
   private readonly logger = new Logger(TaskReminderService.name);
-  private readonly openai: OpenAI | null;
 
   constructor(
     @InjectModel(DailyTask.name)
@@ -42,9 +40,7 @@ export class TaskReminderService {
     private readonly retryService: FailedNotificationRetryService,
     private readonly configService: ConfigService,
     @InjectRedis() private readonly redis: Redis,
-  ) {
-    this.openai = createOpenAIClient(this.configService);
-  }
+  ) {}
 
   /**
    * First reminder: 30 minutes after task delivery
@@ -554,8 +550,13 @@ export class TaskReminderService {
     language: string,
     reminderType: 'first' | 'second' | 'third',
   ): string {
-    // Extract only task titles (questions)
-    const taskTitles = tasks.map((t, i) => `${i + 1}. ${t.question}`).join('\n');
+    // FIX #92: Use task title (shorter, cleaner) instead of full question.
+    // HTML-escape to prevent parse_mode: 'HTML' failures with <, >, & chars.
+    const taskTitles = tasks.map((t, i) => {
+      const raw = t.title || (t.question?.length > 60 ? t.question.substring(0, 60) + '...' : t.question) || 'Task';
+      const escaped = raw.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      return `${i + 1}. ${escaped}`;
+    }).join('\n');
 
     // Professional PM/TechLead messaging based on reminder type
     const messages: Record<string, Record<string, string>> = {
@@ -653,53 +654,19 @@ ${taskTitles}
   }
 
   /**
-   * Fallback message if AI generation fails
-   */
-  private getFallbackMessage(taskCount: number, language: string, reminderType: string): string {
-    const messages = {
-      uz: `📚 <b>Kunlik topshiriqlar eslatmasi</b>\n\n⏰ Sizda ${taskCount} ta tugallanmagan topshiriq bor!\n\n💡 Har kuni 30 daqiqa mashq qilish sizni mutaxassis darajasiga olib chiqadi.\n\n🎯 Bugungi topshiriqlarni yakunlang!\n\nTopshiriqlar: /tasks`,
-      ru: `📚 <b>Напоминание о ежедневных заданиях</b>\n\n⏰ У вас ${taskCount} незавершенных заданий!\n\n💡 Ежедневная практика 30 минут приведет вас к уровню эксперта.\n\n🎯 Завершите сегодняшние задания!\n\nЗадания: /tasks`,
-      en: `📚 <b>Daily Tasks Reminder</b>\n\n⏰ You have ${taskCount} incomplete tasks!\n\n💡 Daily 30-minute practice will lead you to expert level.\n\n🎯 Complete today's tasks!\n\nTasks: /tasks`,
-    };
-
-    return messages[language as keyof typeof messages] || messages.uz;
-  }
-
-  /**
-   * Check if user is on paid plan
-   */
-  private isPaidUser(user: any): boolean {
-    const paidPlans = ['starter', 'pro', 'elite'];
-    return paidPlans.includes(user.subscription?.plan) && user.subscription?.status === 'active';
-  }
-
-  /**
    * Get midnight in Tashkent timezone as UTC date
    * Tashkent is UTC+5, so today 00:00 Tashkent = yesterday 19:00 UTC
    *
    * CRITICAL: DailyTasksService creates tasks with `date` field set to
    * midnight in Tashkent time, stored as UTC. We need to match that.
    */
+  /**
+   * Thin wrapper around the shared getTashkentMidnight utility.
+   * Guaranteed to produce identical values to DailyTasksService
+   * so reminder queries always match stored task documents.
+   */
   private getTashkentMidnight(): Date {
-    const now = new Date();
-
-    // Get current time in Tashkent (UTC+5)
-    // Method: Convert to UTC, then add 5 hours to get Tashkent time
-    const utcHours = now.getUTCHours();
-    const utcMinutes = now.getUTCMinutes();
-
-    // Tashkent hours = UTC hours + 5
-    const tashkentHours = utcHours + 5;
-
-    // Create date for today at midnight Tashkent
-    const midnight = new Date(now);
-    midnight.setUTCHours(0, 0, 0, 0);
-
-    // Subtract 5 hours to convert Tashkent midnight to UTC
-    // Example: Tashkent 00:00 Jan 15 = UTC 19:00 Jan 14
-    midnight.setUTCHours(midnight.getUTCHours() - 5);
-
-    return midnight;
+    return getTashkentMidnight();
   }
 
   /**

@@ -630,22 +630,21 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
         `• ${freeLimits.voice.mockVoice} daqiqa mock ovoz\n` +
         `• ${freeLimits.cvAnalysis.perMonth} ta CV tahlili\n` +
         `• Faqat matn javoblari\n\n` +
-        `💎 <b>Starter</b> - $9.99/oy\n` +
+        `💎 <b>Starter</b> - $10/oy\n` +
         `• ${starterLimits.mockInterviews.perMonth} ta mock intervyu/oy\n` +
         `• ${starterLimits.voice.mockVoice} daq mock + ${starterLimits.voice.realVoice} daq live ovoz\n` +
         `• ${starterLimits.cvAnalysis.perMonth} ta CV tahlili\n` +
-        `• Ovoz va rasm javoblari\n\n` +
-        `🚀 <b>Pro</b> - $19.99/oy\n` +
+        `• 1 ta kunlik topshiriq\n\n` +
+        `🚀 <b>Pro</b> - $20/oy\n` +
         `• ${proLimits.mockInterviews.perMonth} ta mock intervyu/oy\n` +
         `• ${proLimits.voice.mockVoice} daq mock + ${proLimits.voice.realVoice} daq live ovoz\n` +
         `• ${proLimits.cvAnalysis.perMonth} ta CV tahlili\n` +
-        `• Batafsil AI tahlil\n` +
-        `• Chrome Extension\n\n` +
-        `👑 <b>Elite</b> - $29.99/oy\n` +
+        `• Haftalik AI tavsiyalar\n\n` +
+        `👑 <b>Elite</b> - $30/oy\n` +
         `• Cheksiz mock intervyu\n` +
         `• ${eliteLimits.voice.mockVoice} daq mock + ${eliteLimits.voice.realVoice} daq live ovoz\n` +
-        `• ${eliteLimits.cvAnalysis.perMonth} ta CV tahlili\n` +
-        `• Premium AI modellari\n` +
+        `• Cheksiz CV tahlili\n` +
+        `• 2 ta kunlik topshiriq\n` +
         `• Priority support\n\n` +
         `━━━━━━━━━━━━━━━━━━\n` +
         `📞 Tarif o'zgartirish uchun @interviewai_support_bot ga murojaat qiling`,
@@ -657,22 +656,21 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
         `• ${freeLimits.voice.mockVoice} мин mock-голос\n` +
         `• ${freeLimits.cvAnalysis.perMonth} анализа CV\n` +
         `• Только текстовые ответы\n\n` +
-        `💎 <b>Starter</b> - $9.99/мес\n` +
+        `💎 <b>Starter</b> - $10/мес\n` +
         `• ${starterLimits.mockInterviews.perMonth} mock-интервью/мес\n` +
         `• ${starterLimits.voice.mockVoice} мин mock + ${starterLimits.voice.realVoice} мин live голос\n` +
         `• ${starterLimits.cvAnalysis.perMonth} анализов CV\n` +
-        `• Голос и изображения\n\n` +
-        `🚀 <b>Pro</b> - $19.99/мес\n` +
+        `• 1 ежедневное задание\n\n` +
+        `🚀 <b>Pro</b> - $20/мес\n` +
         `• ${proLimits.mockInterviews.perMonth} mock-интервью/мес\n` +
         `• ${proLimits.voice.mockVoice} мин mock + ${proLimits.voice.realVoice} мин live голос\n` +
         `• ${proLimits.cvAnalysis.perMonth} анализов CV\n` +
-        `• Подробный AI анализ\n` +
-        `• Chrome Extension\n\n` +
-        `👑 <b>Elite</b> - $29.99/мес\n` +
+        `• Еженедельные AI рекомендации\n\n` +
+        `👑 <b>Elite</b> - $30/мес\n` +
         `• Безлимит mock-интервью\n` +
         `• ${eliteLimits.voice.mockVoice} мин mock + ${eliteLimits.voice.realVoice} мин live голос\n` +
-        `• ${eliteLimits.cvAnalysis.perMonth} анализов CV\n` +
-        `• Premium AI модели\n` +
+        `• Безлимит анализов CV\n` +
+        `• 2 ежедневных задания\n` +
         `• Приоритетная поддержка\n\n` +
         `━━━━━━━━━━━━━━━━━━\n` +
         `📞 Для изменения тарифа обратитесь в @interviewai_support_bot`,
@@ -684,22 +682,21 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
         `• ${freeLimits.voice.mockVoice} min mock voice\n` +
         `• ${freeLimits.cvAnalysis.perMonth} CV analyses\n` +
         `• Text answers only\n\n` +
-        `💎 <b>Starter</b> - $9.99/month\n` +
+        `💎 <b>Starter</b> - $10/month\n` +
         `• ${starterLimits.mockInterviews.perMonth} mock interviews/mo\n` +
         `• ${starterLimits.voice.mockVoice} min mock + ${starterLimits.voice.realVoice} min live voice\n` +
         `• ${starterLimits.cvAnalysis.perMonth} CV analyses\n` +
-        `• Voice & image answers\n\n` +
-        `🚀 <b>Pro</b> - $19.99/month\n` +
+        `• 1 daily task\n\n` +
+        `🚀 <b>Pro</b> - $20/month\n` +
         `• ${proLimits.mockInterviews.perMonth} mock interviews/mo\n` +
         `• ${proLimits.voice.mockVoice} min mock + ${proLimits.voice.realVoice} min live voice\n` +
         `• ${proLimits.cvAnalysis.perMonth} CV analyses\n` +
-        `• Detailed AI analysis\n` +
-        `• Chrome Extension\n\n` +
-        `👑 <b>Elite</b> - $29.99/month\n` +
+        `• Weekly AI recommendations\n\n` +
+        `👑 <b>Elite</b> - $30/month\n` +
         `• Unlimited mock interviews\n` +
         `• ${eliteLimits.voice.mockVoice} min mock + ${eliteLimits.voice.realVoice} min live voice\n` +
-        `• ${eliteLimits.cvAnalysis.perMonth} CV analyses\n` +
-        `• Premium AI models\n` +
+        `• Unlimited CV analyses\n` +
+        `• 2 daily tasks\n` +
         `• Priority support\n\n` +
         `━━━━━━━━━━━━━━━━━━\n` +
         `📞 To change your plan, contact @interviewai_support_bot`,
@@ -1104,9 +1101,10 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
 ✅ Siz muvaffaqiyatli ro'yxatdan o'tdingiz!
 
 📊 <b>Bepul sinov davri:</b>
-• 30 kun bepul
-• 5 ta mock intervyu
-• 10 daqiqa ovozli javoblar
+• 7 kun bepul
+• 1 ta mock intervyu
+• 2 daqiqa ovozli javoblar
+• 1 ta CV tahlil
 
 Keling, boshlaymiz! 🚀`,
 
@@ -1115,9 +1113,10 @@ Keling, boshlaymiz! 🚀`,
 ✅ Вы успешно зарегистрированы!
 
 📊 <b>Пробный период:</b>
-• 30 дней бесплатно
-• 5 пробных интервью
-• 10 минут голосовых ответов
+• 7 дней бесплатно
+• 1 пробное интервью
+• 2 минуты голосовых ответов
+• 1 анализ CV
 
 Давайте начнем! 🚀`,
 
@@ -1126,9 +1125,10 @@ Keling, boshlaymiz! 🚀`,
 ✅ You've successfully registered!
 
 📊 <b>Free trial:</b>
-• 30 days free
-• 5 mock interviews
-• 10 minutes voice answers
+• 7 days free
+• 1 mock interview
+• 2 minutes voice answers
+• 1 CV analysis
 
 Let's get started! 🚀`,
       };
@@ -1337,6 +1337,47 @@ Let's get started! 🚀`,
           .row()
           .text(buttonLabels[lang]?.back || buttonLabels['en'].back, 'back_to_menu');
 
+        // Check if CV was uploaded for interview flow
+        if (ctx.session.interviewStep === 'waiting_cv' && ctx.session.interviewMode === 'mock') {
+          // Auto-analyze CV synchronously and redirect to interview
+          const analyzingText: Record<string, string> = {
+            uz: `✅ CV yuklandi! Tahlil qilinmoqda...\n\n<i>Intervyu tahlildan keyin boshlanadi</i>`,
+            ru: `✅ CV загружен! Анализируем...\n\n<i>Интервью начнётся после анализа</i>`,
+            en: `✅ CV uploaded! Analyzing...\n\n<i>Interview will start after analysis</i>`,
+          };
+          const analyzeMsg = await ctx.reply(analyzingText[lang] || analyzingText.en, {
+            parse_mode: 'HTML',
+          });
+
+          try {
+            const userId = (user as any)._id?.toString() || (user as any).id?.toString();
+            await this.cvService.analyzeCv(userId, (cv as any).id, { language: lang });
+            // Delete analyzing message
+            try {
+              if (ctx.chat?.id) await ctx.api.deleteMessage(ctx.chat.id, analyzeMsg.message_id);
+            } catch { /* silent */ }
+
+            // Re-fetch updated user+CV and show interview confirmation
+            const updatedUser = await this.usersService.findByTelegramId(telegramId);
+            const analyzedCv = await this.cvService.getUserLatestCv(userId);
+            if (analyzedCv?.analysis && updatedUser) {
+              await this.showCvInterviewConfirmation(ctx, updatedUser, analyzedCv, lang);
+            } else {
+              await this.showManualDomainSelection(ctx, lang);
+            }
+          } catch (analyzeError: any) {
+            this.logger.error(`CV auto-analyze for interview failed: ${analyzeError.message}`);
+            try {
+              if (ctx.chat?.id) await ctx.api.deleteMessage(ctx.chat.id, analyzeMsg.message_id);
+            } catch { /* silent */ }
+            // Fallback to manual wizard
+            await this.showManualDomainSelection(ctx, lang);
+          }
+          this.logger.log(`CV uploaded for interview flow for user ${telegramId}: ${(cv as any).id}`);
+          return;
+        }
+
+        // Normal CV upload flow (not for interview)
         await ctx.reply(successText[lang] || successText['en'], {
           parse_mode: 'HTML',
           reply_markup: viewKeyboard,
@@ -1760,9 +1801,12 @@ ${weaknessesText}
     // ============================================================
     // SUBSCRIPTION CALLBACKS - route to subscription service
     // ============================================================
+    // FIX #102: Added 'menu_upgrade' — this callback is set in main menu keyboard
+    // and daily task service but was never handled, causing silent no-op when pressed
     if (
       callbackData.startsWith('upgrade_') ||
       callbackData === 'show_plans' ||
+      callbackData === 'menu_upgrade' ||
       callbackData === 'contact_support' ||
       callbackData === 'back_to_menu'
     ) {
@@ -1811,24 +1855,20 @@ ${weaknessesText}
         return;
       }
 
-      if (callbackData === 'cv_upload') {
+      if (callbackData === 'cv_upload' || callbackData === 'cv_upload_for_interview') {
         // Prompt user to upload new CV
+        // If triggered from interview flow, mark session so after upload
+        // the bot returns to interview instead of CV menu
+        if (callbackData === 'cv_upload_for_interview') {
+          ctx.session.interviewStep = 'waiting_cv';
+          ctx.session.interviewMode = 'mock';
+        }
+
+        const isForInterview = callbackData === 'cv_upload_for_interview';
         const uploadText: Record<string, string> = {
-          uz: `📤 <b>Yangi CV yuklash</b>
-
-Hujjatni yuboring (PDF, DOCX, DOC, TXT)
-
-💡 Faylni shu chatga yuboring`,
-          ru: `📤 <b>Загрузить новый CV</b>
-
-Отправьте документ (PDF, DOCX, DOC, TXT)
-
-💡 Отправьте файл в этот чат`,
-          en: `📤 <b>Upload New CV</b>
-
-Send a document (PDF, DOCX, DOC, TXT)
-
-💡 Send the file to this chat`,
+          uz: `📤 <b>${isForInterview ? 'Intervyu uchun CV yuklash' : 'Yangi CV yuklash'}</b>\n\nHujjatni yuboring (PDF, DOCX, DOC, TXT)\n\n💡 Faylni shu chatga yuboring${isForInterview ? '\n\n<i>CV tahlilidan so\'ng intervyu avtomatik boshlanadi</i>' : ''}`,
+          ru: `📤 <b>${isForInterview ? 'Загрузить CV для интервью' : 'Загрузить новый CV'}</b>\n\nОтправьте документ (PDF, DOCX, DOC, TXT)\n\n💡 Отправьте файл в этот чат${isForInterview ? '\n\n<i>После анализа CV интервью начнётся автоматически</i>' : ''}`,
+          en: `📤 <b>${isForInterview ? 'Upload CV for Interview' : 'Upload New CV'}</b>\n\nSend a document (PDF, DOCX, DOC, TXT)\n\n💡 Send the file to this chat${isForInterview ? '\n\n<i>Interview will start automatically after CV analysis</i>' : ''}`,
         };
 
         await ctx.reply(uploadText[userLang] || uploadText['en'], {
@@ -2273,10 +2313,17 @@ ${
                 : '📸 Send image';
         }
 
+        // FIX #91: HTML-escape task question to prevent parse errors
+        // Questions may contain code samples with <, >, & characters
+        const escapedQuestion = task.question
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+
         const taskPromptText = {
           uz: `📝 <b>Vazifa ${taskIndex + 1}:</b>
 
-${task.question}
+${escapedQuestion}
 
 ━━━━━━━━━━━━━━━━━━
 <b>Javob berish usullari:</b>
@@ -2285,7 +2332,7 @@ ${answerInstructions}
 💡 Javobingizni yuboring!`,
           ru: `📝 <b>Задание ${taskIndex + 1}:</b>
 
-${task.question}
+${escapedQuestion}
 
 ━━━━━━━━━━━━━━━━━━
 <b>Способы ответа:</b>
@@ -2294,7 +2341,7 @@ ${answerInstructions}
 💡 Отправьте ваш ответ!`,
           en: `📝 <b>Task ${taskIndex + 1}:</b>
 
-${task.question}
+${escapedQuestion}
 
 ━━━━━━━━━━━━━━━━━━
 <b>Answer methods:</b>
@@ -2427,48 +2474,100 @@ Press the button below 👇`,
       }
 
       if (type === 'mock') {
-        // Start mock interview wizard - ask for domain first
+        // ================================================================
+        // CV-FIRST MOCK INTERVIEW FLOW
+        // ================================================================
+        // Instead of asking domain → technology → duration manually,
+        // we first check if user has an analyzed CV.  If yes, we use the
+        // CV profile (domain, techStack, position) and skip the manual
+        // wizard steps entirely.  If no CV exists, we ask user to upload.
+        // ================================================================
         ctx.session.interviewMode = 'mock';
-        ctx.session.interviewStep = 'domain';
 
-        const domainText: Record<string, string> = {
-          uz: `🎯 <b>Mock Intervyu Boshlash</b>
+        const telegramId = ctx.from?.id as number;
+        const user = await this.usersService.findByTelegramId(telegramId);
+        if (!user) {
+          await ctx.reply('Please register first using /start');
+          return;
+        }
+        const userId = (user as any).id || (user as any)._id?.toString();
 
-Qaysi sohada intervyu olishni xohlaysiz?
+        try {
+          const latestCv = await this.cvService.getUserLatestCv(userId);
 
-📝 <i>Quyidagi tugmalardan birini tanlang:</i>`,
+          if (!latestCv) {
+            // ── NO CV: Ask user to upload CV first ──
+            const noCvText: Record<string, string> = {
+              uz: `🎯 <b>Mock Intervyu</b>\n\nIntervyu savollarini sizning ko'nikmalaringizga moslash uchun avval CV yuklashingiz kerak.\n\nCV tahlili orqali biz:\n- Texnologiyalaringizni aniqlaymiz\n- Darajangizni (Junior/Middle/Senior) belgilaymiz\n- Ish yo'nalishingizni (Frontend/Backend/...) aniqlaymiz\n\n📎 <i>CV faylini (PDF/DOCX) shu yerga yuboring</i>`,
+              ru: `🎯 <b>Mock Интервью</b>\n\nДля персонализации вопросов интервью необходимо сначала загрузить CV.\n\nЧерез анализ CV мы:\n- Определим ваши технологии\n- Определим уровень (Junior/Middle/Senior)\n- Определим направление (Frontend/Backend/...)\n\n📎 <i>Отправьте файл CV (PDF/DOCX) сюда</i>`,
+              en: `🎯 <b>Mock Interview</b>\n\nTo personalize interview questions, please upload your CV first.\n\nThrough CV analysis we will:\n- Identify your technologies\n- Determine your level (Junior/Middle/Senior)\n- Identify your domain (Frontend/Backend/...)\n\n📎 <i>Send your CV file (PDF/DOCX) here</i>`,
+            };
 
-          ru: `🎯 <b>Начать Mock Интервью</b>
+            const noCvKeyboard = new InlineKeyboard()
+              .text(
+                lang === 'uz' ? '📎 CV yuklash' : lang === 'ru' ? '📎 Загрузить CV' : '📎 Upload CV',
+                'cv_upload_for_interview',
+              )
+              .row()
+              .text('❌ Bekor qilish', 'interview_cancel');
 
-В какой области хотите пройти интервью?
+            await ctx.reply(noCvText[lang] || noCvText.en, {
+              parse_mode: 'HTML',
+              reply_markup: noCvKeyboard,
+            });
+            // Mark that after CV upload, user wants to start interview
+            ctx.session.interviewStep = 'waiting_cv';
+            return;
+          }
 
-📝 <i>Выберите одну из кнопок ниже:</i>`,
+          if (latestCv.analysisStatus !== 'completed' || !latestCv.analysis) {
+            // ── CV EXISTS but NOT ANALYZED: Auto-analyze ──
+            const analyzingText: Record<string, string> = {
+              uz: `🎯 <b>Mock Intervyu</b>\n\nCV topildi, lekin hali tahlil qilinmagan.\n\n🔄 <b>CV tahlil qilinmoqda...</b> Iltimos, kuting.`,
+              ru: `🎯 <b>Mock Интервью</b>\n\nCV найден, но ещё не проанализирован.\n\n🔄 <b>Анализируем CV...</b> Пожалуйста, подождите.`,
+              en: `🎯 <b>Mock Interview</b>\n\nCV found but not yet analyzed.\n\n🔄 <b>Analyzing CV...</b> Please wait.`,
+            };
+            const analyzeMsg = await ctx.reply(analyzingText[lang] || analyzingText.en, {
+              parse_mode: 'HTML',
+            });
 
-          en: `🎯 <b>Start Mock Interview</b>
+            try {
+              await this.cvService.analyzeCv(userId, (latestCv as any).id, {
+                language: lang,
+              });
+              // Delete analyzing message
+              try {
+                if (ctx.chat?.id) await ctx.api.deleteMessage(ctx.chat.id, analyzeMsg.message_id);
+              } catch { /* silent */ }
 
-Which domain would you like to practice?
+              // Re-fetch to get updated analysis + profile
+              const analyzedCv = await this.cvService.getUserLatestCv(userId);
+              const updatedUser = await this.usersService.findByTelegramId(telegramId);
+              if (analyzedCv?.analysis && updatedUser) {
+                await this.showCvInterviewConfirmation(ctx, updatedUser, analyzedCv, lang);
+              } else {
+                // Analysis succeeded but something went wrong
+                await this.showManualDomainSelection(ctx, lang);
+              }
+            } catch (analyzeError: any) {
+              this.logger.error(`CV auto-analyze failed: ${analyzeError.message}`);
+              try {
+                if (ctx.chat?.id) await ctx.api.deleteMessage(ctx.chat.id, analyzeMsg.message_id);
+              } catch { /* silent */ }
+              // Fallback to manual wizard
+              await this.showManualDomainSelection(ctx, lang);
+            }
+            return;
+          }
 
-📝 <i>Select one of the buttons below:</i>`,
-        };
+          // ── CV EXISTS and ANALYZED: Show confirmation ──
+          await this.showCvInterviewConfirmation(ctx, user, latestCv, lang);
 
-        const domainKeyboard = new InlineKeyboard()
-          .text('💻 Frontend', 'mock_domain_frontend')
-          .text('⚙️ Backend', 'mock_domain_backend')
-          .row()
-          .text('🔄 Full Stack', 'mock_domain_fullstack')
-          .text('📱 Mobile', 'mock_domain_mobile')
-          .row()
-          .text('🤖 AI/ML', 'mock_domain_ai')
-          .text('☁️ DevOps', 'mock_domain_devops')
-          .row()
-          .text('❌ Bekor qilish', 'interview_cancel');
-
-        await ctx.reply(domainText[lang] || domainText.en, {
-          parse_mode: 'HTML',
-          reply_markup: domainKeyboard,
-        });
-
-        this.logger.log(`Mock interview wizard started - domain selection`);
+        } catch (cvError: any) {
+          this.logger.error(`CV check failed for mock interview: ${cvError.message}`);
+          // Fallback to manual wizard
+          await this.showManualDomainSelection(ctx, lang);
+        }
         return;
       }
 
@@ -2487,7 +2586,11 @@ Which domain would you like to practice?
     // POSITION SELECTION (from /set_position command)
     // ============================================================
     if (callbackData.startsWith('position_')) {
-      const position = callbackData.replace('position_', '');
+      const position = callbackData.replace('position_', '') as
+        | 'junior'
+        | 'middle'
+        | 'senior'
+        | 'lead';
       const telegramId = ctx.from?.id as number;
       const user = await this.usersService.findByTelegramId(telegramId);
 
@@ -2496,11 +2599,25 @@ Which domain would you like to practice?
         return;
       }
 
+      // Validate position value before saving
+      const validPositions = ['junior', 'middle', 'senior', 'lead'];
+      if (!validPositions.includes(position)) {
+        this.logger.warn(`Invalid position value from callback: ${position}`);
+        await ctx.reply('❌ Invalid position');
+        return;
+      }
+
       try {
-        // Update user profile with position
-        await this.usersService.updateProfile((user as any).id || (user as any)._id?.toString(), {
-          jobRole: position,
-        } as any);
+        // FIX: Write to profile.position (not legacy jobRole field)
+        // Also mark position as confirmed to prevent re-prompting
+        const userId = (user as any).id || (user as any)._id?.toString();
+        await this.usersRepository.updateRaw(userId, {
+          $set: {
+            'profile.position': position,
+            'engagement.positionConfirmed': true,
+            'engagement.scheduledPositionPromptAt': null,
+          },
+        });
 
         const confirmText: Record<string, string> = {
           uz: `✅ Lavozim o'rnatildi: <b>${position}</b>`,
@@ -2510,7 +2627,7 @@ Which domain would you like to practice?
 
         await ctx.reply(confirmText[lang] || confirmText.en, { parse_mode: 'HTML' });
 
-        this.logger.log(`User ${telegramId} updated position to: ${position}`);
+        this.logger.log(`User ${telegramId} updated profile.position to: ${position}`);
       } catch (error: any) {
         this.logger.error(`Failed to update position: ${error.message}`);
         await ctx.reply('❌ Failed to update position');
@@ -2733,15 +2850,79 @@ Which domain would you like to practice?
       // Get user position (for difficulty level)
       const position = user.profile?.position || 'junior';
 
+      // FIX #45/#46: Enrich interview with CV context if user has analyzed CV.
+      // If user selected specific domain/technology in wizard, use those.
+      // Otherwise fall back to profile data (which is populated from CV analysis).
+      const selectedDomain = ctx.session.interviewDomain || (user.profile as any)?.domain || 'general';
+      const selectedTech = ctx.session.interviewTechnology
+        ? [ctx.session.interviewTechnology]
+        : (user.profile?.techStack?.length > 0 ? user.profile.techStack.slice(0, 5) : ['general']);
+
+      // Build CV context for personalized AI question generation
+      // Build rich CV context for AI personalization
+      let cvContext: { skills?: string[]; experience?: string; strengths?: string[]; summary?: string } | undefined;
+      const userId = (user as any).id || (user as any)._id?.toString();
+      try {
+        const latestCv = await this.cvService.getUserLatestCv(userId);
+        if (latestCv?.analysis && latestCv.analysisStatus === 'completed') {
+          // Combine techStack from profile (CV-enriched) with parsed skills
+          const allSkills = new Set<string>([
+            ...(user.profile?.techStack || []),
+            ...(latestCv.parsedData?.skills || []),
+          ]);
+
+          // Build a concise experience summary instead of raw CV text
+          // This gives AI more structured context without noise
+          const experienceParts: string[] = [];
+          if (latestCv.parsedData?.experience && Array.isArray(latestCv.parsedData.experience)) {
+            for (const exp of (latestCv.parsedData.experience as any[]).slice(0, 3)) {
+              const title = exp.title || (exp as any).position || '';
+              const company = exp.company || '';
+              if (title || company) {
+                experienceParts.push(`${title}${company ? ` at ${company}` : ''}`);
+              }
+            }
+          }
+
+          cvContext = {
+            skills: Array.from(allSkills).slice(0, 15),
+            experience: experienceParts.length > 0
+              ? experienceParts.join('; ')
+              : (latestCv.parsedText ? latestCv.parsedText.substring(0, 500) : undefined),
+            strengths: latestCv.analysis?.strengths?.slice(0, 5),
+            // Add weaknesses as summary so AI can target them
+            // Handle both string[] and {issue}[] formats from old/new CV prompt
+            summary: (() => {
+              const cw = (latestCv.analysis as any)?.criticalWeaknesses;
+              const w = (latestCv.analysis as any)?.weaknesses;
+              const items = cw?.length > 0 ? cw : (w?.length > 0 ? w : null);
+              if (!items) return undefined;
+              const texts = items.slice(0, 3).map((item: any) =>
+                typeof item === 'string' ? item : item?.issue || String(item),
+              );
+              return `Weak areas: ${texts.join('; ')}`;
+            })(),
+          };
+          this.logger.debug(
+            `Enriched interview with CV context for user ${user.telegramId}: ` +
+            `skills=${cvContext.skills?.length || 0}, hasExperience=${!!cvContext.experience}`,
+          );
+        }
+      } catch (cvError: any) {
+        // Non-critical — interview still works without CV context
+        this.logger.debug(`CV context enrichment skipped: ${cvError.message}`);
+      }
+
       // Prepare StartInterviewDto
       const startDto = {
         type: 'technical',
-        difficulty: position === 'lead' ? 'senior' : position, // Map lead to senior
-        domain: ctx.session.interviewDomain || 'general',
-        technology: [ctx.session.interviewTechnology || 'general'],
+        difficulty: this.mapPositionToInterviewDifficulty(position), // Map position to interview difficulty
+        domain: selectedDomain,
+        technology: selectedTech,
         interviewDuration: duration,
         mode: 'text', // Default to text mode
         language: lang,
+        cvContext, // FIX #45: Pass CV data for personalized questions
       };
 
       // Show loading message while questions are being generated
@@ -2755,9 +2936,13 @@ Which domain would you like to practice?
       });
 
       try {
-        // Start the interview
-        const userId = (user as any).id || (user as any)._id?.toString();
+        // Start the interview (userId already computed above for CV context)
         const session = await this.interviewsService.startInterview(userId, startDto as any);
+
+        // FIX #67 (CRITICAL): Increment mock interview usage counter AFTER successful start.
+        // This was missing! checkMockInterviewLimit checks the counter, but nothing incremented it,
+        // allowing users to bypass limits entirely.
+        await this.usersService.incrementUsage(userId, 'mockInterview');
 
         // Delete loading message
         try {
@@ -3488,5 +3673,158 @@ ${nextQuestion.codeSnippet ? `\n\`\`\`\n${nextQuestion.codeSnippet}\n\`\`\`\n` :
       this.logger.error(`Failed to handle profile description: ${error.message}`);
       await ctx.reply('❌ Error updating profile. Please try selecting from buttons.');
     }
+  }
+
+  /**
+   * Map user profile position to interview difficulty level.
+   *
+   * User profiles use: 'junior' | 'middle' | 'senior' | 'lead'
+   * Interview schemas use: 'junior' | 'mid' | 'senior'
+   *
+   * This mapping prevents Mongoose validation errors and ensures
+   * correct question count calculation.
+   */
+  private mapPositionToInterviewDifficulty(position: string): string {
+    const positionToDifficulty: Record<string, string> = {
+      junior: 'junior',
+      middle: 'mid',
+      senior: 'senior',
+      lead: 'senior',
+    };
+    return positionToDifficulty[position] || 'junior';
+  }
+
+  // ================================================================
+  // CV-FIRST INTERVIEW FLOW HELPERS
+  // ================================================================
+
+  /**
+   * Show CV-based interview confirmation screen.
+   * User sees their CV profile (domain, techStack, position) and can:
+   * 1. Start interview with CV data (skip manual wizard)
+   * 2. Upload new CV and re-analyze
+   * 3. Cancel
+   */
+  private async showCvInterviewConfirmation(
+    ctx: any,
+    user: any,
+    cv: any,
+    lang: string,
+  ): Promise<void> {
+    const profile = user.profile || {};
+    const domain = (profile as any).domain || 'general';
+    const techStack: string[] = profile.techStack || [];
+    const position = profile.position || 'junior';
+
+    // Human-readable labels
+    const domainLabels: Record<string, Record<string, string>> = {
+      uz: {
+        frontend: 'Frontend',
+        backend: 'Backend',
+        mobile: 'Mobile',
+        fullstack: 'Full Stack',
+        devops: 'DevOps',
+        ai_ml: 'AI/ML',
+        data: 'Data Science',
+        qa: 'QA',
+        general: 'Umumiy',
+      },
+      ru: {
+        frontend: 'Frontend',
+        backend: 'Backend',
+        mobile: 'Mobile',
+        fullstack: 'Full Stack',
+        devops: 'DevOps',
+        ai_ml: 'AI/ML',
+        data: 'Data Science',
+        qa: 'QA',
+        general: 'Общее',
+      },
+      en: {
+        frontend: 'Frontend',
+        backend: 'Backend',
+        mobile: 'Mobile',
+        fullstack: 'Full Stack',
+        devops: 'DevOps',
+        ai_ml: 'AI/ML',
+        data: 'Data Science',
+        qa: 'QA',
+        general: 'General',
+      },
+    };
+
+    const positionLabels: Record<string, Record<string, string>> = {
+      uz: { junior: 'Junior', middle: 'Middle', senior: 'Senior', lead: 'Lead' },
+      ru: { junior: 'Junior', middle: 'Middle', senior: 'Senior', lead: 'Lead' },
+      en: { junior: 'Junior', middle: 'Middle', senior: 'Senior', lead: 'Lead' },
+    };
+
+    const domainLabel = domainLabels[lang]?.[domain] || domainLabels.en[domain] || domain;
+    const positionLabel = positionLabels[lang]?.[position] || positionLabels.en[position] || position;
+    const techList = techStack.length > 0 ? techStack.slice(0, 8).join(', ') : '-';
+
+    const confirmText: Record<string, string> = {
+      uz: `🎯 <b>Mock Intervyu</b>\n\nCV tahlili asosida sizning profilingiz:\n\n📋 <b>Yo'nalish:</b> ${domainLabel}\n💼 <b>Daraja:</b> ${positionLabel}\n💻 <b>Texnologiyalar:</b> ${techList}\n\nSavollar shu ma'lumotlarga asoslanadi.\n\n<i>Davom etish uchun intervyu davomiyligini tanlang yoki yangi CV yuklang:</i>`,
+      ru: `🎯 <b>Mock Интервью</b>\n\nНа основе анализа CV ваш профиль:\n\n📋 <b>Направление:</b> ${domainLabel}\n💼 <b>Уровень:</b> ${positionLabel}\n💻 <b>Технологии:</b> ${techList}\n\nВопросы будут основаны на этих данных.\n\n<i>Выберите продолжительность интервью или загрузите новое CV:</i>`,
+      en: `🎯 <b>Mock Interview</b>\n\nBased on your CV analysis:\n\n📋 <b>Domain:</b> ${domainLabel}\n💼 <b>Level:</b> ${positionLabel}\n💻 <b>Technologies:</b> ${techList}\n\nQuestions will be based on these details.\n\n<i>Choose interview duration or upload a new CV:</i>`,
+    };
+
+    const btnLabels = {
+      uz: { quick: '⚡ Tez (5-7)', standard: '📊 Standart (10-12)', deep: '🎯 Chuqur (15-20)', newCv: '📎 Yangi CV yuklash', cancel: '❌ Bekor qilish' },
+      ru: { quick: '⚡ Быстрый (5-7)', standard: '📊 Стандарт (10-12)', deep: '🎯 Глубокий (15-20)', newCv: '📎 Загрузить новое CV', cancel: '❌ Отмена' },
+      en: { quick: '⚡ Quick (5-7)', standard: '📊 Standard (10-12)', deep: '🎯 Deep (15-20)', newCv: '📎 Upload new CV', cancel: '❌ Cancel' },
+    };
+    const btn = btnLabels[lang] || btnLabels.en;
+
+    // Set session data from CV profile so duration handler can use them
+    ctx.session.interviewDomain = domain;
+    ctx.session.interviewTechnology = techStack[0] || 'general';
+    ctx.session.interviewStep = 'cv_confirmed';
+
+    const keyboard = new InlineKeyboard()
+      .text(btn.quick, 'mock_duration_quick')
+      .row()
+      .text(btn.standard, 'mock_duration_standard')
+      .row()
+      .text(btn.deep, 'mock_duration_deep_dive')
+      .row()
+      .text(btn.newCv, 'cv_upload_for_interview')
+      .row()
+      .text(btn.cancel, 'interview_cancel');
+
+    await ctx.reply(confirmText[lang] || confirmText.en, {
+      parse_mode: 'HTML',
+      reply_markup: keyboard,
+    });
+  }
+
+  /**
+   * Fallback: Show manual domain selection wizard (used when CV is unavailable).
+   */
+  private async showManualDomainSelection(ctx: any, lang: string): Promise<void> {
+    ctx.session.interviewStep = 'domain';
+
+    const domainText: Record<string, string> = {
+      uz: `🎯 <b>Mock Intervyu Boshlash</b>\n\nCV tahlili mavjud emas. Qaysi sohada intervyu olishni xohlaysiz?\n\n📝 <i>Quyidagi tugmalardan birini tanlang:</i>`,
+      ru: `🎯 <b>Начать Mock Интервью</b>\n\nАнализ CV недоступен. В какой области хотите пройти интервью?\n\n📝 <i>Выберите одну из кнопок ниже:</i>`,
+      en: `🎯 <b>Start Mock Interview</b>\n\nCV analysis unavailable. Which domain would you like to practice?\n\n📝 <i>Select one of the buttons below:</i>`,
+    };
+
+    const domainKeyboard = new InlineKeyboard()
+      .text('💻 Frontend', 'mock_domain_frontend')
+      .text('⚙️ Backend', 'mock_domain_backend')
+      .row()
+      .text('🔄 Full Stack', 'mock_domain_fullstack')
+      .text('📱 Mobile', 'mock_domain_mobile')
+      .row()
+      .text('🤖 AI/ML', 'mock_domain_ai')
+      .text('☁️ DevOps', 'mock_domain_devops')
+      .row()
+      .text('❌ Bekor qilish', 'interview_cancel');
+
+    await ctx.reply(domainText[lang] || domainText.en, {
+      parse_mode: 'HTML',
+      reply_markup: domainKeyboard,
+    });
   }
 }

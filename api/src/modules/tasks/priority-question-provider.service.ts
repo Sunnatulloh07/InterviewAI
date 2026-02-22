@@ -3,6 +3,8 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { SafeQuestionProviderService } from './safe-question-provider.service';
 import { User, UserDocument } from '../users/schemas/user.schema';
+import { GeneratedQuestion, GeneratedQuestionDocument } from './schemas/generated-question.schema';
+import { detectDomain } from '@common/utils/detect-domain';
 
 /**
  * 🎯 PRIORITY-BASED QUESTION PROVIDER (MULTILINGUAL VERSION)
@@ -45,6 +47,8 @@ export class PriorityQuestionProviderService {
   constructor(
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
+    @InjectModel(GeneratedQuestion.name)
+    private readonly questionModel: Model<GeneratedQuestionDocument>,
     private readonly safeProvider: SafeQuestionProviderService,
   ) {}
 
@@ -272,6 +276,7 @@ export class PriorityQuestionProviderService {
 
   /**
    * 📊 Count unseen questions in pool for this user
+   * REAL DB QUERY - replaces hardcoded stub
    */
   private async countUnseenInPool(
     position: string,
@@ -279,11 +284,34 @@ export class PriorityQuestionProviderService {
     techStack: string[],
     seenIds: any[],
   ): Promise<number> {
-    // This is done by SafeQuestionProvider, but we can add logic here if needed
-    // For now, return a high number to prefer pool usage
-    // In production, you'd query the database here
-    return 10; // Assume pool has enough questions
+    try {
+      const query: any = { position, type };
+
+      // Exclude already seen questions
+      if (seenIds.length > 0) {
+        query._id = { $nin: seenIds };
+      }
+
+      // Match by techStack or domain fallback
+      if (techStack.length > 0) {
+        query.$or = [
+          { techStacks: { $in: techStack } },
+          { domain: detectDomain(techStack) },
+        ];
+      }
+
+      return await this.questionModel.countDocuments(query);
+    } catch (error: any) {
+      this.logger.error(`Failed to count unseen pool: ${error.message}`);
+      // On error, return high number to prefer pool (safe fallback)
+      return 10;
+    }
   }
+
+  /**
+   * Detect domain from techStack
+   */
+  // detectDomain() moved to @common/utils/detect-domain.ts
 
   /**
    * 💎 Check if plan is premium

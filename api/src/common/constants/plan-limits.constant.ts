@@ -74,32 +74,32 @@ export const COMPLETE_PLAN_LIMITS: Record<string, PlanLimits> = {
   /**
    * FREE TRIAL PLAN (7 days)
    * Default plan for new users
-   * 
-   * 🆕 NEW STRUCTURE (2024):
-   * - 1 mock interview (2 minutes voice limit)
+   *
+   * - 1 mock interview (TEXT ONLY, no voice)
    * - 1 CV analysis
-   * - 0 real interview minutes
+   * - 0 voice minutes (mock & real)
    * - NO daily tasks
+   * - AI model: z-ai/glm-4-32b (internal, not shown to users)
    */
   free_trial: {
     voice: {
-      mockVoice: 2, // 🔥 NEW: 5 → 2 minutes (1 short interview only)
-      realVoice: 0, // NO real interview voice
+      mockVoice: 0, // No voice in free trial (text only)
+      realVoice: 0, // No real interview voice
     },
 
     mockInterviews: {
-      perMonth: 1, // 🔥 NEW: 5 → 1 interview only (taste test)
+      perMonth: 1, // 1 mock interview (text only)
       questionsPerInterview: 10,
     },
 
     cvAnalysis: {
-      perMonth: 1, // Keep as 1
+      perMonth: 1,
       maxFileSize: 5, // 5 MB max
       allowedFormats: ['pdf', 'docx', 'txt'],
     },
 
     dailyTasks: {
-      enabled: false, // ❌ FREE TRIAL DOES NOT GET DAILY TASKS
+      enabled: false, // No daily tasks in free trial
       questionsPerDay: 0,
       voiceAnswer: false,
       imageAnswer: false,
@@ -124,14 +124,13 @@ export const COMPLETE_PLAN_LIMITS: Record<string, PlanLimits> = {
   },
 
   /**
-   * STARTER PLAN ($9.99/month)
+   * STARTER PLAN ($10/month)
    * Entry-level paid plan
-   * 
-   * 🆕 NEW STRUCTURE (2024):
-   * - 1 daily task (not 3!) - cost optimization
-   * - Monthly AI analysis (end of month report with feedback)
-   * - 10 mock interviews
-   * - 5 CV analyses
+   *
+   * - 1 daily task (cost optimization)
+   * - Monthly AI report
+   * - 10 mock interviews, 5 CV analyses
+   * - 10 min mockVoice, 15 min realVoice
    * - Basic progress tracking
    */
   starter: {
@@ -179,15 +178,13 @@ export const COMPLETE_PLAN_LIMITS: Record<string, PlanLimits> = {
   },
 
   /**
-   * PRO PLAN ($19.99/month)
+   * PRO PLAN ($20/month)
    * Professional plan with advanced features
-   * 
-   * 🆕 NEW STRUCTURE (2024):
-   * - 1 daily task (same as Starter but with better tracking)
-   * - Daily progress tracking
+   *
+   * - 1 daily task (with daily progress tracking)
    * - Weekly AI recommendations
-   * - 30 mock interviews
-   * - 15 CV analyses
+   * - 30 mock interviews, 15 CV analyses
+   * - 30 min mockVoice, 45 min realVoice
    */
   pro: {
     voice: {
@@ -248,16 +245,13 @@ export const COMPLETE_PLAN_LIMITS: Record<string, PlanLimits> = {
   },
 
   /**
-   * ELITE PLAN ($29.99/month)
+   * ELITE PLAN ($30/month)
    * Premium plan with maximum features
-   * 
-   * 🆕 NEW STRUCTURE (2024):
-   * - 2 daily tasks (more practice than Starter/Pro)
-   * - Daily progress tracking
-   * - Weekly AI roadmap recommendations
-   * - Career growth insights
-   * - Unlimited mock interviews
-   * - Unlimited CV analyses
+   *
+   * - 2 daily tasks
+   * - Weekly AI roadmap, career growth insights
+   * - Unlimited mock interviews, unlimited CV analyses
+   * - 60 min mockVoice, 120 min realVoice
    */
   elite: {
     voice: {

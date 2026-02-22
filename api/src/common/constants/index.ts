@@ -50,41 +50,43 @@ export const ALLOWED_AUDIO_FORMATS = [
 // Usage Limits by Plan
 // Plans: free_trial (7 days), starter, pro, elite
 // -1 means unlimited
+// ⚠️ LEGACY: Use COMPLETE_PLAN_LIMITS from plan-limits.constant.ts as single source of truth
+// These values are ALIGNED with COMPLETE_PLAN_LIMITS to prevent discrepancies
 export const USAGE_LIMITS = {
   free_trial: {
-    mockInterviews: 3,
+    mockInterviews: 1, // ALIGNED: 1 mock interview in 7-day trial
     liveInterviewMinutes: 0, // No live interview in trial
-    cvAnalyses: 1,
+    cvAnalyses: 1, // 1 CV analysis in trial
     chromeQuestions: 0, // No chrome extension
     aiTokensPerMonth: 10000,
-    voiceMessagesEnabled: false, // Text only
+    voiceMessagesEnabled: false, // Text only — NO voice in free trial
     trialDays: 7,
   },
   starter: {
-    mockInterviews: 15, // Approx cost control
-    liveInterviewMinutes: 15, // Cost: ~$1.17 (1000 UZS/min)
+    mockInterviews: 10, // ALIGNED with COMPLETE_PLAN_LIMITS
+    liveInterviewMinutes: 15, // ALIGNED: realVoice = 15 min
     cvAnalyses: 5,
     chromeQuestions: 0,
-    aiTokensPerMonth: 150000, // Increased slighty
-    voiceMessagesEnabled: false,
-    voiceInLiveEnabled: true, // Enabled for Live Interview
+    aiTokensPerMonth: 150000,
+    voiceMessagesEnabled: true, // Starter+ has voice (mockVoice = 10 min)
+    voiceInLiveEnabled: true,
   },
   pro: {
-    mockInterviews: 60, // 4x Starter (~$15/mo)
-    liveInterviewMinutes: 120, // Matches UI
-    cvAnalyses: 15, // 3x Starter
+    mockInterviews: 30, // ALIGNED with COMPLETE_PLAN_LIMITS
+    liveInterviewMinutes: 45, // FIX #55: ALIGNED with realVoice = 45 min (was 120)
+    cvAnalyses: 15,
     chromeQuestions: 1000,
     aiTokensPerMonth: 500000,
-    voiceMessagesEnabled: false,
+    voiceMessagesEnabled: true, // Pro has voice (mockVoice = 30 min)
     voiceInLiveEnabled: true,
   },
   elite: {
-    mockInterviews: 150, // 10x Starter (~$30/mo)
-    liveInterviewMinutes: 300, // 2.5x Pro
-    cvAnalyses: 40,
+    mockInterviews: -1, // ALIGNED: UNLIMITED in COMPLETE_PLAN_LIMITS
+    liveInterviewMinutes: 120, // FIX #56: ALIGNED with realVoice = 120 min (was 300)
+    cvAnalyses: -1, // ALIGNED: UNLIMITED in COMPLETE_PLAN_LIMITS
     chromeQuestions: 5000,
     aiTokensPerMonth: 2000000,
-    voiceMessagesEnabled: false,
+    voiceMessagesEnabled: true, // Elite has voice (mockVoice = 60 min)
     voiceInLiveEnabled: true,
   },
 } as const;
@@ -113,13 +115,13 @@ export const PLAN_FEATURES = {
     mockInterviews: true,
     cvAnalysis: true,
     cvOptimization: false,
-    voiceMessages: true, // ✅ ENABLED: Mock voice for practice (5 min quota)
+    voiceMessages: false, // FIX #54: FREE TRIAL = TEXT ONLY, no voice (mockVoice=0)
     voiceInLive: false,
     stealthMode: false,
     contextAwareness: false,
-    advancedAI: false, // GPT-4o-mini only
+    advancedAI: false, // AI model: z-ai/glm-4-32b (internal)
     prioritySupport: false,
-    dailyTasks: false, // ❌ DISABLED: Daily tasks only for paid users
+    dailyTasks: false, // No daily tasks in free trial
   },
   starter: {
     telegramBot: true,
@@ -173,7 +175,7 @@ export type PlanFeatures = keyof typeof PLAN_FEATURES;
 
 // OpenAI
 export const OPENAI_MAX_TOKENS_ANSWER = 1000;
-export const OPENAI_MAX_TOKENS_ANALYSIS = 4000; // Increased for deeper analysis (Nano/Mini support)
+export const OPENAI_MAX_TOKENS_ANALYSIS = 6000; // FIX #64: Increased for 100-point scoring + detailed roadmap output
 export const OPENAI_MAX_TOKENS_FEEDBACK = 1500;
 export const OPENAI_MAX_TOKENS_OPTIMIZATION = 3000;
 export const OPENAI_TEMPERATURE = 0.7;

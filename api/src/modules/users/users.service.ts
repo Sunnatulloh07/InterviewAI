@@ -466,6 +466,20 @@ export class UsersService {
   }
 
   /**
+   * Perform raw MongoDB update operations
+   * Used for specific updates like profile auto-population from CV analysis
+   */
+  async updateRaw(id: string, updateQuery: any): Promise<void> {
+    try {
+      await this.usersRepository.updateRaw(id, updateQuery);
+      this.logger.debug(`Raw update applied to user ${id}`);
+    } catch (error) {
+      this.logger.error(`Failed to perform raw update for user ${id}: ${error.message}`, error.stack);
+      throw error; // Propagate error for critical updates
+    }
+  }
+
+  /**
    * Link Telegram account
    */
   async linkTelegramAccount(id: string, telegramId: number): Promise<UserDocument> {

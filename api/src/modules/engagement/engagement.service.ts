@@ -5,6 +5,7 @@ import { Bot } from 'grammy';
 import { ConfigService } from '@nestjs/config';
 
 import { NotificationLogRepository } from './notification-log.repository';
+import { getTashkentMidnight } from '@common/utils/tashkent-time';
 import { EngagementAiService } from './engagement-ai.service';
 import { NotificationTrigger, NotificationDeliveryStatus } from './schemas/notification-log.schema';
 import {
@@ -620,8 +621,9 @@ export class EngagementService implements OnModuleInit {
    */
   async getEligibleUsers(limit = 100): Promise<string[]> {
     const now = new Date();
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
+    // Use Tashkent midnight so the "sent today" guard aligns with user-facing
+    // day boundaries, not the server's local timezone.
+    const startOfToday = getTashkentMidnight(now);
 
     try {
       const users = await this.userModel

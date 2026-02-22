@@ -1,4 +1,4 @@
-import { IsArray, IsEnum, IsNumber, IsString } from 'class-validator';
+import { IsArray, IsEnum, IsNumber, IsOptional, IsString } from 'class-validator';
 
 export class NormalizedProfileDto {
   @IsEnum(['junior', 'middle', 'senior', 'lead'])
@@ -10,6 +10,10 @@ export class NormalizedProfileDto {
 
   @IsEnum(['job_search', 'career_growth', 'learning'])
   goal: 'job_search' | 'career_growth' | 'learning';
+
+  @IsOptional()
+  @IsEnum(['frontend', 'backend', 'mobile', 'fullstack', 'devops', 'ai_ml', 'data', 'qa', 'general'])
+  domain?: 'frontend' | 'backend' | 'mobile' | 'fullstack' | 'devops' | 'ai_ml' | 'data' | 'qa' | 'general';
 
   @IsNumber()
   confidence: number;

@@ -9,6 +9,7 @@ import { User, UserDocument } from '../users/schemas/user.schema';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
 import { OPENROUTER_MODELS } from '../../common/utils/openai-client.factory';
+import { detectDomain } from '@common/utils/detect-domain';
 
 /**
  * 🎯 USER-AWARE POOL MANAGER (OPTIMIZED VERSION)
@@ -120,7 +121,8 @@ export class UserAwarePoolManagerService {
 
           for (const type of types) {
             // 🔥 KEY: Use specific techStack (not domain) for matching
-            const key = `${position}|${type}|${techStack.join(',')}`;
+            // Use JSON.stringify to safely encode techStack elements that may contain commas
+            const key = `${position}|${type}|${JSON.stringify(techStack)}`;
 
             // Count unseen questions matching this specific user
             const unseenCount = await this.questionModel.countDocuments({
@@ -128,7 +130,7 @@ export class UserAwarePoolManagerService {
               type,
               $or: [
                 { techStacks: { $in: techStack } }, // Match specific tech
-                { domain: this.detectDomain(techStack) }, // Fallback
+                { domain: detectDomain(techStack) }, // Fallback
               ],
               _id: { $nin: seenIds },
             });
@@ -164,7 +166,7 @@ export class UserAwarePoolManagerService {
           const parts = key.split('|');
           const position = parts[0];
           const type = parts[1];
-          const techStack = parts[2] ? parts[2].split(',') : [];
+          const techStack = parts[2] ? (JSON.parse(parts[2]) as string[]) : [];
           
           this.logger.log(
             `🏭 Generating ${count} questions for ${key}`,
@@ -242,7 +244,7 @@ export class UserAwarePoolManagerService {
     }
 
     let generated = 0;
-    const domain = this.detectDomain(techStack);
+    const domain = detectDomain(techStack);
 
     for (let i = 0; i < count; i++) {
       try {
@@ -330,7 +332,7 @@ Output ONLY valid JSON:
   "question_en": "Full question in English"
 }`;
       
-      const response = await this.openai.chat.completions.create({
+      const response = await this.openai!.chat.completions.create({
         model: OPENROUTER_MODELS['glm-4-32b'],
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.8,
@@ -361,18 +363,9 @@ Output ONLY valid JSON:
   }
 
   /**
-   * Detect domain from tech stack
+   * Detect domain from tech stack (checks ALL technologies, not just first)
    */
-  private detectDomain(techStack: string[]): string {
-    if (!techStack || techStack.length === 0) return 'general';
-    
-    const stack = techStack[0].toLowerCase();
-    if (['react', 'vue', 'angular'].some(t => stack.includes(t))) return 'frontend';
-    if (['node', 'express', 'django', 'spring'].some(t => stack.includes(t))) return 'backend';
-    if (['react-native', 'flutter', 'swift', 'kotlin'].some(t => stack.includes(t))) return 'mobile';
-    
-    return 'general';
-  }
+  // detectDomain() moved to @common/utils/detect-domain.ts
 
   /**
    * Helper: delay

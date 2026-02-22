@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { NormalizedProfileDto } from './dto/normalized-profile.dto';
+import { detectDomain } from '@common/utils/detect-domain';
 
 @Injectable()
 export class ProfileNormalizationService {
@@ -26,7 +27,8 @@ export class ProfileNormalizationService {
     TAXONOMY:
     1. Position: 'junior', 'middle', 'senior', 'lead'
     2. Goal: 'job_search', 'career_growth', 'learning'
-    3. Tech Stack: Array of standard technology names (e.g. "React", "Node.js", "Python"). Normalize synonyms (e.g. "Reaction.js" -> "React").
+    3. Domain: 'frontend', 'backend', 'mobile', 'fullstack', 'devops', 'ai_ml', 'data', 'qa', 'general'
+    4. Tech Stack: Array of standard technology names (e.g. "React", "Node.js", "Python"). Normalize synonyms (e.g. "Reaction.js" -> "React").
 
     INPUT TEXT:
     "${text}"
@@ -34,6 +36,7 @@ export class ProfileNormalizationService {
     INSTRUCTIONS:
     - Infer 'Position' based on years of experience or explicit titles. Default to 'junior' if unclear.
     - Infer 'Goal' based on context (e.g., "looking for work" -> "job_search"). Default to 'career_growth'.
+    - Infer 'Domain' based on mentioned technologies and role description. Use 'general' if unclear.
     - Extract 'Tech Stack' mentioned or implied.
     - Return a 'confidence' score (0.0 to 1.0) indicating certainty.
 
@@ -42,6 +45,7 @@ export class ProfileNormalizationService {
       "position": "enum_value",
       "techStack": ["Tech1", "Tech2"],
       "goal": "enum_value",
+      "domain": "enum_value",
       "confidence": 0.95
     }
     `;
@@ -95,11 +99,22 @@ export class ProfileNormalizationService {
           ['job_search', 'career_growth', 'learning'],
           'career_growth',
         ),
+        domain: this.validateEnum(
+          parsed.domain,
+          ['frontend', 'backend', 'mobile', 'fullstack', 'devops', 'ai_ml', 'data', 'qa', 'general'],
+          undefined,
+        ),
         techStack: Array.isArray(parsed.techStack)
           ? parsed.techStack.filter((s: any) => typeof s === 'string')
           : [],
         confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.5,
       };
+
+      // Auto-detect domain from techStack if not provided
+      if (!normalized.domain && normalized.techStack.length > 0) {
+        normalized.domain = detectDomain(normalized.techStack) as any;
+        this.logger.debug(`Auto-detected domain: ${normalized.domain}`);
+      }
 
       this.logger.log(
         `Profile normalized in ${Date.now() - startTime}ms: ${JSON.stringify(normalized)}`,
@@ -123,5 +138,69 @@ export class ProfileNormalizationService {
       return value;
     }
     return fallback;
+  }
+
+  /**
+   * Validate if profile data is sufficient for personalized task generation
+   * Production-ready validation with detailed feedback
+   */
+  async validateProfileCompleteness(
+    normalized: NormalizedProfileDto,
+  ): Promise<{
+    isComplete: boolean;
+    missing: string[];
+    message: string;
+    suggestions: string[];
+  }> {
+    const missing: string[] = [];
+    const suggestions: string[] = [];
+
+    // Check position (default 'junior' is considered incomplete unless confirmed)
+    if (!normalized.position || normalized.position === 'junior') {
+      if (!normalized.confidence || normalized.confidence < 0.6) {
+        missing.push('position');
+        suggestions.push('Specify your seniority level: junior, middle, senior, or lead');
+      }
+    }
+
+    // Check techStack (must have at least 2 technologies for good task matching)
+    if (!normalized.techStack || normalized.techStack.length < 2) {
+      missing.push('techStack');
+      suggestions.push(
+        'List at least 2 technologies you work with (e.g., React, Node.js, Python)',
+      );
+    }
+
+    // Check domain (optional but highly recommended)
+    if (!normalized.domain) {
+      suggestions.push(
+        'Specifying your domain (frontend, backend, mobile, etc.) helps generate better tasks',
+      );
+    }
+
+    // Check overall confidence
+    if (normalized.confidence < 0.6) {
+      missing.push('clarity');
+      suggestions.push('Provide more specific details about your role and technologies');
+    }
+
+    const isComplete = missing.length === 0;
+
+    return {
+      isComplete,
+      missing,
+      message: isComplete
+        ? 'Profile is complete and ready for personalized task generation'
+        : `Insufficient data. Missing: ${missing.join(', ')}`,
+      suggestions,
+    };
+  }
+
+  /**
+   * Detect domain from techStack if not explicitly provided
+   * Delegates to shared utility for consistent domain detection across all services.
+   */
+  detectDomainFromTechStack(techStack: string[]): string {
+    return detectDomain(techStack);
   }
 }

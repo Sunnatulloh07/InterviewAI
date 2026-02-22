@@ -1,40 +1,31 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { User, UserDocument } from '../users/schemas/user.schema';
-import { ConfigService } from '@nestjs/config';
-import { Bot } from 'grammy';
 import { InlineKeyboard } from 'grammy';
+import { TelegramService } from './telegram.service';
+import { getTashkentMidnight } from '../../common/utils/tashkent-time';
 
 /**
  * Service for sending automatic trial expiry notifications
  * Runs daily at 10:00 AM Tashkent time to notify users about expiring trials
+ *
+ * FIX #94 + #97: Uses shared TelegramService.getBot() instead of creating
+ * a separate Bot instance. Creating a second Bot(token) caused:
+ * 1. Two bot instances hitting Telegram API = faster rate limiting
+ * 2. Potential webhook/polling conflicts
+ * 3. Inconsistent Bot type (Bot vs Bot<BotContext>)
  */
 @Injectable()
 export class TrialNotificationService {
   private readonly logger = new Logger(TrialNotificationService.name);
-  private bot: Bot | null = null;
 
   constructor(
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
-    private readonly configService: ConfigService,
-  ) {
-    this.initBot();
-  }
-
-  /**
-   * Initialize Telegram bot for sending notifications
-   */
-  private initBot(): void {
-    const token = this.configService.get<string>('telegram.botToken');
-    if (token) {
-      this.bot = new Bot(token);
-      this.logger.log('Trial notification bot initialized');
-    } else {
-      this.logger.warn('Telegram bot token not found, trial notifications disabled');
-    }
-  }
+    @Inject(forwardRef(() => TelegramService))
+    private readonly telegramService: TelegramService,
+  ) {}
 
   /**
    * Daily cron job to check and notify users about expiring trials
@@ -47,13 +38,7 @@ export class TrialNotificationService {
   async handleTrialExpiryNotifications(): Promise<void> {
     this.logger.log('Starting trial expiry notification job...');
 
-    if (!this.bot) {
-      this.logger.warn('Bot not initialized, skipping notifications');
-      return;
-    }
-
     try {
-      // Get users with free_trial plan whose trial expires in 1, 2, or 3 days
       const now = new Date();
       const usersToNotify = await this.findUsersWithExpiringTrials(now);
 
@@ -76,8 +61,9 @@ export class TrialNotificationService {
    * CRITICAL: Only properly registered users with active trials
    */
   private async findUsersWithExpiringTrials(now: Date): Promise<UserDocument[]> {
-    const today = new Date(now);
-    today.setHours(0, 0, 0, 0);
+    // FIX #101: Use Tashkent midnight instead of server local midnight
+    // All other services use getTashkentMidnight() — this must be consistent
+    const today = getTashkentMidnight();
 
     // Calculate date ranges for 1, 2, 3 days from now
     const oneDayLater = new Date(today);
@@ -119,7 +105,8 @@ export class TrialNotificationService {
    * PERSONALIZED: Based on user activity during trial
    */
   private async sendTrialExpiryNotification(user: UserDocument): Promise<void> {
-    if (!user.telegramId || !this.bot || !user.subscription?.trialEndsAt) return;
+    const bot = this.telegramService.getBot();
+    if (!user.telegramId || !bot || !user.subscription?.trialEndsAt) return;
 
     try {
       const now = new Date();
@@ -129,12 +116,12 @@ export class TrialNotificationService {
       // Skip if not 1, 2, or 3 days remaining
       if (daysRemaining < 1 || daysRemaining > 3) return;
 
-      // Check if we already sent notification today
+      // FIX #100: Use Tashkent timezone for same-day check instead of server local timezone
       const lastNotif = (user as any).lastTrialNotificationDate;
       if (lastNotif) {
         const lastNotifDate = new Date(lastNotif);
-        if (this.isSameDay(lastNotifDate, now)) {
-          return; // Already notified today
+        if (this.isSameDayTashkent(lastNotifDate, now)) {
+          return; // Already notified today (Tashkent time)
         }
       }
 
@@ -157,7 +144,7 @@ export class TrialNotificationService {
 
       const keyboard = this.getUpgradeKeyboard(lang);
 
-      await this.bot.api.sendMessage(user.telegramId, message, {
+      await bot.api.sendMessage(user.telegramId, message, {
         parse_mode: 'HTML',
         reply_markup: keyboard,
       });
@@ -193,9 +180,9 @@ Sizning bepul sinov muddatingiz tugaydi. Yetarlicha mashq qildingizmi?
 
 💡 <b>Hoziroq yangilang va o'z yo'lingizni davom ettiring:</b>
 
-💎 STARTER — $9.99/oy
-🚀 PRO — $19.99/oy  
-👑 ELITE — $29.99/oy
+💎 STARTER — $10/oy
+🚀 PRO — $20/oy  
+👑 ELITE — $30/oy
 
 📞 @interviewai_support_bot`,
         2: `⏰ <b>2 kun qoldi!</b>
@@ -203,7 +190,7 @@ Sizning bepul sinov muddatingiz tugaydi. Yetarlicha mashq qildingizmi?
 Ertaga sinov muddatingiz tugaydi. Tayyorgarligingizni uzatmang.
 
 💡 <b>Hoziroq yangilang:</b>
-💎 STARTER — $9.99 | 🚀 PRO — $19.99 | 👑 ELITE — $29.99
+💎 STARTER — $10 | 🚀 PRO — $20 | 👑 ELITE — $30
 
 📞 @interviewai_support_bot`,
         1: `🚨 <b>Bugun so'ngi kun!</b>
@@ -211,7 +198,7 @@ Ertaga sinov muddatingiz tugaydi. Tayyorgarligingizni uzatmang.
 Sinov muddatingiz bugun tugaydi. Yangilashni unutmang!
 
 ⚡ <b>Hoziroq yangilang va davom eting:</b>
-💎 STARTER — $9.99 | 🚀 PRO — $19.99 | 👑 ELITE — $29.99
+💎 STARTER — $10 | 🚀 PRO — $20 | 👑 ELITE — $30
 
 📞 @interviewai_support_bot`,
       },
@@ -222,9 +209,9 @@ Sinov muddatingiz bugun tugaydi. Yangilashni unutmang!
 
 💡 <b>Обновитесь сейчас и продолжайте свой путь:</b>
 
-💎 STARTER — $9.99/мес
-🚀 PRO — $19.99/мес
-👑 ELITE — $29.99/мес
+💎 STARTER — $10/мес
+🚀 PRO — $20/мес
+👑 ELITE — $30/мес
 
 📞 @interviewai_support_bot`,
         2: `⏰ <b>Осталось 2 дня!</b>
@@ -232,7 +219,7 @@ Sinov muddatingiz bugun tugaydi. Yangilashni unutmang!
 Завтра заканчивается пробный период. Не прерывайте подготовку.
 
 💡 <b>Обновитесь сейчас:</b>
-💎 STARTER — $9.99 | 🚀 PRO — $19.99 | 👑 ELITE — $29.99
+💎 STARTER — $10 | 🚀 PRO — $20 | 👑 ELITE — $30
 
 📞 @interviewai_support_bot`,
         1: `🚨 <b>Последний день!</b>
@@ -240,7 +227,7 @@ Sinov muddatingiz bugun tugaydi. Yangilashni unutmang!
 Пробный период заканчивается сегодня. Не забудьте обновиться!
 
 ⚡ <b>Обновитесь сейчас и продолжайте:</b>
-💎 STARTER — $9.99 | 🚀 PRO — $19.99 | 👑 ELITE — $29.99
+💎 STARTER — $10 | 🚀 PRO — $20 | 👑 ELITE — $30
 
 📞 @interviewai_support_bot`,
       },
@@ -251,9 +238,9 @@ Your trial is ending. Have you practiced enough?
 
 💡 <b>Upgrade now and continue your journey:</b>
 
-💎 STARTER — $9.99/mo
-🚀 PRO — $19.99/mo
-👑 ELITE — $29.99/mo
+💎 STARTER — $10/mo
+🚀 PRO — $20/mo
+👑 ELITE — $30/mo
 
 📞 @interviewai_support_bot`,
         2: `⏰ <b>2 days left!</b>
@@ -261,7 +248,7 @@ Your trial is ending. Have you practiced enough?
 Trial ends tomorrow. Don't stop your preparation.
 
 💡 <b>Upgrade now:</b>
-💎 STARTER — $9.99 | 🚀 PRO — $19.99 | 👑 ELITE — $29.99
+💎 STARTER — $10 | 🚀 PRO — $20 | 👑 ELITE — $30
 
 📞 @interviewai_support_bot`,
         1: `🚨 <b>Last day!</b>
@@ -269,7 +256,7 @@ Trial ends tomorrow. Don't stop your preparation.
 Trial ends today. Don't forget to upgrade!
 
 ⚡ <b>Upgrade now and continue:</b>
-💎 STARTER — $9.99 | 🚀 PRO — $19.99 | 👑 ELITE — $29.99
+💎 STARTER — $10 | 🚀 PRO — $20 | 👑 ELITE — $30
 
 📞 @interviewai_support_bot`,
       },
@@ -327,7 +314,7 @@ Agar bu imkoniyatdan to'liq foydalangan bo'lsangiz, tayyorgarligingizni uzatishn
 • 10 daqiqa ovozli yordam
 • CV tahlili va kunlik vazifalar
 
-💎 Faqat <b>$9.99/oy</b> — bir kofe narxi!
+💎 Faqat <b>$10/oy</b> — bir kofe narxi!
 
 👇 Tariflarni ko'rish uchun tugmani bosing:`,
         2: `⚡ ${firstName}, sinov muddatingiz ertaga tugaydi!
@@ -341,8 +328,8 @@ Yangilash orqali:
 ✅ Professional AI yordamchisi
 ✅ Karyerangizda yangi bosqich
 
-💎 STARTER — $9.99/oy
-🚀 PRO — $19.99/oy  
+💎 STARTER — $10/oy
+🚀 PRO — $20/oy  
 
 👇 Hoziroq yangilang:`,
         1: `🚨 ${firstName}, BUGUN so'ngi kun!
@@ -354,9 +341,9 @@ Sinov muddatingiz bugun soat 23:59 da tugaydi.
 Siz allaqachon ${activityText} ishlatdingiz — endi bu imkoniyatlarni yo'qotishni xohlamaysiz.
 
 ⚡ <b>Hoziroq yangilang:</b>
-• STARTER — $9.99
-• PRO — $19.99
-• ELITE — $29.99
+• STARTER — $10
+• PRO — $20
+• ELITE — $30
 
 📞 Savollar bormi? @interviewai_support_bot
 
@@ -376,7 +363,7 @@ Siz allaqachon ${activityText} ishlatdingiz — endi bu imkoniyatlarni yo'qotish
 • 10 минут голосовой помощи
 • Анализ резюме и ежедневные задания
 
-💎 Всего <b>$9.99/мес</b> — цена одного кофе!
+💎 Всего <b>$10/мес</b> — цена одного кофе!
 
 👇 Нажмите кнопку для просмотра тарифов:`,
         2: `⚡ ${firstName}, пробный период заканчивается завтра!
@@ -390,8 +377,8 @@ Siz allaqachon ${activityText} ishlatdingiz — endi bu imkoniyatlarni yo'qotish
 ✅ Профессиональный AI-помощник
 ✅ Новый уровень карьеры
 
-💎 STARTER — $9.99/мес
-🚀 PRO — $19.99/мес
+💎 STARTER — $10/мес
+🚀 PRO — $20/мес
 
 👇 Обновитесь сейчас:`,
         1: `🚨 ${firstName}, СЕГОДНЯ последний день!
@@ -403,9 +390,9 @@ Siz allaqachon ${activityText} ishlatdingiz — endi bu imkoniyatlarni yo'qotish
 Вы уже использовали ${activityText} — не теряйте эти возможности.
 
 ⚡ <b>Обновитесь сейчас:</b>
-• STARTER — $9.99
-• PRO — $19.99
-• ELITE — $29.99
+• STARTER — $10
+• PRO — $20
+• ELITE — $30
 
 📞 Вопросы? @interviewai_support_bot
 
@@ -425,7 +412,7 @@ If you've already experienced the value, you don't want to stop your preparation
 • 10 minutes voice assistance
 • CV analysis & daily tasks
 
-💎 Only <b>$9.99/mo</b> — price of a coffee!
+💎 Only <b>$10/mo</b> — price of a coffee!
 
 👇 Click to view plans:`,
         2: `⚡ ${firstName}, your trial ends tomorrow!
@@ -439,8 +426,8 @@ With upgrade:
 ✅ Professional AI assistant
 ✅ New career level
 
-💎 STARTER — $9.99/mo
-🚀 PRO — $19.99/mo
+💎 STARTER — $10/mo
+🚀 PRO — $20/mo
 
 👇 Upgrade now:`,
         1: `🚨 ${firstName}, TODAY is the last day!
@@ -452,9 +439,9 @@ Your trial ends today at 23:59.
 You've already used ${activityText} — don't lose these opportunities.
 
 ⚡ <b>Upgrade now:</b>
-• STARTER — $9.99
-• PRO — $19.99
-• ELITE — $29.99
+• STARTER — $10
+• PRO — $20
+• ELITE — $30
 
 📞 Questions? @interviewai_support_bot
 
@@ -478,8 +465,8 @@ Sinov muddatingiz 3 kun ichida tugaydi, lekin siz hali platformadan to'liq foyda
 🎯 <b>Imkoniyatni qo'ldan boy bermang!</b>
 
 Bepul sinov davrida siz:
-✅ 3 ta mock intervyu (text)
-✅ 5 daqiqa ovozli yordam
+✅ 1 ta mock intervyu
+✅ 2 daqiqa ovozli yordam
 ✅ 1 ta CV tahlili
 
 💡 Hoziroq boshlang va karyerangizni o'zgartiring!
@@ -517,8 +504,8 @@ Hoziroq sinab ko'ring — bu sizning karyerangizni o'zgartirishi mumkin!
 🎯 <b>Не упустите возможность!</b>
 
 В пробный период доступно:
-✅ 3 mock-интервью (текст)
-✅ 5 минут голосовой помощи
+✅ 1 mock-интервью
+✅ 2 минуты голосовой помощи
 ✅ 1 анализ резюме
 
 💡 Начните сейчас и измените свою карьеру!
@@ -556,8 +543,8 @@ Your trial ends in 3 days, but you haven't fully used the platform yet.
 🎯 <b>Don't miss this opportunity!</b>
 
 During free trial you get:
-✅ 3 mock interviews (text)
-✅ 5 minutes voice assistance
+✅ 1 mock interview
+✅ 2 minutes voice assistance
 ✅ 1 CV analysis
 
 💡 Start now and transform your career!
@@ -609,14 +596,22 @@ Try now — it could transform your career!
   }
 
   /**
-   * Check if two dates are the same day
+   * Check if two dates are the same day in Tashkent timezone (UTC+5)
+   *
+   * FIX #100: Previously used server local timezone (getFullYear/getMonth/getDate)
+   * which could cause duplicate sends or missed sends when server is in UTC.
+   * Now converts both dates to Tashkent date strings for accurate comparison.
    */
-  private isSameDay(date1: Date, date2: Date): boolean {
-    return (
-      date1.getFullYear() === date2.getFullYear() &&
-      date1.getMonth() === date2.getMonth() &&
-      date1.getDate() === date2.getDate()
-    );
+  private isSameDayTashkent(date1: Date, date2: Date): boolean {
+    const tashkentOptions: Intl.DateTimeFormatOptions = {
+      timeZone: 'Asia/Tashkent',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    };
+    const d1 = date1.toLocaleDateString('en-CA', tashkentOptions); // YYYY-MM-DD format
+    const d2 = date2.toLocaleDateString('en-CA', tashkentOptions);
+    return d1 === d2;
   }
 
   /**
@@ -631,10 +626,6 @@ Try now — it could transform your career!
    */
   async triggerManualNotifications(): Promise<{ sent: number; failed: number }> {
     this.logger.log('Manually triggering trial notifications...');
-
-    if (!this.bot) {
-      throw new Error('Bot not initialized');
-    }
 
     const now = new Date();
     const usersToNotify = await this.findUsersWithExpiringTrials(now);

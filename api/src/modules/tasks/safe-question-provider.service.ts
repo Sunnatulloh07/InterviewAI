@@ -159,6 +159,13 @@ export class SafeQuestionProviderService {
   /**
    * 📦 LEVEL 1: Get from Pool (excluding seen questions, with techStack matching)
    */
+  // Maximum number of seen IDs to include in the $nin filter.
+  // seenQuestionIds grows unboundedly over time. A $nin with 1000+ ObjectIds
+  // forces MongoDB to scan every document in the index for exclusion, making
+  // the query O(n * seenIds). Cap at the most-recent 200 to keep queries fast
+  // while still providing meaningful deduplication within a rolling window.
+  private readonly MAX_SEEN_IDS_FOR_QUERY = 200;
+
   private async getFromPool(
     position: string,
     type: string,
@@ -168,9 +175,10 @@ export class SafeQuestionProviderService {
   ): Promise<any> {
     const query: any = { position, type };
 
-    // Exclude seen questions
+    // Use only the most-recent seen IDs to cap $nin list size
     if (seenQuestionIds.length > 0) {
-      query._id = { $nin: seenQuestionIds };
+      const recentSeenIds = seenQuestionIds.slice(-this.MAX_SEEN_IDS_FOR_QUERY);
+      query._id = { $nin: recentSeenIds };
     }
 
     // Match by techStack or domain

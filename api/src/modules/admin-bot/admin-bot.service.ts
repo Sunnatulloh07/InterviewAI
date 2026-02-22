@@ -311,11 +311,11 @@ export class AdminBotService implements OnModuleInit {
         // User callbacks
         if (data === 'upgrade_request') {
           const keyboard = new InlineKeyboard()
-            .text('💼 Starter ($4.99)', 'request_plan_starter')
+            .text('💼 Starter ($10)', 'request_plan_starter')
             .row()
-            .text('🚀 Pro ($14.99)', 'request_plan_pro')
+            .text('🚀 Pro ($20)', 'request_plan_pro')
             .row()
-            .text('👑 Elite ($29.99)', 'request_plan_elite');
+            .text('👑 Elite ($30)', 'request_plan_elite');
 
           await ctx.reply(`📝 <b>Tarif rejasini tanlang:</b>\n\n` + `Qaysi tarifga o'tmoqchisiz?`, {
             parse_mode: 'HTML',

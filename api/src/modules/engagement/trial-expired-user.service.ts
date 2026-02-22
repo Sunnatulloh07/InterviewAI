@@ -19,7 +19,17 @@ export class TrialExpiredUserService {
     private readonly retryService: FailedNotificationRetryService,
   ) {}
 
-  @Cron('0 11 * * *', {
+  /**
+   * POST-TRIAL ENGAGEMENT SYSTEM
+   *
+   * Schedule:
+   * - Days 1-30 after trial expiry: Daily at 10:00 Tashkent (different message each day)
+   * - Days 31+: Every 3 days
+   * - NEVER send to bot-blocked or notification-paused users
+   *
+   * Message rotation: daysExpired % 4 ensures varied content each day
+   */
+  @Cron('0 10 * * *', {
     name: 'trial-expired-user-engagement',
     timeZone: 'Asia/Tashkent',
   })
@@ -39,7 +49,7 @@ export class TrialExpiredUserService {
         .select('_id telegramId language subscription trialExpiredNotifiedAt')
         .lean();
 
-      this.logger.log(`Found ${expiredUsers.length} trial expired users for engagement`);
+      this.logger.log(`Found ${expiredUsers.length} trial expired users for post-trial engagement`);
 
       let sent = 0;
       let failed = 0;
@@ -47,18 +57,6 @@ export class TrialExpiredUserService {
 
       for (const user of expiredUsers) {
         try {
-          const daysSinceExpiry = user.trialExpiredNotifiedAt
-            ? Math.floor(
-                (now.getTime() - new Date(user.trialExpiredNotifiedAt).getTime()) /
-                  (1000 * 60 * 60 * 24),
-              )
-            : -1;
-
-          if (daysSinceExpiry >= 0 && daysSinceExpiry < 7) {
-            skipped++;
-            continue;
-          }
-
           const daysExpired = user.subscription.trialEndsAt
             ? Math.floor(
                 (now.getTime() - new Date(user.subscription.trialEndsAt).getTime()) /
@@ -66,17 +64,61 @@ export class TrialExpiredUserService {
               )
             : 0;
 
-          let message: string;
+          // FIX #35: The original logic sent a notification EVERY DAY for 30
+          // consecutive days after trial expiry — this is spam and causes a high
+          // bot-block rate.  Replaced with a milestone-based schedule:
+          //   Day 1, 3, 7, 14, 30 — only 5 messages total in the first month.
+          //   After day 30: one message every 14 days (twice a month max).
+          //
+          // This dramatically reduces notification fatigue while still keeping
+          // the user engaged at key decision points.
+          const MILESTONE_DAYS = [1, 3, 7, 14, 30];
+          const isOnMilestone = MILESTONE_DAYS.includes(daysExpired);
+
+          if (daysExpired <= 30 && !isOnMilestone) {
+            skipped++;
+            continue;
+          }
+
+          if (user.trialExpiredNotifiedAt) {
+            const daysSinceLastNotify = Math.floor(
+              (now.getTime() - new Date(user.trialExpiredNotifiedAt).getTime()) /
+                (1000 * 60 * 60 * 24),
+            );
+
+            // Days 1-30: skip if notified less than 1 day ago (safety check)
+            if (daysExpired <= 30 && daysSinceLastNotify < 1) {
+              skipped++;
+              continue;
+            }
+
+            // Days 31+: send every 14 days (twice a month)
+            if (daysExpired > 30 && daysSinceLastNotify < 14) {
+              skipped++;
+              continue;
+            }
+          }
+
           const lang = user.language || 'uz';
 
-          if (daysExpired <= 7) {
-            message = this.getJustExpiredMessage(lang);
-          } else if (daysExpired <= 14) {
-            message = this.getWeekExpiredMessage(lang);
-          } else if (daysExpired <= 30) {
-            message = this.getTwoWeeksExpiredMessage(lang);
-          } else {
-            message = this.getMonthExpiredMessage(lang);
+          // Rotate through 4 message themes based on day number
+          const messageIndex = daysExpired % 4;
+          let message: string;
+          switch (messageIndex) {
+            case 0:
+              message = this.getJustExpiredMessage(lang);
+              break;
+            case 1:
+              message = this.getWeekExpiredMessage(lang);
+              break;
+            case 2:
+              message = this.getTwoWeeksExpiredMessage(lang);
+              break;
+            case 3:
+              message = this.getMonthExpiredMessage(lang);
+              break;
+            default:
+              message = this.getJustExpiredMessage(lang);
           }
 
           const bot = this.telegramService.getBot();
@@ -92,7 +134,7 @@ export class TrialExpiredUserService {
 
               sent++;
               this.logger.debug(
-                `Sent trial expired message to user ${user._id} (${daysExpired} days expired)`,
+                `Sent post-trial message to user ${user._id} (day ${daysExpired}, theme ${messageIndex})`,
               );
             } catch (sendError: any) {
               const errorCode = sendError.error_code;
@@ -110,7 +152,7 @@ export class TrialExpiredUserService {
                     'engagement.botBlockedAt': now,
                   },
                 });
-                this.logger.warn(`User ${user._id} blocked bot`);
+                this.logger.warn(`User ${user._id} blocked bot - stopping all messages`);
               } else {
                 await this.retryService.trackFailedNotification(
                   user._id.toString(),
@@ -118,7 +160,7 @@ export class TrialExpiredUserService {
                   'trial_expiry',
                   errorDescription,
                   errorCode,
-                  { daysExpired, userLanguage: lang, messageContent: message },
+                  { daysExpired, userLanguage: lang },
                 );
                 failed++;
               }
@@ -135,56 +177,80 @@ export class TrialExpiredUserService {
       }
 
       this.logger.log(
-        `Trial expired engagement: sent=${sent}, failed=${failed}, skipped=${skipped}`,
+        `Post-trial engagement: sent=${sent}, failed=${failed}, skipped=${skipped}`,
       );
     } catch (error: any) {
-      this.logger.error(`Trial expired engagement failed: ${error.message}`);
+      this.logger.error(`Post-trial engagement failed: ${error.message}`);
     }
   }
 
   private getJustExpiredMessage(lang: string): string {
     const messages: Record<string, string> = {
-      uz: `⏰ Sizning bepul sinov muddatingiz tugadi!
+      uz: `⏰ Sizning 7 kunlik bepul sinov muddatingiz tugadi!
 
-Afsuski, 7 kunlik bepul sinov muddatingiz tugagan.
+🎯 Premium bilan nimalar olasiz:
 
-🎯 Endi haqiqiy o'zgarishlar boshlanadi!
+💼 <b>STARTER</b> - $10/oy
+• Kunlik savol va topshiriqlar
+• 10 ta mock interview/oy
+• 10 daqiqa ovozli javoblar
+• 5 ta CV tahlili
 
-💼 STARTER - $9.99/oy
-🚀 PRO - $19.99/oy
-👑 ELITE - $29.99/oy
+🚀 <b>PRO</b> - $20/oy
+• 30 ta mock interview/oy
+• 30 daqiqa ovozli javoblar
+• Haftalik AI tavsiyalar
 
-📞 Tez yangilash uchun: @interviewai_support_bot
+👑 <b>ELITE</b> - $30/oy
+• Cheksiz mock interview
+• 2 ta kunlik topshiriq
+• Shaxsiy karyera rejasi
 
-💡 85% foydalanuvchilar Premiumga o'tganidan keyin 3 oy ichida ish topdi!`,
+Rejalarni ko'rish: /plans`,
 
-      ru: `⏰ Ваш пробный период закончился!
+      ru: `⏰ Ваш 7-дневный пробный период закончился!
 
-К сожалению, ваш 7-дневный бесплатный период истек.
+🎯 Что вы получите с Premium:
 
-🎯 Теперь начинаются реальные изменения!
+💼 <b>STARTER</b> - $10/мес
+• Ежедневные вопросы и задания
+• 10 mock интервью/мес
+• 10 минут голосовых ответов
+• 5 анализов CV
 
-💼 STARTER - $4.99/мес
-🚀 PRO - $14.99/мес
-👑 ELITE - $29.99/мес
+🚀 <b>PRO</b> - $20/мес
+• 30 mock интервью/мес
+• 30 минут голосовых ответов
+• Еженедельные AI рекомендации
 
-📞 Быстрое обновление: @interviewai_support_bot
+👑 <b>ELITE</b> - $30/мес
+• Безлимит mock интервью
+• 2 ежедневных задания
+• Персональный план карьеры
 
-💡 85% пользователей нашли работу за 3 месяца после перехода на Premium!`,
+Смотреть планы: /plans`,
 
-      en: `⏰ Your free trial has expired!
+      en: `⏰ Your 7-day free trial has expired!
 
-Unfortunately, your 7-day free trial period has ended.
+🎯 What you get with Premium:
 
-🎯 Now the real changes begin!
+💼 <b>STARTER</b> - $10/mo
+• Daily questions and tasks
+• 10 mock interviews/mo
+• 10 minutes voice responses
+• 5 CV analyses
 
-💼 STARTER - $4.99/mo
-🚀 PRO - $14.99/mo
-👑 ELITE - $29.99/mo
+🚀 <b>PRO</b> - $20/mo
+• 30 mock interviews/mo
+• 30 minutes voice responses
+• Weekly AI recommendations
 
-📞 Quick upgrade: @interviewai_support_bot
+👑 <b>ELITE</b> - $30/mo
+• Unlimited mock interviews
+• 2 daily tasks
+• Personal career roadmap
 
-💡 85% of users found jobs within 3 months after upgrading to Premium!`,
+View plans: /plans`,
     };
 
     return messages[lang] || messages.uz;
@@ -196,34 +262,43 @@ Unfortunately, your 7-day free trial period has ended.
 
 Intervyu tayyorgarligini to'xtatmang!
 
-🔥 Maxsus taklif: 30% chegirma
-⏰ Chegirma faqat 3 kun davom etadi
+🎯 Starter plan bilan nimalar qilasiz:
+• Har kuni AI tomonidan savollar olasiz
+• 10 ta mock interview o'tkazasiz
+• Ovozli javoblaringizni AI tahlil qiladi
+• CV ingizni 5 marta professional tahlil
 
-📞 @interviewai_support_bot - Batafsil
+💼 Faqat $10/oy dan boshlanadi
 
-💪 Karyerangizni qo'llab-quvvatlang!`,
+Rejalarni ko'rish: /plans`,
 
       ru: `📉 Пробный период закончился неделю назад
 
-Не останавливайте подготовку к собеседованию!
+Не останавливайте подготовку!
 
-🔥 Специальное предложение: скидка 30%
-⏰ Скидка действует только 3 дня
+🎯 Что вы получите со Starter планом:
+• Ежедневные AI вопросы
+• 10 mock интервью в месяц
+• AI анализ голосовых ответов
+• 5 профессиональных анализов CV
 
-📞 @interviewai_support_bot - Подробнее
+💼 Всего от $10/мес
 
-💪 Поддержите свою карьеру!`,
+Смотреть планы: /plans`,
 
       en: `📉 Your trial expired a week ago
 
-Don't stop your interview preparation!
+Don't stop your preparation!
 
-🔥 Special offer: 30% discount
-⏰ Discount valid for only 3 days
+🎯 What you get with Starter plan:
+• Daily AI questions
+• 10 mock interviews per month
+• AI voice answer analysis
+• 5 professional CV analyses
 
-📞 @interviewai_support_bot - Details
+💼 Starting from just $10/mo
 
-💪 Support your career!`,
+View plans: /plans`,
     };
 
     return messages[lang] || messages.uz;
@@ -231,44 +306,44 @@ Don't stop your interview preparation!
 
   private getTwoWeeksExpiredMessage(lang: string): string {
     const messages: Record<string, string> = {
-      uz: `🎯 Interview tayyorgarligini davom ettiring!
+      uz: `🎯 Intervyu tayyorgarligini davom ettiring!
 
-Sinov muddatingiz tugaganiga 2 hafta bo'ldi.
+💡 Pro plan imkoniyatlari:
+• 30 ta mock interview/oy
+• 30 daqiqa ovozli mashq
+• Haftalik AI tavsiyalar
+• Kunlik progress tracking
+• 15 ta CV tahlili
 
-💡 Yangi takliflar:
-✅ Haftalik 1 ta BEPUL mock interview
-✅ Telegram kanalimizda bepul maslahatlar
-✅ Tez-tez so'raladigan savollar
+🚀 Faqat $20/oy - kuniga 700 so'mdan kam!
 
-📢 Kanalimizga qo'shiling: @interviewai_uz
-
-🚀 Karyerangiz uchun bir qadam!`,
+Rejalarni ko'rish: /plans`,
 
       ru: `🎯 Продолжайте подготовку к собеседованию!
 
-Пробный период закончился 2 недели назад.
+💡 Возможности Pro плана:
+• 30 mock интервью/мес
+• 30 минут голосовой практики
+• Еженедельные AI рекомендации
+• Ежедневный прогресс
+• 15 анализов CV
 
-💡 Новые предложения:
-✅ 1 БЕСПЛАТНОЕ mock интервью в неделю
-✅ Бесплатные советы в нашем Telegram канале
-✅ Часто задаваемые вопросы
+🚀 Всего $20/мес - меньше 700 сум в день!
 
-📢 Присоединяйтесь к каналу: @interviewai_uz
-
-🚀 Шаг для вашей карьеры!`,
+Смотреть планы: /plans`,
 
       en: `🎯 Continue your interview preparation!
 
-Your trial expired 2 weeks ago.
+💡 Pro plan features:
+• 30 mock interviews/mo
+• 30 min voice practice
+• Weekly AI recommendations
+• Daily progress tracking
+• 15 CV analyses
 
-💡 New offers:
-✅ 1 FREE mock interview per week
-✅ Free tips in our Telegram channel
-✅ Frequently asked questions
+🚀 Just $20/mo - less than $0.67/day!
 
-📢 Join our channel: @interviewai_uz
-
-🚀 A step for your career!`,
+View plans: /plans`,
     };
 
     return messages[lang] || messages.uz;
@@ -276,44 +351,47 @@ Your trial expired 2 weeks ago.
 
   private getMonthExpiredMessage(lang: string): string {
     const messages: Record<string, string> = {
-      uz: `👋 InterviewAI Pro bilan xayrlashishmi?
+      uz: `👋 Biz hali ham shu yerdamiz!
 
-Sinov muddatingiz tugaganiga 1 oy bo'ldi.
+🎯 Elite plan - professional daraja:
+• Cheksiz mock interview
+• 2 ta kunlik topshiriq
+• 60 daqiqa ovozli mashq
+• Haftalik karyera rejasi
+• Shaxsiy AI coaching
+• Cheksiz CV tahlili
 
-🎯 Agar siz biz bilan qolishni xohlasangiz:
-• Maxsus chegirma - 50%
-• Cheksiz mock interviews
-• 24/7 AI yordamchisi
+👑 $30/oy - intervyuga to'liq tayyorgarlik
 
-📞 @interviewai_support_bot
+Rejalarni ko'rish: /plans`,
 
-💪 Siz muvaffaqiyatga erishishingiz mumkin!`,
+      ru: `👋 Мы все ещё здесь!
 
-      ru: `👋 Прощаться с InterviewAI Pro?
+🎯 Elite план - профессиональный уровень:
+• Безлимит mock интервью
+• 2 ежедневных задания
+• 60 минут голосовой практики
+• Еженедельный план карьеры
+• Персональный AI коучинг
+• Безлимит анализ CV
 
-Пробный период закончился месяц назад.
+👑 $30/мес - полная подготовка к интервью
 
-🎯 Если хотите остаться с нами:
-• Специальная скидка - 50%
-• Неограниченные mock интервью
-• AI помощник 24/7
+Смотреть планы: /plans`,
 
-📞 @interviewai_support_bot
+      en: `👋 We're still here!
 
-💪 Вы можете достичь успеха!`,
-
-      en: `👋 Say goodbye to InterviewAI Pro?
-
-Your trial expired a month ago.
-
-🎯 If you want to stay with us:
-• Special discount - 50%
+🎯 Elite plan - professional level:
 • Unlimited mock interviews
-• 24/7 AI assistant
+• 2 daily tasks
+• 60 minutes voice practice
+• Weekly career roadmap
+• Personal AI coaching
+• Unlimited CV analyses
 
-📞 @interviewai_support_bot
+👑 $30/mo - complete interview preparation
 
-💪 You can achieve success!`,
+View plans: /plans`,
     };
 
     return messages[lang] || messages.uz;

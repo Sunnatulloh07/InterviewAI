@@ -76,7 +76,7 @@ export class AIQuestionGeneratorService {
           $push: { servedToUsers: userId },
         });
 
-        return cachedQuestion.question;
+        return (cachedQuestion as any).question || cachedQuestion.question_en || cachedQuestion.question_uz || cachedQuestion.question_ru;
       }
 
       // Step 3: Cache MISS - Generate with AI

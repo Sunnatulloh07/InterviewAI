@@ -41,6 +41,7 @@ export class DailyTask {
           ref: 'GeneratedQuestion',
           required: false,
         }, // Link to source
+        title: { type: String }, // Short task title for list view
         question: { type: String, required: true },
         answer: { type: String }, // Text answer or transcript
         answerType: { type: String, enum: ['text', 'voice', 'image'] }, // ✅ NO VIDEO - Too expensive
@@ -64,13 +65,14 @@ export class DailyTask {
     validate: {
       validator: function (tasks: any[]) {
         // SENIOR VALIDATION: Max tasks per day based on plan
-        // Elite: 10, Pro: 5, Starter: 3, Free: 3
-        return tasks.length <= 10; // Max for Elite plan
+        // Elite: 2, Pro: 1, Starter: 1
+        return tasks.length <= 10; // Max safety limit
       },
       message: 'Maximum 10 tasks allowed per day',
     },
   })
   tasks: {
+    title?: string; // Short task title for list view
     question: string;
     answer?: string; // Text answer or transcript
     answerType?: 'text' | 'voice' | 'image'; // ✅ NO VIDEO - Too expensive

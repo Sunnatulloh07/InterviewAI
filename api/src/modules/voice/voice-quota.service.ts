@@ -25,38 +25,14 @@ export class VoiceQuotaService {
     }
 
     // Initialize default quota if not exists (for existing users)
+    // FIX #59: Use plan-based defaults instead of hardcoded mock:5
     if (!user.voiceQuota) {
+      const defaultQuota = this.getDefaultQuotaForPlan(user.subscription?.plan || 'free_trial');
       await this.userModel.findByIdAndUpdate(userId, {
-        voiceQuota: {
-          mockVoice: {
-            total: 5,
-            used: 0,
-            remaining: 5,
-            resetDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-          },
-          realVoice: {
-            total: 0,
-            used: 0,
-            remaining: 0,
-            resetDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-          },
-        },
+        voiceQuota: defaultQuota,
       });
 
-      return {
-        mockVoice: {
-          total: 5,
-          used: 0,
-          remaining: 5,
-          resetDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        },
-        realVoice: {
-          total: 0,
-          used: 0,
-          remaining: 0,
-          resetDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        },
-      };
+      return defaultQuota;
     }
 
     return user.voiceQuota;
@@ -135,17 +111,15 @@ export class VoiceQuotaService {
 
   /**
    * Get default quota based on subscription plan
-   * CRITICAL BUSINESS RULE from BOT_LOGIC_FIX_PROMPT.md
+   * FIX #59: Use COMPLETE_PLAN_LIMITS instead of hardcoded values.
+   * free_trial was hardcoded as mock:2 but should be 0 (text only).
    */
   private getDefaultQuotaForPlan(plan: string) {
-    const quotas: Record<string, { mock: number; real: number }> = {
-      free_trial: { mock: 5, real: 0 },
-      starter: { mock: 10, real: 15 },
-      pro: { mock: 30, real: 45 },
-      elite: { mock: 60, real: 120 },
-    };
+    // Import from single source of truth to prevent drift
+    const { getPlanLimits } = require('@common/constants/plan-limits.constant');
+    const limits = getPlanLimits(plan);
 
-    const quota = quotas[plan] || quotas.free_trial;
+    const quota = { mock: limits.voice.mockVoice, real: limits.voice.realVoice };
     const now = new Date();
     const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 

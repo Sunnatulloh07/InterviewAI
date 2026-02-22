@@ -88,24 +88,50 @@ export class PaymentsController {
   @ApiOperation({ summary: 'Get available plans' })
   async getPlans() {
     return {
+      // ALIGNED with COMPLETE_PLAN_LIMITS (single source of truth)
       plans: [
         {
-          id: 'free',
-          name: 'Free',
+          id: 'free_trial',
+          name: 'Free Trial (7 days)',
           price: { monthly: 0, annual: 0 },
-          features: ['3 mock interviews/month', 'Basic AI', '1 CV analysis'],
+          features: ['1 mock interview (text only)', '1 CV analysis', 'No voice', 'No daily tasks'],
+        },
+        {
+          id: 'starter',
+          name: 'Starter',
+          price: { monthly: 10, annual: 100 },
+          features: [
+            '10 mock interviews/mo',
+            '10 min mock voice + 15 min live voice',
+            '5 CV analyses',
+            '1 daily task',
+            'Monthly AI report',
+          ],
         },
         {
           id: 'pro',
           name: 'Pro',
-          price: { monthly: 14.99, annual: 149.99 },
-          features: ['50 interviews/month', 'GPT-4', '10 CV analyses', 'Chrome extension'],
+          price: { monthly: 20, annual: 200 },
+          features: [
+            '30 mock interviews/mo',
+            '30 min mock voice + 45 min live voice',
+            '15 CV analyses',
+            '1 daily task',
+            'Weekly AI recommendations',
+          ],
         },
         {
           id: 'elite',
           name: 'Elite',
-          price: { monthly: 29.99, annual: 299.99 },
-          features: ['Unlimited interviews', 'GPT-4', 'Unlimited CV', 'Priority support'],
+          price: { monthly: 30, annual: 299.99 },
+          features: [
+            'Unlimited mock interviews',
+            '60 min mock voice + 120 min live voice',
+            'Unlimited CV analyses',
+            '2 daily tasks',
+            'Weekly AI roadmap',
+            'Priority support',
+          ],
         },
       ],
     };

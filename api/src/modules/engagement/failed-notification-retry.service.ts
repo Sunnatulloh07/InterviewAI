@@ -30,6 +30,18 @@ export class FailedNotificationRetryService {
     private readonly surveyHandlerService: SurveyHandlerService,
   ) {}
 
+  /**
+   * Track a failed notification for retry.
+   *
+   * FIX #33: Uses `findOneAndUpdate` with `upsert` instead of `create` to
+   * prevent duplicate records when the same (userId, notificationType)
+   * notification is tracked multiple times (e.g., the consistency checker
+   * runs every 30 minutes and re-detects the same "missed" notification).
+   *
+   * If a pending (non-permanently-failed) record already exists for this
+   * user+type combination, we simply update its metadata and leave the
+   * retry schedule untouched.  Only when no record exists do we insert.
+   */
   async trackFailedNotification(
     userId: string,
     telegramChatId: number,
@@ -39,20 +51,34 @@ export class FailedNotificationRetryService {
     metadata?: any,
   ): Promise<void> {
     try {
-      const nextRetryAt = new Date();
-      nextRetryAt.setHours(nextRetryAt.getHours() + this.RETRY_DELAYS_HOURS[0]);
+      const nextRetryAt = new Date(
+        Date.now() + this.RETRY_DELAYS_HOURS[0] * 60 * 60 * 1000,
+      );
 
-      await this.failedNotificationModel.create({
-        userId,
-        telegramChatId,
-        notificationType,
-        errorMessage,
-        errorCode,
-        retryCount: 0,
-        isPermanentlyFailed: false,
-        nextRetryAt,
-        metadata,
-      });
+      await this.failedNotificationModel.findOneAndUpdate(
+        {
+          userId,
+          notificationType,
+          isPermanentlyFailed: false,
+        },
+        {
+          $setOnInsert: {
+            userId,
+            telegramChatId,
+            notificationType,
+            retryCount: 0,
+            isPermanentlyFailed: false,
+            nextRetryAt,
+          },
+          $set: {
+            errorMessage,
+            errorCode,
+            metadata,
+            telegramChatId, // update in case it changed
+          },
+        },
+        { upsert: true },
+      );
 
       this.logger.warn(
         `Tracked failed ${notificationType} for user ${userId}: ${errorMessage} (retry scheduled in ${this.RETRY_DELAYS_HOURS[0]}h)`,
@@ -135,22 +161,82 @@ export class FailedNotificationRetryService {
           let message: string;
           let retrySuccess = false;
 
+          // FIX #37: Use the user's language for retry messages.
+          // Previously all retry messages were hardcoded in English,
+          // even though the bot supports uz/ru/en.
+          const userLang: string =
+            notification.metadata?.userLanguage || (user as any).language || 'en';
+
           switch (notification.notificationType) {
-            case 'daily_task_delivery':
-              message = 'Your daily tasks are ready! Use /tasks to see them.';
+            // FIX #39: `daily_task_delivery` should NOT be retried here.
+            // The retry system can only re-send a plain text message, but
+            // what the user actually needs is a DailyTask *document* created
+            // in MongoDB + questions generated.  Only DailyTasksService's
+            // `verifyAndFixMissedDeliveries` (11:00 Tashkent cron) can do
+            // that correctly.  Sending a "tasks are ready!" message when no
+            // task doc exists leads the user to /tasks showing nothing.
+            //
+            // Mark as permanently failed so the consistency checker doesn't
+            // keep re-creating it, and let the 11:00 verification cron
+            // handle the actual task creation + notification.
+            case 'daily_task_delivery': {
+              this.logger.debug(
+                `Skipping retry for daily_task_delivery (user ${notification.userId}) — ` +
+                `task creation requires DailyTasksService, not simple message retry`,
+              );
+              await this.markAsPermanentlyFailed(
+                (notification as any)._id.toString(),
+                'daily_task_delivery must be handled by verifyAndFixMissedDeliveries cron, not retry queue',
+              );
+              permanentlyFailed++;
+              continue;
+            }
+            // FIX #40: `first_reminder`, `second_reminder`, `third_reminder`
+            // should NOT be retried here.  The retry system can only re-send
+            // a plain text message, but it CANNOT update
+            // `DailyTask.reminders.firstReminderSentAt` (etc.), because it
+            // has no DailyTask model injected and no knowledge of which task
+            // doc to update.
+            //
+            // This causes an INFINITE LOOP:
+            //   1. consistency-checker finds task with `firstReminderSentAt: null`
+            //   2. Adds to retry queue
+            //   3. Retry sends a plain text message → deletes FailedNotification
+            //   4. BUT `DailyTask.reminders.firstReminderSentAt` is STILL null
+            //   5. Next consistency-checker run → finds same task → goto 2
+            //
+            // TaskReminderService already handles reminders correctly at
+            // 09:30 / 13:30 / 18:00 with proper `DailyTask.reminders`
+            // field updates.  Mark these as permanently failed so the
+            // consistency checker doesn't keep re-creating them.
+            case 'first_reminder':
+            case 'second_reminder':
+            case 'third_reminder': {
+              this.logger.debug(
+                `Skipping retry for ${notification.notificationType} (user ${notification.userId}) — ` +
+                `reminder retry cannot update DailyTask.reminders field, causes infinite loop`,
+              );
+              await this.markAsPermanentlyFailed(
+                (notification as any)._id.toString(),
+                `${notification.notificationType} must be handled by TaskReminderService, not retry queue (would cause infinite loop)`,
+              );
+              permanentlyFailed++;
+              continue;
+            }
+            case 'trial_reminder': {
+              const trialMessages: Record<string, string> = {
+                uz: "Eslatma: Bepul sinov muddatingiz tez orada tugaydi!",
+                ru: 'Напоминание: Ваш пробный период скоро заканчивается!',
+                en: 'Reminder: Your free trial is ending soon!',
+              };
+              message = trialMessages[userLang] || trialMessages.en;
               break;
-            case 'trial_reminder':
-              message = 'Reminder: Your free trial is ending soon!';
-              break;
+            }
             case 'trial_expiry':
               message = notification.metadata?.messageContent || 'Your trial has expired!';
               break;
-            case 'first_reminder':
-            case 'second_reminder':
-            case 'third_reminder':
-              message =
-                notification.metadata?.messageContent || 'Please complete your daily tasks!';
-              break;
+            // NOTE: first_reminder/second_reminder/third_reminder are handled
+            // above (marked permanently failed) — they never reach here.
             case 'engagement':
             case 'inactivity':
               message =
@@ -176,13 +262,13 @@ export class FailedNotificationRetryService {
                   await this.markAsCompleted((notification as any)._id.toString());
                   success++;
                 } else {
-                  await this.incrementRetryCount((notification as any)._id.toString());
+                  await this.incrementRetryCount((notification as any)._id.toString(), notification.retryCount);
                   failed++;
                 }
                 continue;
               } catch (error: any) {
                 this.logger.error(`Position prompt retry failed: ${error.message}`);
-                await this.incrementRetryCount((notification as any)._id.toString());
+                await this.incrementRetryCount((notification as any)._id.toString(), notification.retryCount);
                 failed++;
                 continue;
               }
@@ -201,13 +287,13 @@ export class FailedNotificationRetryService {
                   await this.markAsCompleted((notification as any)._id.toString());
                   success++;
                 } else {
-                  await this.incrementRetryCount((notification as any)._id.toString());
+                  await this.incrementRetryCount((notification as any)._id.toString(), notification.retryCount);
                   failed++;
                 }
                 continue;
               } catch (error: any) {
                 this.logger.error(`Employment survey retry failed: ${error.message}`);
-                await this.incrementRetryCount((notification as any)._id.toString());
+                await this.incrementRetryCount((notification as any)._id.toString(), notification.retryCount);
                 failed++;
                 continue;
               }
@@ -244,8 +330,7 @@ export class FailedNotificationRetryService {
             permanentlyFailed++;
           } else {
             const nextRetryDelay = this.RETRY_DELAYS_HOURS[notification.retryCount + 1] || 24;
-            const nextRetryAt = new Date();
-            nextRetryAt.setHours(nextRetryAt.getHours() + nextRetryDelay);
+            const nextRetryAt = new Date(Date.now() + nextRetryDelay * 60 * 60 * 1000);
 
             await this.failedNotificationModel.findByIdAndUpdate(notification._id, {
               $inc: { retryCount: 1 },
@@ -289,13 +374,20 @@ export class FailedNotificationRetryService {
   /**
    * Increment retry count and schedule next retry
    */
-  private async incrementRetryCount(notificationId: string): Promise<void> {
-    const notification = await this.failedNotificationModel.findById(notificationId);
-    if (!notification) return;
+  private async incrementRetryCount(
+    notificationId: string,
+    currentRetryCount?: number,
+  ): Promise<void> {
+    // If currentRetryCount provided (from caller), skip extra DB round-trip
+    let retryCount = currentRetryCount;
+    if (retryCount === undefined) {
+      const notification = await this.failedNotificationModel.findById(notificationId);
+      if (!notification) return;
+      retryCount = notification.retryCount;
+    }
 
-    const nextRetryDelay = this.RETRY_DELAYS_HOURS[notification.retryCount + 1] || 24;
-    const nextRetryAt = new Date();
-    nextRetryAt.setHours(nextRetryAt.getHours() + nextRetryDelay);
+    const nextRetryDelay = this.RETRY_DELAYS_HOURS[retryCount + 1] || 24;
+    const nextRetryAt = new Date(Date.now() + nextRetryDelay * 60 * 60 * 1000);
 
     await this.failedNotificationModel.findByIdAndUpdate(notificationId, {
       $inc: { retryCount: 1 },
@@ -303,7 +395,7 @@ export class FailedNotificationRetryService {
     });
 
     this.logger.debug(
-      `Retry ${notification.retryCount + 1}/${this.MAX_RETRY_ATTEMPTS} scheduled for notification ${notificationId} (next retry in ${nextRetryDelay}h)`,
+      `Retry ${retryCount + 1}/${this.MAX_RETRY_ATTEMPTS} scheduled for notification ${notificationId} (next retry in ${nextRetryDelay}h)`,
     );
   }
 

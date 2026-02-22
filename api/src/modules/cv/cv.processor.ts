@@ -59,21 +59,33 @@ export class CvProcessor {
       else if (analysis.atsScore >= 60) scoreEmoji = '🟡';
 
       // Format strengths (first 3)
+      // FIX #65: Handle both string and object formats for backward compat
+      const formatStrength = (s: any): string => {
+        if (typeof s === 'string') return `✅ ${s}`;
+        if (s && typeof s === 'object' && s.text) return `✅ ${s.text}`;
+        return `✅ ${String(s)}`;
+      };
       const strengths =
         analysis.strengths
           ?.slice(0, 3)
-          .map((s: string) => `✅ ${s}`)
+          .map(formatStrength)
           .join('\n') || '';
 
       // Format weaknesses (first 3)
+      // FIX #60: Handle both old format (string[]) and new format ({ issue, whyItMatters, severity }[])
+      const formatWeakness = (w: any): string => {
+        if (typeof w === 'string') return `⚠️ ${w}`;
+        if (w && typeof w === 'object' && w.issue) return `⚠️ ${w.issue}`;
+        return `⚠️ ${String(w)}`;
+      };
       const weaknesses =
         analysis.criticalWeaknesses
           ?.slice(0, 3)
-          .map((w: string) => `⚠️ ${w}`)
+          .map(formatWeakness)
           .join('\n') ||
         analysis.weaknesses
           ?.slice(0, 3)
-          .map((w: string) => `⚠️ ${w}`)
+          .map(formatWeakness)
           .join('\n') ||
         '';
 
@@ -122,7 +134,12 @@ ${weaknesses || 'No major weaknesses found'}
         .text('📊 View Full Analysis', `cv_full_${cv.id}`)
         .text('🔄 Re-analyze', `cv_reanalyze`);
 
-      await this.telegramService.sendNotification(telegramId, messages[lang] || messages.en);
+      // FIX #50: Pass keyboard as reply_markup (was created but never sent)
+      await this.telegramService.sendNotification(
+        telegramId,
+        messages[lang] || messages.en,
+        { reply_markup: keyboard },
+      );
 
       this.logger.log(`Analysis results sent to Telegram user ${telegramId}`);
     } catch (error) {

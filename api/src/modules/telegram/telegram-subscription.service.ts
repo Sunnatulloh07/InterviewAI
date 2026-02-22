@@ -2,7 +2,12 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { User, UserDocument } from '../users/schemas/user.schema';
-import { USAGE_LIMITS, PLAN_FEATURES, SubscriptionPlan } from '@common/constants';
+import {
+  USAGE_LIMITS,
+  PLAN_FEATURES,
+  SubscriptionPlan,
+  getPlanLimits,
+} from '@common/constants';
 import { BotContext } from './telegram.service';
 import { InlineKeyboard } from 'grammy';
 
@@ -70,21 +75,23 @@ export class TelegramSubscriptionService {
 Sizning 7 kunlik bepul sinov muddatingiz tugadi. 
 Davom etish uchun tarifni tanlang:
 
-💼 <b>STARTER</b> - $9.99/oy
+💼 <b>STARTER</b> - $10/oy
 • 10 ta mock intervyu/oy
 • 10 daq mock + 15 daq live ovoz
 • 5 ta CV tahlili/oy
+• 1 ta kunlik topshiriq
 
-🚀 <b>PRO</b> - $19.99/oy
+🚀 <b>PRO</b> - $20/oy
 • 30 ta mock intervyu/oy
 • 30 daq mock + 45 daq live ovoz
 • 15 ta CV tahlili/oy
-• Chrome extension
+• Haftalik AI tavsiyalar
 
-👑 <b>ELITE</b> - $29.99/oy
+👑 <b>ELITE</b> - $30/oy
 • Cheksiz mock intervyu
 • 60 daq mock + 120 daq live ovoz
 • Cheksiz CV tahlili
+• 2 ta kunlik topshiriq
 • Priority support
 
 📞 Tarifni yangilash uchun @interviewai_support_bot ga murojaat qiling.`,
@@ -93,21 +100,23 @@ Davom etish uchun tarifni tanlang:
 Ваш 7-дневный бесплатный период закончился.
 Выберите тариф для продолжения:
 
-💼 <b>STARTER</b> - $9.99/мес
+💼 <b>STARTER</b> - $10/мес
 • 10 mock-интервью/мес
 • 10 мин mock + 15 мин live голос
 • 5 анализов CV/мес
+• 1 ежедневное задание
 
-🚀 <b>PRO</b> - $19.99/мес
+🚀 <b>PRO</b> - $20/мес
 • 30 mock-интервью/мес
 • 30 мин mock + 45 мин live голос
 • 15 анализов CV/мес
-• Chrome extension
+• Еженедельные AI рекомендации
 
-👑 <b>ELITE</b> - $29.99/мес
+👑 <b>ELITE</b> - $30/мес
 • Безлимитные mock-интервью
 • 60 мин mock + 120 мин live голос
 • Безлимитные анализы CV
+• 2 ежедневных задания
 • Priority support
 
 📞 Для обновления тарифа обратитесь в @interviewai_support_bot.`,
@@ -116,21 +125,23 @@ Davom etish uchun tarifni tanlang:
 Your 7-day free trial has ended.
 Choose a plan to continue:
 
-💼 <b>STARTER</b> - $9.99/mo
+💼 <b>STARTER</b> - $10/mo
 • 10 mock interviews/mo
 • 10 min mock + 15 min live voice
 • 5 CV analyses/mo
+• 1 daily task
 
-🚀 <b>PRO</b> - $19.99/mo
+🚀 <b>PRO</b> - $20/mo
 • 30 mock interviews/mo
 • 30 min mock + 45 min live voice
 • 15 CV analyses/mo
-• Chrome extension
+• Weekly AI recommendations
 
-👑 <b>ELITE</b> - $29.99/mo
+👑 <b>ELITE</b> - $30/mo
 • Unlimited mock interviews
 • 60 min mock + 120 min live voice
 • Unlimited CV analyses
+• 2 daily tasks
 • Priority support
 
 📞 Contact @interviewai_support_bot to upgrade.`,
@@ -288,11 +299,15 @@ ${isLimitReached ? '⛔️ Limit reached!' : percentage >= 90 ? '⚠️ Approach
     notify: boolean = true,
   ): Promise<boolean> {
     const plan = (user.subscription?.plan || 'free_trial') as SubscriptionPlan;
-    const limits = USAGE_LIMITS[plan] || USAGE_LIMITS.free_trial;
+    // FIX #57: Use COMPLETE_PLAN_LIMITS (single source of truth) instead of legacy USAGE_LIMITS
+    const planLimits = getPlanLimits(plan);
     const usage = user.usage || {};
 
     const current = usage.cvAnalysesThisMonth || 0;
-    const limit = limits?.cvAnalyses ?? 1; // Default to 1 if undefined
+    const limit = planLimits.cvAnalysis.perMonth; // -1 = unlimited
+
+    // Unlimited check
+    if (limit === -1) return true;
 
     // Limit reached
     if (current >= limit) {
@@ -365,11 +380,15 @@ Remaining: ${remaining}
    */
   async checkMockInterviewLimit(ctx: BotContext, user: any, lang: string): Promise<boolean> {
     const plan = (user.subscription?.plan || 'free_trial') as SubscriptionPlan;
-    const limits = USAGE_LIMITS[plan] || USAGE_LIMITS.free_trial;
+    // FIX #57: Use COMPLETE_PLAN_LIMITS (single source of truth) instead of legacy USAGE_LIMITS
+    const planLimits = getPlanLimits(plan);
     const usage = user.usage || {};
 
     const current = usage.mockInterviewsThisMonth || 0;
-    const limit = limits?.mockInterviews ?? 3; // Default to 3 if undefined
+    const limit = planLimits.mockInterviews.perMonth; // -1 = unlimited
+
+    // Unlimited check
+    if (limit === -1) return true;
 
     // Limit reached
     if (current >= limit) {
@@ -438,91 +457,101 @@ Remaining: ${remaining}
    * Send plan comparison message
    */
   async sendPlanComparison(ctx: BotContext, lang: string): Promise<void> {
+    // ALIGNED with COMPLETE_PLAN_LIMITS (single source of truth)
     const messages: Record<string, string> = {
       uz: `📋 <b>Tariflar</b>
 
-💼 <b>STARTER</b> - $4.99/oy
+💼 <b>STARTER</b> - $10/oy
 ───────────────────────
-✅ 15 ta mock intervyu
-✅ 30 daqiqa live intervyu
-✅ 3 ta CV tahlili
-✅ Voice xabarlar
-❌ Chrome extension
+✅ 10 ta mock intervyu/oy
+✅ 10 daqiqa ovozli mashq
+✅ 15 daqiqa live intervyu
+✅ 5 ta CV tahlili
+✅ 1 ta kunlik topshiriq
+✅ Oylik AI hisobot
 
-🚀 <b>PRO</b> - $14.99/oy
+🚀 <b>PRO</b> - $20/oy
 ───────────────────────
-✅ 60 ta mock intervyu
-✅ 120 daqiqa live intervyu
+✅ 30 ta mock intervyu/oy
+✅ 30 daqiqa ovozli mashq
+✅ 45 daqiqa live intervyu
 ✅ 15 ta CV tahlili
-✅ Voice xabarlar
-🔜 Chrome extension
-🔜 Stealth mode
+✅ 1 ta kunlik topshiriq
+✅ Haftalik AI tavsiyalar
 
-👑 <b>ELITE</b> - $29.99/oy
+👑 <b>ELITE</b> - $30/oy
 ───────────────────────
-✅ 150 ta mock intervyu
-✅ 300 daqiqa live intervyu
-✅ 40 ta CV tahlili
+✅ Cheksiz mock intervyu
+✅ 60 daqiqa ovozli mashq
+✅ 120 daqiqa live intervyu
+✅ Cheksiz CV tahlili
+✅ 2 ta kunlik topshiriq
+✅ Shaxsiy karyera rejasi
 ✅ Priority support
-✅ Ilg'or AI modellari
 
-📞 Tarifni tanlash uchun @interviewai_support_bot ga yozing.`,
+📞 @interviewai_support_bot`,
       ru: `📋 <b>Тарифы</b>
 
-💼 <b>STARTER</b> - $4.99/мес
+💼 <b>STARTER</b> - $10/мес
 ───────────────────────
-✅ 15 mock-интервью
-✅ 30 минут live-интервью
-✅ 3 анализа CV
-✅ Голосовые
-❌ Chrome extension
+✅ 10 mock интервью/мес
+✅ 10 минут голосовой практики
+✅ 15 минут live интервью
+✅ 5 анализов CV
+✅ 1 ежедневное задание
+✅ Месячный AI отчёт
 
-🚀 <b>PRO</b> - $14.99/мес
+🚀 <b>PRO</b> - $20/мес
 ───────────────────────
-✅ 60 mock-интервью
-✅ 120 минут live-интервью
+✅ 30 mock интервью/мес
+✅ 30 минут голосовой практики
+✅ 45 минут live интервью
 ✅ 15 анализов CV
-✅ Голосовые сообщения
-🔜 Chrome extension
-🔜 Stealth mode
+✅ 1 ежедневное задание
+✅ Еженедельные AI рекомендации
 
-👑 <b>ELITE</b> - $29.99/мес
+👑 <b>ELITE</b> - $30/мес
 ───────────────────────
-✅ 150 mock-интервью
-✅ 300 минут live-интервью
-✅ 40 анализов CV
+✅ Безлимит mock интервью
+✅ 60 минут голосовой практики
+✅ 120 минут live интервью
+✅ Безлимит анализ CV
+✅ 2 ежедневных задания
+✅ Персональный план карьеры
 ✅ Priority support
-✅ Продвинутый AI
 
-📞 Напишите @interviewai_support_bot для выбора тарифа.`,
+📞 @interviewai_support_bot`,
       en: `📋 <b>Plans</b>
 
-💼 <b>STARTER</b> - $4.99/mo
+💼 <b>STARTER</b> - $10/mo
 ───────────────────────
-✅ 15 mock interviews
-✅ 30 min live interview
-✅ 3 CV analyses
-✅ Voice messages
-❌ Chrome extension
+✅ 10 mock interviews/mo
+✅ 10 min voice practice
+✅ 15 min live interview
+✅ 5 CV analyses
+✅ 1 daily task
+✅ Monthly AI report
 
-🚀 <b>PRO</b> - $14.99/mo
+🚀 <b>PRO</b> - $20/mo
 ───────────────────────
-✅ 60 mock interviews
-✅ 120 min live interview
+✅ 30 mock interviews/mo
+✅ 30 min voice practice
+✅ 45 min live interview
 ✅ 15 CV analyses
-✅ Voice messages
-🔜 Chrome extension
-🔜 Stealth mode
+✅ 1 daily task
+✅ Weekly AI recommendations
 
-👑 <b>ELITE</b> - $29.99/mo
+👑 <b>ELITE</b> - $30/mo
 ───────────────────────
-✅ 150 mock interviews
-✅ 300 min live interview
-✅ 40 CV analyses
+✅ Unlimited mock interviews
+✅ 60 min voice practice
+✅ 120 min live interview
+✅ Unlimited CV analyses
+✅ 2 daily tasks
+✅ Personal career roadmap
 ✅ Priority support
-✅ Advanced AI models
 
-📞 Contact @interviewai_support_bot to choose a plan.`,
+📞 @interviewai_support_bot`,
     };
 
     const supportText: Record<string, string> = {
@@ -631,7 +660,8 @@ Remaining: ${remaining}
    */
   getUsageStatsText(user: any, lang: string): string {
     const plan = (user.subscription?.plan || 'free_trial') as SubscriptionPlan;
-    const limits = USAGE_LIMITS[plan] || USAGE_LIMITS.free_trial;
+    // FIX #58: Use COMPLETE_PLAN_LIMITS (single source of truth) instead of legacy USAGE_LIMITS
+    const planLimits = getPlanLimits(plan);
     const usage = user.usage || {};
 
     const labels: Record<string, Record<string, string>> = {
@@ -657,9 +687,9 @@ Remaining: ${remaining}
       limit === -1 ? `${current}/∞` : `${current}/${limit}`;
 
     return `📊 <b>Ishlatilgan:</b>
-• ${l.mock}: ${formatLimit(usage.mockInterviewsThisMonth || 0, limits.mockInterviews)}
-• ${l.live}: ${formatLimit(usage.liveInterviewMinutesThisMonth || 0, limits.liveInterviewMinutes)}
-• ${l.cv}: ${formatLimit(usage.cvAnalysesThisMonth || 0, limits.cvAnalyses)}`;
+• ${l.mock}: ${formatLimit(usage.mockInterviewsThisMonth || 0, planLimits.mockInterviews.perMonth)}
+• ${l.live}: ${formatLimit(usage.liveInterviewMinutesThisMonth || 0, planLimits.voice.realVoice)}
+• ${l.cv}: ${formatLimit(usage.cvAnalysesThisMonth || 0, planLimits.cvAnalysis.perMonth)}`;
   }
 
   // ============================================================
@@ -690,7 +720,7 @@ Remaining: ${remaining}
         starter: {
           emoji: '💼',
           name: 'STARTER',
-          price: '$9.99/oy',
+          price: '$10/oy',
           features: [
             `✓ ${planLimits.mockInterviews.perMonth} ta mock intervyu/oy`,
             `✓ ${planLimits.voice.mockVoice} daq mock + ${planLimits.voice.realVoice} daq live ovoz`,
@@ -702,12 +732,12 @@ Remaining: ${remaining}
         pro: {
           emoji: '🚀',
           name: 'PRO',
-          price: '$19.99/oy',
+          price: '$20/oy',
           features: [
             `✓ ${COMPLETE_PLAN_LIMITS.pro.mockInterviews.perMonth} ta mock intervyu/oy`,
             `✓ ${COMPLETE_PLAN_LIMITS.pro.voice.mockVoice} daq mock + ${COMPLETE_PLAN_LIMITS.pro.voice.realVoice} daq live ovoz`,
             `✓ ${COMPLETE_PLAN_LIMITS.pro.cvAnalysis.perMonth} ta CV tahlili`,
-            '✓ Video javoblar',
+            '✓ Haftalik AI tavsiyalar',
             '✓ Chrome Extension',
             "✓ Ilg'or AI tahlil",
           ],
@@ -715,7 +745,7 @@ Remaining: ${remaining}
         elite: {
           emoji: '👑',
           name: 'ELITE',
-          price: '$29.99/oy',
+          price: '$30/oy',
           features: [
             '✓ Cheksiz mock intervyu',
             `✓ ${COMPLETE_PLAN_LIMITS.elite.voice.mockVoice} daq mock + ${COMPLETE_PLAN_LIMITS.elite.voice.realVoice} daq live ovoz`,
@@ -730,7 +760,7 @@ Remaining: ${remaining}
         starter: {
           emoji: '💼',
           name: 'STARTER',
-          price: '$9.99/мес',
+          price: '$10/мес',
           features: [
             `✓ ${planLimits.mockInterviews.perMonth} mock-интервью/мес`,
             `✓ ${planLimits.voice.mockVoice} мин mock + ${planLimits.voice.realVoice} мин live голос`,
@@ -742,12 +772,12 @@ Remaining: ${remaining}
         pro: {
           emoji: '🚀',
           name: 'PRO',
-          price: '$19.99/мес',
+          price: '$20/мес',
           features: [
             `✓ ${COMPLETE_PLAN_LIMITS.pro.mockInterviews.perMonth} mock-интервью/мес`,
             `✓ ${COMPLETE_PLAN_LIMITS.pro.voice.mockVoice} мин mock + ${COMPLETE_PLAN_LIMITS.pro.voice.realVoice} мин live голос`,
             `✓ ${COMPLETE_PLAN_LIMITS.pro.cvAnalysis.perMonth} анализов CV`,
-            '✓ Видео ответы',
+            '✓ Еженедельные AI рекомендации',
             '✓ Chrome Extension',
             '✓ Продвинутый AI',
           ],
@@ -755,7 +785,7 @@ Remaining: ${remaining}
         elite: {
           emoji: '👑',
           name: 'ELITE',
-          price: '$29.99/мес',
+          price: '$30/мес',
           features: [
             '✓ Безлимит mock-интервью',
             `✓ ${COMPLETE_PLAN_LIMITS.elite.voice.mockVoice} мин mock + ${COMPLETE_PLAN_LIMITS.elite.voice.realVoice} мин live голос`,
@@ -770,7 +800,7 @@ Remaining: ${remaining}
         starter: {
           emoji: '💼',
           name: 'STARTER',
-          price: '$9.99/mo',
+          price: '$10/mo',
           features: [
             `✓ ${planLimits.mockInterviews.perMonth} mock interviews/mo`,
             `✓ ${planLimits.voice.mockVoice} min mock + ${planLimits.voice.realVoice} min live voice`,
@@ -782,12 +812,12 @@ Remaining: ${remaining}
         pro: {
           emoji: '🚀',
           name: 'PRO',
-          price: '$19.99/mo',
+          price: '$20/mo',
           features: [
             `✓ ${COMPLETE_PLAN_LIMITS.pro.mockInterviews.perMonth} mock interviews/mo`,
             `✓ ${COMPLETE_PLAN_LIMITS.pro.voice.mockVoice} min mock + ${COMPLETE_PLAN_LIMITS.pro.voice.realVoice} min live voice`,
             `✓ ${COMPLETE_PLAN_LIMITS.pro.cvAnalysis.perMonth} CV analyses`,
-            '✓ Video answers',
+            '✓ Weekly AI recommendations',
             '✓ Chrome Extension',
             '✓ Advanced AI analysis',
           ],
@@ -795,7 +825,7 @@ Remaining: ${remaining}
         elite: {
           emoji: '👑',
           name: 'ELITE',
-          price: '$29.99/mo',
+          price: '$30/mo',
           features: [
             '✓ Unlimited mock interviews',
             `✓ ${COMPLETE_PLAN_LIMITS.elite.voice.mockVoice} min mock + ${COMPLETE_PLAN_LIMITS.elite.voice.realVoice} min live voice`,

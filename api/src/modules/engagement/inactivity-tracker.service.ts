@@ -31,10 +31,9 @@ export class InactivityTrackerService {
   ) {}
 
   /**
-   * Daily inactivity reminders - runs at 10:00 AM Tashkent time (UTC+5)
-   * 10:00 AM Tashkent = 05:00 AM UTC
+   * Daily inactivity reminders - runs at 10:00 AM Tashkent time
    */
-  @Cron('0 5 * * *', {
+  @Cron('0 10 * * *', {
     name: 'inactivity-reminders',
     timeZone: 'Asia/Tashkent',
   })
@@ -52,11 +51,13 @@ export class InactivityTrackerService {
       };
 
       const batchSize = 1000;
+      let lastId: any = null;
 
-      for (let batch = 0; batch < 10; batch++) {
-        const offset = batch * batchSize;
-
-        const batchResults = await this.processBatch(offset, batchSize, now);
+      // Cursor-based pagination: use _id > lastId instead of skip(offset).
+      // skip(N) forces MongoDB to scan and discard N documents each batch,
+      // making it O(N^2) over the full collection. Cursor-based is O(N).
+      for (let batch = 0; batch < 100; batch++) {
+        const batchResults = await this.processBatch(lastId, batchSize, now);
 
         results.neverActive += batchResults.neverActive;
         results.sevenDaysInactive += batchResults.sevenDaysInactive;
@@ -64,11 +65,12 @@ export class InactivityTrackerService {
         results.ninetyDaysInactive += batchResults.ninetyDaysInactive;
         results.failed += batchResults.failed;
 
-        if (batchResults.hasMore === false) {
+        if (!batchResults.hasMore) {
           this.logger.log('No more users to process, stopping');
           break;
         }
 
+        lastId = batchResults.lastProcessedId;
         await this.delay(100);
       }
 
@@ -89,7 +91,7 @@ export class InactivityTrackerService {
    * Process a batch of users for inactivity reminders
    */
   private async processBatch(
-    offset: number,
+    lastId: any,
     limit: number,
     now: Date,
   ): Promise<{
@@ -99,21 +101,28 @@ export class InactivityTrackerService {
     ninetyDaysInactive: number;
     failed: number;
     hasMore: boolean;
+    lastProcessedId: any;
   }> {
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
 
+    // Cursor-based pagination: filter by _id > lastId instead of skip()
+    const query: any = {
+      deletedAt: null,
+      isBlocked: false,
+      'engagement.isBotBlocked': { $ne: true },
+      'engagement.notificationsPaused': { $ne: true },
+    };
+
+    if (lastId) {
+      query._id = { $gt: lastId };
+    }
+
     const users = await this.userModel
-      .find({
-        deletedAt: null,
-        isBlocked: false,
-        'engagement.isBotBlocked': { $ne: true },
-        'engagement.notificationsPaused': { $ne: true },
-      })
+      .find(query)
       .select('_id telegramId language profile subscription engagement usage createdAt')
       .sort({ _id: 1 })
-      .skip(offset)
       .limit(limit)
       .lean();
 
@@ -125,6 +134,7 @@ export class InactivityTrackerService {
         ninetyDaysInactive: 0,
         failed: 0,
         hasMore: false,
+        lastProcessedId: lastId,
       };
     }
 
@@ -134,17 +144,11 @@ export class InactivityTrackerService {
       thirtyDaysInactive: 0,
       ninetyDaysInactive: 0,
       failed: 0,
-      hasMore: true,
+      hasMore: users.length >= limit,
+      lastProcessedId: users[users.length - 1]._id,
     };
 
-    const processedUserIds = new Set<string>();
-
     for (const user of users) {
-      if (processedUserIds.has(user._id.toString())) {
-        continue;
-      }
-
-      processedUserIds.add(user._id.toString());
 
       try {
         await this.processUserForInactivity(user, now, sevenDaysAgo, thirtyDaysAgo, ninetyDaysAgo);
@@ -187,7 +191,17 @@ export class InactivityTrackerService {
   }
 
   /**
-   * Process a single user for inactivity reminder
+   * Process a single user for inactivity reminder.
+   *
+   * FIX #31: Added deduplication — skip if the user was already notified
+   * at this same inactivity tier.  Without this check the cron would send
+   * a message to every qualifying user EVERY DAY it runs, because the
+   * query has no "already notified" filter.
+   *
+   * The tier progression works like this:
+   *   never_active → 7 days → 30 days → 90 days
+   * A user only receives ONE notification per tier.  Once they reach
+   * `ninety_days_inactive` we stop sending altogether.
    */
   private async processUserForInactivity(
     user: any,
@@ -203,6 +217,27 @@ export class InactivityTrackerService {
       thirtyDaysAgo,
       ninetyDaysAgo,
     );
+
+    // Skip if user is currently active (no reminder needed)
+    if (inactiveLevel === 'active') {
+      return;
+    }
+
+    // Deduplication: skip if user was already notified at this tier or a later one.
+    // Tier severity order: never_active < seven_days < thirty_days < ninety_days
+    const TIER_ORDER: Record<string, number> = {
+      never_active: 0,
+      seven_days_inactive: 1,
+      thirty_days_inactive: 2,
+      ninety_days_inactive: 3,
+    };
+    const currentTier = TIER_ORDER[inactiveLevel] ?? -1;
+    const previouslyNotifiedTier = TIER_ORDER[user.engagement?.inactiveReminderLevel] ?? -1;
+
+    if (previouslyNotifiedTier >= currentTier) {
+      // Already notified at this tier (or a more severe one) — don't spam.
+      return;
+    }
 
     if (inactiveLevel === 'never_active') {
       await this.processNeverActiveUser(user);
@@ -230,7 +265,17 @@ export class InactivityTrackerService {
     | 'thirty_days_inactive'
     | 'ninety_days_inactive'
     | 'active' {
-    const lastActiveAt = user.engagement?.lastActiveAt || user.createdAt;
+    // Check never_active FIRST: user has never interacted (lastActiveAt is null/undefined)
+    // In this case engagement.lastActiveAt is set to createdAt by default but was never
+    // updated by actual user interaction. We distinguish by checking the field directly.
+    const hasNeverBeenActive =
+      user.engagement?.lastActiveAt === undefined || user.engagement?.lastActiveAt === null;
+
+    if (hasNeverBeenActive) {
+      return 'never_active';
+    }
+
+    const lastActiveAt = user.engagement.lastActiveAt;
     const daysSinceActive = this.getDaysSince(lastActiveAt, now);
 
     if (daysSinceActive >= 90) {
@@ -239,11 +284,6 @@ export class InactivityTrackerService {
       return 'thirty_days_inactive';
     } else if (daysSinceActive >= 7) {
       return 'seven_days_inactive';
-    } else if (
-      user.engagement?.lastActiveAt === undefined ||
-      user.engagement?.lastActiveAt === null
-    ) {
-      return 'never_active';
     }
 
     return 'active';
@@ -311,11 +351,17 @@ export class InactivityTrackerService {
   }
 
   /**
-   * Process 90 days inactive users (soft reminder, no more notifications)
+   * Process 90 days inactive users — send final farewell message
+   *
+   * FIX #98: Previously only updated DB silently without sending any message.
+   * Now sends a final "we miss you" message. After this tier, no more
+   * notifications are sent (deduplication logic prevents it).
    */
   private async processNinetyDaysInactiveUser(user: any): Promise<void> {
     const language = user.language || 'uz';
+    const message = this.getNinetyDaysInactiveMessage(language);
 
+    await this.sendTelegramMessage(user, message);
     await this.updateInactivityLevel(user._id.toString(), 'ninety_days_inactive', 90);
   }
 
@@ -351,6 +397,20 @@ export class InactivityTrackerService {
   /**
    * Update user's inactivity level in database
    */
+  /**
+   * Update inactivity tracking metadata WITHOUT touching lastActiveAt.
+   *
+   * FIX #30 (CRITICAL): Previously set `lastActiveAt = new Date()` which
+   * incorrectly marked every notified user as "active right now". This caused
+   * two severe issues:
+   * 1. Users never progressed from 7-day → 30-day → 90-day inactive tiers
+   *    because their lastActiveAt was reset every day the cron ran.
+   * 2. The cron sent daily spam to ALL inactive users instead of once per tier,
+   *    since they appeared "newly 7-day inactive" again the next day.
+   *
+   * Now we record `lastInactivityReminderSentAt` separately so the cron can
+   * skip users who were already notified at this tier.
+   */
   private async updateInactivityLevel(
     userId: string,
     level: 'never_active' | 'seven_days_inactive' | 'thirty_days_inactive' | 'ninety_days_inactive',
@@ -361,7 +421,7 @@ export class InactivityTrackerService {
         $set: {
           'engagement.inactiveReminderLevel': level,
           'engagement.inactiveDaysCount': daysInactive,
-          'engagement.lastActiveAt': new Date(),
+          'engagement.lastInactivityReminderSentAt': new Date(),
         },
       });
     } catch (error: any) {
@@ -427,6 +487,22 @@ export class InactivityTrackerService {
       uz: `⚠️ 30 kun davomida botni foydalanmadingiz.\n\nUzoqlikka qaytish vaqti! Har kun 30 daqiqa amaliyot bo'lishingiz oshadi.\n\n🎯 Hozir boshlang: /tasks\n🏆 Kuchli bo'ling!`,
       ru: `⚠️ Вы не использовали бота в течение 30 дней.\n\nВернитесь! Ежедневная практика приведет к успеху.\n\n🎯 Начните сейчас: /tasks\n🏆 Будьте сильными!`,
       en: `⚠️ You haven't used the bot for 30 days.\n\nCome back! Daily practice leads to success.\n\n🎯 Start now: /tasks\n🏆 Be strong!`,
+    };
+
+    return messages[language] || messages.uz;
+  }
+
+  /**
+   * Get 90 days inactive message (final farewell)
+   *
+   * FIX #98: Added this message — 90-day users previously got no notification.
+   * This is the last message they'll ever receive (dedup prevents further sends).
+   */
+  private getNinetyDaysInactiveMessage(language: string): string {
+    const messages = {
+      uz: `💔 90 kun davomida botni foydalanmadingiz.\n\nBiz sizni sog'indik! Agar qaytmoqchi bo'lsangiz, har doim kutamiz.\n\n🎯 Qaytish: /start\n💡 Sizning muvaffaqiyatingiz biz uchun muhim!`,
+      ru: `💔 Вы не использовали бота в течение 90 дней.\n\nМы скучаем! Если захотите вернуться, мы всегда здесь.\n\n🎯 Вернуться: /start\n💡 Ваш успех важен для нас!`,
+      en: `💔 You haven't used the bot for 90 days.\n\nWe miss you! If you ever want to come back, we're always here.\n\n🎯 Come back: /start\n💡 Your success matters to us!`,
     };
 
     return messages[language] || messages.uz;
