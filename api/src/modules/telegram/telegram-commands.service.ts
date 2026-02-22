@@ -1329,40 +1329,25 @@ Let's get started! 🚀`,
 
         // Check if CV was uploaded for interview flow
         if (ctx.session.interviewStep === 'waiting_cv' && ctx.session.interviewMode === 'mock') {
-          // Auto-analyze CV synchronously and redirect to interview
-          const analyzingText: Record<string, string> = {
-            uz: `✅ CV yuklandi! Tahlil qilinmoqda...\n\n<i>Intervyu tahlildan keyin boshlanadi</i>`,
-            ru: `✅ CV загружен! Анализируем...\n\n<i>Интервью начнётся после анализа</i>`,
-            en: `✅ CV uploaded! Analyzing...\n\n<i>Interview will start after analysis</i>`,
+          // FIX #112: Don't call analyzeCv again — queue processor already started it
+          // from uploadCv(). Calling it again causes "already in progress" error.
+          //
+          // Instead, show a waiting message and let CvProcessor handle the analysis.
+          // CvProcessor will send results + "Start Interview" button when done.
+          //
+          // Store interview intent in session so CvProcessor knows to show interview button
+          ctx.session.interviewStep = 'waiting_cv_analysis';
+
+          const waitingText: Record<string, string> = {
+            uz: `✅ <b>CV yuklandi!</b>\n\n⏳ AI tahlil qilmoqda — bu 30-60 soniya davom etadi.\n\nTahlil tugagach, natijalar va <b>Mock intervyuni boshlash</b> tugmasi avtomatik ko'rsatiladi.`,
+            ru: `✅ <b>CV загружен!</b>\n\n⏳ AI анализирует — это займёт 30-60 секунд.\n\nПосле анализа автоматически появятся результаты и кнопка <b>Начать Mock-интервью</b>.`,
+            en: `✅ <b>CV uploaded!</b>\n\n⏳ AI is analyzing — this takes 30-60 seconds.\n\nOnce done, results and a <b>Start Mock Interview</b> button will appear automatically.`,
           };
-          const analyzeMsg = await ctx.reply(analyzingText[lang] || analyzingText.en, {
+
+          await ctx.reply(waitingText[lang] || waitingText.en, {
             parse_mode: 'HTML',
           });
 
-          try {
-            const userId = (user as any)._id?.toString() || (user as any).id?.toString();
-            await this.cvService.analyzeCv(userId, (cv as any).id, { language: lang });
-            // Delete analyzing message
-            try {
-              if (ctx.chat?.id) await ctx.api.deleteMessage(ctx.chat.id, analyzeMsg.message_id);
-            } catch { /* silent */ }
-
-            // Re-fetch updated user+CV and show interview confirmation
-            const updatedUser = await this.usersService.findByTelegramId(telegramId);
-            const analyzedCv = await this.cvService.getUserLatestCv(userId);
-            if (analyzedCv?.analysis && updatedUser) {
-              await this.showCvInterviewConfirmation(ctx, updatedUser, analyzedCv, lang);
-            } else {
-              await this.showManualDomainSelection(ctx, lang);
-            }
-          } catch (analyzeError: any) {
-            this.logger.error(`CV auto-analyze for interview failed: ${analyzeError.message}`);
-            try {
-              if (ctx.chat?.id) await ctx.api.deleteMessage(ctx.chat.id, analyzeMsg.message_id);
-            } catch { /* silent */ }
-            // Fallback to manual wizard
-            await this.showManualDomainSelection(ctx, lang);
-          }
           this.logger.log(`CV uploaded for interview flow for user ${telegramId}: ${(cv as any).id}`);
           return;
         }

@@ -33,8 +33,9 @@ export interface BotContext extends Context {
       | 'cv'
       | 'ready'
       | 'answering'
-      | 'waiting_cv'      // Waiting for user to upload CV (for CV-first interview flow)
-      | 'cv_confirmed';   // CV profile shown, user choosing duration
+      | 'waiting_cv'           // Waiting for user to upload CV (for CV-first interview flow)
+      | 'waiting_cv_analysis'  // CV uploaded, waiting for queue processor to finish analysis
+      | 'cv_confirmed';        // CV profile shown, user choosing duration
     // CV analysis flow state
     cvUploadStep?: 'waiting' | 'analyzing' | 'complete';
     currentCvId?: string;

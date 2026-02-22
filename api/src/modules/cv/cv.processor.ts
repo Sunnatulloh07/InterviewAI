@@ -130,9 +130,29 @@ ${weaknesses || 'No major weaknesses found'}
 📊 Click the button below to view the full analysis:`,
       };
 
+      // FIX #112: Add "Start Mock Interview" button — this is the most common next action
+      // after CV analysis, especially in the interview flow
+      const interviewBtnText: Record<string, string> = {
+        uz: '🎯 Mock intervyu boshlash',
+        ru: '🎯 Начать Mock-интервью',
+        en: '🎯 Start Mock Interview',
+      };
+      const fullAnalysisBtnText: Record<string, string> = {
+        uz: "📊 To'liq tahlil",
+        ru: '📊 Полный анализ',
+        en: '📊 Full Analysis',
+      };
+      const menuBtnText: Record<string, string> = {
+        uz: '🏠 Asosiy menyu',
+        ru: '🏠 Главное меню',
+        en: '🏠 Main Menu',
+      };
+
       const keyboard = new InlineKeyboard()
-        .text('📊 View Full Analysis', `cv_full_${cv.id}`)
-        .text('🔄 Re-analyze', `cv_reanalyze`);
+        .text(interviewBtnText[lang] || interviewBtnText.en, 'interview_mock')
+        .row()
+        .text(fullAnalysisBtnText[lang] || fullAnalysisBtnText.en, `cv_full_${cv.id}`)
+        .text(menuBtnText[lang] || menuBtnText.en, 'back_to_menu');
 
       // FIX #50: Pass keyboard as reply_markup (was created but never sent)
       await this.telegramService.sendNotification(
