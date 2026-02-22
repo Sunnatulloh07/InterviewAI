@@ -380,6 +380,47 @@ Remaining: ${remaining}
    */
   async checkMockInterviewLimit(ctx: BotContext, user: any, lang: string): Promise<boolean> {
     const plan = (user.subscription?.plan || 'free_trial') as SubscriptionPlan;
+
+    // FIX #104: Check trial expiry FIRST — trial expired users must not proceed
+    if (plan === 'free_trial' && user.subscription?.trialEndsAt) {
+      const now = new Date();
+      const trialEnd = new Date(user.subscription.trialEndsAt);
+      if (now > trialEnd) {
+        const expiredMessages: Record<string, string> = {
+          uz: `⏰ <b>Bepul sinov muddatingiz tugagan</b>\n\nMock intervyu o'tkazish uchun tarifga o'ting.\n\n💎 STARTER — $10/oy (10 ta mock intervyu)\n🚀 PRO — $20/oy (30 ta mock intervyu)\n👑 ELITE — $30/oy (cheksiz)`,
+          ru: `⏰ <b>Ваш пробный период истёк</b>\n\nДля проведения mock-интервью перейдите на платный тариф.\n\n💎 STARTER — $10/мес (10 mock-интервью)\n🚀 PRO — $20/мес (30 mock-интервью)\n👑 ELITE — $30/мес (безлимитно)`,
+          en: `⏰ <b>Your free trial has expired</b>\n\nUpgrade to continue mock interviews.\n\n💎 STARTER — $10/mo (10 mock interviews)\n🚀 PRO — $20/mo (30 mock interviews)\n👑 ELITE — $30/mo (unlimited)`,
+        };
+
+        const keyboard = new InlineKeyboard().text(
+          lang === 'uz' ? "⬆️ Tariflarni ko'rish" : lang === 'ru' ? '⬆️ Посмотреть тарифы' : '⬆️ View Plans',
+          'show_plans',
+        );
+
+        await ctx.reply(expiredMessages[lang] || expiredMessages['en'], {
+          parse_mode: 'HTML',
+          reply_markup: keyboard,
+        });
+        return false;
+      }
+    }
+
+    // Check paid plan expiry
+    if (plan !== 'free_trial' && user.subscription?.status === 'expired') {
+      const expiredMessages: Record<string, string> = {
+        uz: `⏰ <b>Obuna muddatingiz tugagan</b>\n\nMock intervyu o'tkazish uchun obunani yangilang.`,
+        ru: `⏰ <b>Ваша подписка истекла</b>\n\nОбновите подписку для проведения mock-интервью.`,
+        en: `⏰ <b>Your subscription has expired</b>\n\nRenew your subscription to continue mock interviews.`,
+      };
+
+      const keyboard = new InlineKeyboard().text('⬆️ Upgrade', 'show_plans');
+      await ctx.reply(expiredMessages[lang] || expiredMessages['en'], {
+        parse_mode: 'HTML',
+        reply_markup: keyboard,
+      });
+      return false;
+    }
+
     // FIX #57: Use COMPLETE_PLAN_LIMITS (single source of truth) instead of legacy USAGE_LIMITS
     const planLimits = getPlanLimits(plan);
     const usage = user.usage || {};

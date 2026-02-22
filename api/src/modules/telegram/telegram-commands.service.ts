@@ -1,4 +1,4 @@
-import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { UsersService } from '../users/users.service';
 import { UsersRepository } from '../users/users.repository';
@@ -512,7 +512,6 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
           `• Streak: ${user.dailyTasks?.currentStreak || 0} kun 🔥\n` +
           `• Ovozli javob: ${dailyTasksVoiceAllowed ? '✅ Ruxsat berilgan' : '❌ Faqat yuqori planlarda'}\n` +
           `• Rasm javob: ${dailyTasksImageAllowed ? '✅ Ruxsat berilgan' : '❌ Faqat yuqori planlarda'}\n` +
-          `• Video javob: ${dailyTasksVideoAllowed ? '✅ Ruxsat berilgan' : '❌ Pro+ planlarda'}\n\n` +
           `━━━━━━━━━━━━━━━━━━`,
         ru:
           `👤 <b>Профиль</b>\n\n` +
@@ -533,7 +532,6 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
           `• Серия: ${user.dailyTasks?.currentStreak || 0} дней 🔥\n` +
           `• Голосовой ответ: ${dailyTasksVoiceAllowed ? '✅ Разрешено' : '❌ Только в высших планах'}\n` +
           `• Ответ картинкой: ${dailyTasksImageAllowed ? '✅ Разрешено' : '❌ Только в высших планах'}\n` +
-          `• Видео ответ: ${dailyTasksVideoAllowed ? '✅ Разрешено' : '❌ В планах Pro+'}\n\n` +
           `━━━━━━━━━━━━━━━━━━`,
         en:
           `👤 <b>Profile</b>\n\n` +
@@ -554,7 +552,6 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
           `• Streak: ${user.dailyTasks?.currentStreak || 0} days 🔥\n` +
           `• Voice answer: ${dailyTasksVoiceAllowed ? '✅ Allowed' : '❌ Higher plans only'}\n` +
           `• Image answer: ${dailyTasksImageAllowed ? '✅ Allowed' : '❌ Higher plans only'}\n` +
-          `• Video answer: ${dailyTasksVideoAllowed ? '✅ Allowed' : '❌ Pro+ plans'}\n\n` +
           `━━━━━━━━━━━━━━━━━━`,
       };
 
@@ -1394,24 +1391,57 @@ Let's get started! 🚀`,
           // Silent fail
         }
 
+        // FIX #103: Handle ForbiddenException (trial expired / limit reached)
+        // with user-friendly localized message + upgrade button instead of
+        // raw English error text
+        if (uploadError instanceof ForbiddenException) {
+          this.logger.warn(`CV upload blocked for user ${user?.telegramId}: ${uploadError.message}`);
+
+          const isTrialExpired = uploadError.message?.includes('trial has expired');
+          const isLimitReached = uploadError.message?.includes('limit reached');
+
+          const blockedText: Record<string, string> = isTrialExpired
+            ? {
+                uz: `⏰ <b>Bepul sinov muddatingiz tugagan</b>\n\nCV tahlili xizmatidan foydalanish uchun tarifga o'ting.\n\n💎 STARTER — $10/oy (5 ta CV tahlili)\n🚀 PRO — $20/oy (15 ta CV tahlili)\n👑 ELITE — $30/oy (cheksiz)`,
+                ru: `⏰ <b>Ваш пробный период истёк</b>\n\nДля использования анализа CV перейдите на платный тариф.\n\n💎 STARTER — $10/мес (5 анализов CV)\n🚀 PRO — $20/мес (15 анализов CV)\n👑 ELITE — $30/мес (безлимитно)`,
+                en: `⏰ <b>Your free trial has expired</b>\n\nUpgrade to continue using CV analysis.\n\n💎 STARTER — $10/mo (5 CV analyses)\n🚀 PRO — $20/mo (15 CV analyses)\n👑 ELITE — $30/mo (unlimited)`,
+              }
+            : isLimitReached
+              ? {
+                  uz: `📊 <b>CV tahlili limiti tugadi</b>\n\nBu oylik CV tahlili limitingiz tugagan. Yuqori tarifga o'tib davom eting.\n\n🚀 PRO — $20/oy (15 ta CV tahlili)\n👑 ELITE — $30/oy (cheksiz)`,
+                  ru: `📊 <b>Лимит анализа CV исчерпан</b>\n\nВаш месячный лимит анализа CV исчерпан. Перейдите на более высокий тариф.\n\n🚀 PRO — $20/мес (15 анализов CV)\n👑 ELITE — $30/мес (безлимитно)`,
+                  en: `📊 <b>CV analysis limit reached</b>\n\nYour monthly CV analysis limit is exhausted. Upgrade to continue.\n\n🚀 PRO — $20/mo (15 CV analyses)\n👑 ELITE — $30/mo (unlimited)`,
+                }
+              : {
+                  uz: `⚠️ <b>CV tahlili mavjud emas</b>\n\n${uploadError.message}\n\nTarifga o'tish uchun tugmani bosing.`,
+                  ru: `⚠️ <b>Анализ CV недоступен</b>\n\n${uploadError.message}\n\nНажмите кнопку для перехода на тариф.`,
+                  en: `⚠️ <b>CV analysis unavailable</b>\n\n${uploadError.message}\n\nClick the button to upgrade.`,
+                };
+
+          const upgradeBtnText: Record<string, string> = {
+            uz: "⬆️ Tariflarni ko'rish",
+            ru: '⬆️ Посмотреть тарифы',
+            en: '⬆️ View Plans',
+          };
+
+          const upgradeKeyboard = new InlineKeyboard().text(
+            upgradeBtnText[lang] || upgradeBtnText['en'],
+            'show_plans',
+          );
+
+          await ctx.reply(blockedText[lang] || blockedText['en'], {
+            parse_mode: 'HTML',
+            reply_markup: upgradeKeyboard,
+          });
+          return;
+        }
+
         this.logger.error(`Failed to upload CV: ${uploadError.message}`, uploadError.stack);
 
         const uploadErrorText: Record<string, string> = {
-          uz: `❌ <b>CV yuklashda xatolik yuz berdi</b>
-
-${uploadError.message || "Noma'lum xatolik"}
-
-Iltimos, qayta urinib ko'ring yoki boshqa fayl yuboring.`,
-          ru: `❌ <b>Ошибка при загрузке CV</b>
-
-${uploadError.message || 'Неизвестная ошибка'}
-
-Пожалуйста, попробуйте снова или отправьте другой файл.`,
-          en: `❌ <b>Error uploading CV</b>
-
-${uploadError.message || 'Unknown error'}
-
-Please try again or send a different file.`,
+          uz: `❌ <b>CV yuklashda xatolik yuz berdi</b>\n\nIltimos, qayta urinib ko'ring yoki boshqa fayl yuboring.`,
+          ru: `❌ <b>Ошибка при загрузке CV</b>\n\nПожалуйста, попробуйте снова или отправьте другой файл.`,
+          en: `❌ <b>Error uploading CV</b>\n\nPlease try again or send a different file.`,
         };
 
         await ctx.reply(uploadErrorText[lang] || uploadErrorText['en'], {
