@@ -1,4 +1,4 @@
-import { Injectable, Logger, Inject, forwardRef, ForbiddenException } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef, ForbiddenException, OnApplicationBootstrap } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Cron, CronExpression } from '@nestjs/schedule';
@@ -23,7 +23,7 @@ import { getTashkentMidnight } from '@common/utils/tashkent-time';
 import { PriorityQuestionProviderService } from './priority-question-provider.service';
 
 @Injectable()
-export class DailyTasksService {
+export class DailyTasksService implements OnApplicationBootstrap {
   private readonly logger = new Logger(DailyTasksService.name);
   private readonly openai: OpenAI | null;
 
@@ -49,6 +49,45 @@ export class DailyTasksService {
       this.logger.warn(
         'No OpenAI/OpenRouter API key found. Daily task scoring will use basic scoring only.',
       );
+    }
+  }
+
+  /**
+   * One-time startup migration: initialize missing dailyTasks fields.
+   * BUG-B fix: older user documents may have no dailyTasks field (or null counters).
+   * MongoDB $add with null → null, so streak never increments.
+   * This runs once per app start and is idempotent (only touches missing fields).
+   */
+  async onApplicationBootstrap(): Promise<void> {
+    try {
+      // Case 1: dailyTasks field entirely missing
+      const missingResult = await this.userModel.updateMany(
+        { dailyTasks: { $exists: false } },
+        { $set: { dailyTasks: { currentStreak: 0, longestStreak: 0, totalCompleted: 0 } } },
+      );
+
+      // Case 2: dailyTasks exists but currentStreak is null
+      const nullResult = await this.userModel.updateMany(
+        { 'dailyTasks.currentStreak': null },
+        {
+          $set: {
+            'dailyTasks.currentStreak': 0,
+            'dailyTasks.longestStreak': 0,
+            'dailyTasks.totalCompleted': 0,
+          },
+        },
+      );
+
+      const total = missingResult.modifiedCount + nullResult.modifiedCount;
+      if (total > 0) {
+        this.logger.log(
+          `[Migration] Initialized dailyTasks for ${total} users ` +
+          `(${missingResult.modifiedCount} missing field, ${nullResult.modifiedCount} null counters)`,
+        );
+      }
+    } catch (err: any) {
+      // Non-fatal: log and continue. Next app restart will retry.
+      this.logger.error(`[Migration] Failed to initialize dailyTasks fields: ${err.message}`);
     }
   }
 
