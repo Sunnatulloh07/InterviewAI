@@ -804,12 +804,17 @@ export class DailyTasksService {
         `Background scoring failed for user ${userId}, task ${taskIndex}: ${error.message}`,
       );
 
-      // Update with default score (0-100 scale)
+      // Update with default score (0-100 scale) — localized fallback message
+      const scoringErrorFeedback =
+        language === 'uz'
+          ? 'Javob qabul qilindi, lekin baholash vaqtincha ishlamadi. Mashq qilishda davom eting!'
+          : language === 'ru'
+            ? 'Ответ получен, но оценка временно недоступна. Продолжайте практиковаться!'
+            : 'Answer received but scoring unavailable. Keep practicing!';
       await this.dailyTaskModel.findByIdAndUpdate(taskDocId, {
         $set: {
           [`tasks.${taskIndex}.score`]: 50,
-          [`tasks.${taskIndex}.feedback`]:
-            'Answer received but scoring unavailable. Keep practicing!',
+          [`tasks.${taskIndex}.feedback`]: scoringErrorFeedback,
           [`tasks.${taskIndex}.scoringStatus`]: 'failed',
         },
       });
@@ -1054,14 +1059,16 @@ JSON response: {"score": <0-100>, "feedback": "<brief actionable feedback in ${l
         max_tokens: 150,
       });
 
-      const responseText =
-        response.choices[0]?.message?.content || '{"score": 50, "feedback": "Reviewed."}';
+      const reviewedFallback = language === 'uz' ? 'Ko\'rib chiqildi.' : language === 'ru' ? 'Проверено.' : 'Reviewed.';
+      const keepPracticingFallback = language === 'uz' ? 'Mashq qilishda davom eting!' : language === 'ru' ? 'Продолжайте практиковаться!' : 'Keep practicing!';
+      const defaultJson = `{"score": 50, "feedback": "${reviewedFallback}"}`;
+      const responseText = response.choices[0]?.message?.content || defaultJson;
       const jsonMatch = responseText.match(/\{[^}]+\}/);
-      const result = JSON.parse(jsonMatch ? jsonMatch[0] : '{"score": 50, "feedback": "Reviewed."}');
+      const result = JSON.parse(jsonMatch ? jsonMatch[0] : defaultJson);
 
       return {
         score: Math.min(100, Math.max(0, result.score || 50)),
-        feedback: result.feedback || 'Keep practicing!',
+        feedback: result.feedback || keepPracticingFallback,
       };
     } catch (error: any) {
       this.logger.error(`Advanced scoring with OpenRouter failed: ${error.message}`);
@@ -1162,13 +1169,16 @@ Respond ONLY with valid JSON (all text in ${langName}):
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
       const result = JSON.parse(jsonMatch ? jsonMatch[0] : '{}');
 
-      // Build enhanced feedback with strengths and improvements
-      let feedback = result.feedback || 'Good effort!';
+      // Build enhanced feedback with strengths and improvements (localized labels)
+      const goodEffortLabel = language === 'uz' ? 'Yaxshi harakat!' : language === 'ru' ? 'Хорошая попытка!' : 'Good effort!';
+      const strengthsLabel = language === 'uz' ? 'Kuchli tomonlar' : language === 'ru' ? 'Сильные стороны' : 'Strengths';
+      const improvementsLabel = language === 'uz' ? 'Yaxshilash kerak' : language === 'ru' ? 'Области улучшения' : 'Areas to improve';
+      let feedback = result.feedback || goodEffortLabel;
       if (result.strengths?.length) {
-        feedback += ` Strengths: ${result.strengths.join(', ')}.`;
+        feedback += ` ${strengthsLabel}: ${result.strengths.join(', ')}.`;
       }
       if (result.improvements?.length) {
-        feedback += ` Areas to improve: ${result.improvements.join(', ')}.`;
+        feedback += ` ${improvementsLabel}: ${result.improvements.join(', ')}.`;
       }
 
       return {
@@ -1455,7 +1465,7 @@ Respond ONLY with valid JSON (all text in ${langName}):
     const domain: string = (user.profile as any)?.domain || detectDomain(techStack);
     const userPlan: string = user.subscription?.plan || 'free_trial';
     const userLanguage: string =
-      (user as any).preferences?.language || (user as any).language || 'en';
+      (user as any).preferences?.language || (user as any).language || 'uz';
     const userCache = {
       plan: userPlan,
       seenIds: (user as any)?.seenQuestionIds || [],
