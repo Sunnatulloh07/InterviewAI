@@ -1,7 +1,11 @@
-import { Controller, Get, Post } from '@nestjs/common';
+import { Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { AppService } from './app.service';
 import { Public } from './common/decorators/public.decorator';
+import { Roles } from './common/decorators/roles.decorator';
+import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
+import { RolesGuard } from './common/guards/roles.guard';
+import { UserRole } from './common/enums/user-role.enum';
 import { DailyTasksService } from './modules/tasks/daily-tasks.service';
 import { QuestionPoolManagerService } from './modules/tasks/question-pool-manager.service';
 
@@ -33,12 +37,11 @@ export class AppController {
   /**
    * 🔧 DEBUG ENDPOINT: Manually trigger daily tasks delivery
    * Use this to test cron job without waiting for 09:00
-   * 
-   * Security: Public for testing (remove in production!)
    */
-  @Public()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   @Post('debug/trigger-daily-tasks')
-  @ApiOperation({ summary: 'Manually trigger daily tasks delivery (DEBUG)' })
+  @ApiOperation({ summary: 'Manually trigger daily tasks delivery (ADMIN only)' })
   @ApiResponse({ status: 200, description: 'Task delivery triggered' })
   async triggerDailyTasks() {
     try {
@@ -62,9 +65,10 @@ export class AppController {
    * 🔍 DEBUG ENDPOINT: Check question pool status
    * Shows count of questions for each position/type/domain combination
    */
-  @Public()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   @Get('debug/question-pool-status')
-  @ApiOperation({ summary: 'Check question pool status (DEBUG)' })
+  @ApiOperation({ summary: 'Check question pool status (ADMIN only)' })
   @ApiResponse({ status: 200, description: 'Pool status retrieved' })
   async getQuestionPoolStatus() {
     try {
@@ -98,9 +102,10 @@ export class AppController {
    * 🔧 DEBUG ENDPOINT: Manually trigger pool refill
    * Runs the background question generation process
    */
-  @Public()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   @Post('debug/trigger-pool-refill')
-  @ApiOperation({ summary: 'Manually trigger question pool refill (DEBUG)' })
+  @ApiOperation({ summary: 'Manually trigger question pool refill (ADMIN only)' })
   @ApiResponse({ status: 200, description: 'Pool refill triggered' })
   async triggerPoolRefill() {
     try {

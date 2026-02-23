@@ -436,12 +436,11 @@ export class InterviewsService {
     const durationKey = duration as keyof typeof INTERVIEW_QUESTION_COUNTS;
     const counts = INTERVIEW_QUESTION_COUNTS[durationKey] || INTERVIEW_QUESTION_COUNTS.standard;
 
-    // Map interview difficulty ('mid') to question count key ('middle')
     const difficultyToCountKey: Record<string, keyof typeof counts> = {
       junior: 'junior',
-      mid: 'middle',
       middle: 'middle',
       senior: 'senior',
+      lead: 'lead',
     };
     const countKey = difficultyToCountKey[difficulty] || 'middle';
     return counts[countKey];
@@ -982,9 +981,9 @@ Your response must be valid JSON that can be parsed directly. All questions must
   private getDifficultyName(difficulty: string): string {
     const names: Record<string, string> = {
       junior: 'junior/entry-level',
-      mid: 'mid-level',
       middle: 'mid-level',
       senior: 'senior',
+      lead: 'lead/architect',
     };
     return names[difficulty] || difficulty;
   }

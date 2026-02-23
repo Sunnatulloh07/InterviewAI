@@ -28,10 +28,10 @@ export class TrialNotificationService {
   ) {}
 
   /**
-   * Daily cron job to check and notify users about expiring trials
-   * Runs every day at 10:00 AM (Tashkent timezone UTC+5)
+   * Daily cron job to check and notify users about expiring trials.
+   * Runs at 10:20 Tashkent (staggered to avoid DB collision at 10:00).
    */
-  @Cron('0 10 * * *', {
+  @Cron('20 10 * * *', {
     name: 'trial-expiry-notifications',
     timeZone: 'Asia/Tashkent',
   })
@@ -149,10 +149,16 @@ export class TrialNotificationService {
         reply_markup: keyboard,
       });
 
-      // Update last notification date
+      // Update last notification date + shared daily cap
       await this.userModel.updateOne(
         { _id: user._id },
-        { $set: { lastTrialNotificationDate: now } },
+        {
+          $set: {
+            lastTrialNotificationDate: now,
+            // Shared daily cap: prevents AI engagement cron sending another msg same day
+            'engagement.lastNotificationSentAt': now,
+          },
+        },
       );
 
       this.logger.log(

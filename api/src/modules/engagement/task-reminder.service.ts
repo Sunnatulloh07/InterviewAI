@@ -43,11 +43,10 @@ export class TaskReminderService {
   ) {}
 
   /**
-   * First reminder: 30 minutes after task delivery
-   * Runs every 30 minutes from 09:30 to 21:30 (Tashkent time)
-   * SCALABILITY FIX: Distributed lock + batch processing
+   * First reminder: 10:30 Tashkent — 90 minutes after 09:00 task delivery.
+   * Fires once daily. Tasks delivered at 09:00 are ~1.5h old at this point.
    */
-  @Cron('30 9-21 * * *', {
+  @Cron('30 10 * * *', {
     name: 'first-task-reminder',
     timeZone: 'Asia/Tashkent',
   })
@@ -70,18 +69,12 @@ export class TaskReminderService {
       }
 
       const now = new Date();
-      // CRITICAL FIX: Correct time window calculation
-      // We want tasks created 30-60 minutes ago
-      const thirtyMinutesAgo = new Date(now.getTime() - 30 * 60 * 1000);
-      const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
 
-      // SCALABILITY FIX: Use aggregation to get task count
+      // Use today's date to find all pending tasks from today's delivery (09:00)
+      const today = this.getTashkentMidnight();
       const totalTasks = await this.dailyTaskModel.countDocuments({
         status: 'pending',
-        createdAt: {
-          $gte: oneHourAgo,
-          $lte: thirtyMinutesAgo,
-        },
+        date: today,
         'reminders.firstReminderSentAt': null,
       });
 
@@ -96,10 +89,7 @@ export class TaskReminderService {
       while (true) {
         const query: any = {
           status: 'pending',
-          createdAt: {
-            $gte: oneHourAgo,
-            $lte: thirtyMinutesAgo,
-          },
+          date: today,
           'reminders.firstReminderSentAt': null,
         };
 
@@ -159,13 +149,18 @@ export class TaskReminderService {
           }
 
           try {
-            await this.sendReminderWithTips(user, task, 'first');
+            const result = await this.sendReminderWithTips(user, task, 'first');
 
-            await this.dailyTaskModel.findByIdAndUpdate(task._id, {
-              $set: { 'reminders.firstReminderSentAt': now },
-            });
+            // Mark as sent when: message delivered OR user blocked the bot.
+            // Blocked users must be marked so the cron doesn't retry them on
+            // every subsequent run (avoiding a retry storm against 403 errors).
+            if (result.sent || result.blocked) {
+              await this.dailyTaskModel.findByIdAndUpdate(task._id, {
+                $set: { 'reminders.firstReminderSentAt': now },
+              });
+            }
 
-            sent++;
+            if (result.sent) sent++;
             await this.delay(200);
           } catch (error: any) {
             this.logger.error(
@@ -291,13 +286,15 @@ export class TaskReminderService {
           }
 
           try {
-            await this.sendReminderWithTips(user, task, 'second');
+            const result = await this.sendReminderWithTips(user, task, 'second');
 
-            await this.dailyTaskModel.findByIdAndUpdate(task._id, {
-              $set: { 'reminders.secondReminderSentAt': now },
-            });
+            if (result.sent || result.blocked) {
+              await this.dailyTaskModel.findByIdAndUpdate(task._id, {
+                $set: { 'reminders.secondReminderSentAt': now },
+              });
+            }
 
-            sent++;
+            if (result.sent) sent++;
             await this.delay(200);
           } catch (error: any) {
             this.logger.error(
@@ -325,10 +322,10 @@ export class TaskReminderService {
   }
 
   /**
-   * Third reminder: 18:00 (6:00 PM Tashkent time)
+   * Third reminder: 18:30 (6:30 PM Tashkent time)
    * SCALABILITY FIX: Distributed lock + batch processing
    */
-  @Cron('0 18 * * *', {
+  @Cron('30 18 * * *', {
     name: 'third-task-reminder',
     timeZone: 'Asia/Tashkent',
   })
@@ -423,13 +420,15 @@ export class TaskReminderService {
           }
 
           try {
-            await this.sendReminderWithTips(user, task, 'third');
+            const result = await this.sendReminderWithTips(user, task, 'third');
 
-            await this.dailyTaskModel.findByIdAndUpdate(task._id, {
-              $set: { 'reminders.thirdReminderSentAt': now },
-            });
+            if (result.sent || result.blocked) {
+              await this.dailyTaskModel.findByIdAndUpdate(task._id, {
+                $set: { 'reminders.thirdReminderSentAt': now },
+              });
+            }
 
-            sent++;
+            if (result.sent) sent++;
             await this.delay(200);
           } catch (error: any) {
             this.logger.error(
@@ -459,19 +458,22 @@ export class TaskReminderService {
   /**
    * Send SIMPLE task reminder (NO AI, clean format)
    * Shows only task titles with professional messaging
+   *
+   * Returns true if message was sent OR user is bot-blocked (so caller
+   * can mark the reminder as "done" and avoid a retry storm on blocked users).
    */
   private async sendReminderWithTips(
     user: any,
     task: any,
     reminderType: 'first' | 'second' | 'third',
-  ): Promise<void> {
+  ): Promise<{ sent: boolean; blocked: boolean }> {
     try {
       const language = user.language || 'uz';
       const incompleteTasks = task.tasks.filter((t: any) => !t.completed);
 
       if (incompleteTasks.length === 0) {
         // All tasks completed, don't send reminder
-        return;
+        return { sent: false, blocked: false };
       }
 
       // Generate SIMPLE reminder (no AI, no full descriptions)
@@ -492,6 +494,7 @@ export class TaskReminderService {
           this.logger.debug(
             `Sent ${reminderType} reminder to user ${user._id} (${incompleteTasks.length} tasks remaining)`,
           );
+          return { sent: true, blocked: false };
         } catch (sendError: any) {
           // CRITICAL: Handle Telegram bot block errors
           const errorCode = sendError.error_code;
@@ -513,6 +516,8 @@ export class TaskReminderService {
                 'engagement.botBlockedAt': new Date(),
               },
             });
+            // Return blocked=true so caller marks reminder as sent and stops retry storm
+            return { sent: false, blocked: true };
           } else {
             // Other Telegram errors (rate limit, network, etc.) - track for retry
             await this.retryService.trackFailedNotification(
@@ -535,8 +540,10 @@ export class TaskReminderService {
           }
         }
       }
+      return { sent: false, blocked: false };
     } catch (error: any) {
       this.logger.error(`Failed to send reminder to user ${user._id}: ${error.message}`);
+      return { sent: false, blocked: false };
     }
   }
 

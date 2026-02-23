@@ -10,7 +10,7 @@ export class InterviewQuestionResponseDto {
   @ApiProperty({ example: 'technical' })
   category: string;
 
-  @ApiProperty({ example: 'mid' })
+  @ApiProperty({ example: 'middle' })
   difficulty: string;
 
   @ApiProperty({
@@ -71,7 +71,7 @@ export class InterviewSessionResponseDto {
   @ApiProperty({ example: 'technical' })
   type: string;
 
-  @ApiProperty({ example: 'mid' })
+  @ApiProperty({ example: 'middle' })
   difficulty: string;
 
   @ApiPropertyOptional({ example: 'frontend' })

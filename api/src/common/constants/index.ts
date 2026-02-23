@@ -98,9 +98,9 @@ export type SubscriptionPlan = keyof typeof USAGE_LIMITS;
 // Duration: quick (~10 min), standard (~25 min), deep_dive (~45 min)
 // Difficulty: junior, middle, senior
 export const INTERVIEW_QUESTION_COUNTS = {
-  quick: { junior: 6, middle: 8, senior: 10 },
-  standard: { junior: 13, middle: 17, senior: 20 },
-  deep_dive: { junior: 27, middle: 32, senior: 37 },
+  quick: { junior: 6, middle: 8, senior: 10, lead: 12 },
+  standard: { junior: 13, middle: 17, senior: 20, lead: 25 },
+  deep_dive: { junior: 27, middle: 32, senior: 37, lead: 45 },
 } as const;
 
 export type InterviewDuration = keyof typeof INTERVIEW_QUESTION_COUNTS;

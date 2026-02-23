@@ -29,7 +29,8 @@ export class TrialExpiredUserService {
    *
    * Message rotation: daysExpired % 4 ensures varied content each day
    */
-  @Cron('0 10 * * *', {
+  // 10:25 — staggered after trial-expiry-notifications (10:20) to avoid DB collision.
+  @Cron('25 10 * * *', {
     name: 'trial-expired-user-engagement',
     timeZone: 'Asia/Tashkent',
   })
@@ -129,7 +130,11 @@ export class TrialExpiredUserService {
               });
 
               await this.userModel.findByIdAndUpdate(user._id, {
-                $set: { trialExpiredNotifiedAt: now },
+                $set: {
+                  trialExpiredNotifiedAt: now,
+                  // Shared daily cap field: prevents other crons sending another msg today
+                  'engagement.lastNotificationSentAt': now,
+                },
               });
 
               sent++;
@@ -206,7 +211,7 @@ export class TrialExpiredUserService {
 • 2 ta kunlik topshiriq
 • Shaxsiy karyera rejasi
 
-Rejalarni ko'rish: /plans`,
+Rejalarni ko'rish: /upgrade`,
 
       ru: `⏰ Ваш 7-дневный пробный период закончился!
 
@@ -228,7 +233,7 @@ Rejalarni ko'rish: /plans`,
 • 2 ежедневных задания
 • Персональный план карьеры
 
-Смотреть планы: /plans`,
+Смотреть планы: /upgrade`,
 
       en: `⏰ Your 7-day free trial has expired!
 
@@ -250,7 +255,7 @@ Rejalarni ko'rish: /plans`,
 • 2 daily tasks
 • Personal career roadmap
 
-View plans: /plans`,
+View plans: /upgrade`,
     };
 
     return messages[lang] || messages.uz;
@@ -270,7 +275,7 @@ Intervyu tayyorgarligini to'xtatmang!
 
 💼 Faqat $10/oy dan boshlanadi
 
-Rejalarni ko'rish: /plans`,
+Rejalarni ko'rish: /upgrade`,
 
       ru: `📉 Пробный период закончился неделю назад
 
@@ -284,7 +289,7 @@ Rejalarni ko'rish: /plans`,
 
 💼 Всего от $10/мес
 
-Смотреть планы: /plans`,
+Смотреть планы: /upgrade`,
 
       en: `📉 Your trial expired a week ago
 
@@ -298,7 +303,7 @@ Don't stop your preparation!
 
 💼 Starting from just $10/mo
 
-View plans: /plans`,
+View plans: /upgrade`,
     };
 
     return messages[lang] || messages.uz;
@@ -317,7 +322,7 @@ View plans: /plans`,
 
 🚀 Faqat $20/oy - kuniga 700 so'mdan kam!
 
-Rejalarni ko'rish: /plans`,
+Rejalarni ko'rish: /upgrade`,
 
       ru: `🎯 Продолжайте подготовку к собеседованию!
 
@@ -330,7 +335,7 @@ Rejalarni ko'rish: /plans`,
 
 🚀 Всего $20/мес - меньше 700 сум в день!
 
-Смотреть планы: /plans`,
+Смотреть планы: /upgrade`,
 
       en: `🎯 Continue your interview preparation!
 
@@ -343,7 +348,7 @@ Rejalarni ko'rish: /plans`,
 
 🚀 Just $20/mo - less than $0.67/day!
 
-View plans: /plans`,
+View plans: /upgrade`,
     };
 
     return messages[lang] || messages.uz;
@@ -363,7 +368,7 @@ View plans: /plans`,
 
 👑 $30/oy - intervyuga to'liq tayyorgarlik
 
-Rejalarni ko'rish: /plans`,
+Rejalarni ko'rish: /upgrade`,
 
       ru: `👋 Мы все ещё здесь!
 
@@ -377,7 +382,7 @@ Rejalarni ko'rish: /plans`,
 
 👑 $30/мес - полная подготовка к интервью
 
-Смотреть планы: /plans`,
+Смотреть планы: /upgrade`,
 
       en: `👋 We're still here!
 
@@ -391,7 +396,7 @@ Rejalarni ko'rish: /plans`,
 
 👑 $30/mo - complete interview preparation
 
-View plans: /plans`,
+View plans: /upgrade`,
     };
 
     return messages[lang] || messages.uz;

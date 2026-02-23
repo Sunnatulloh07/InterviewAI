@@ -10,6 +10,14 @@ export class UsersRepository {
 
   constructor(@InjectModel(User.name) private readonly userModel: Model<UserDocument>) {}
 
+  /**
+   * Expose the raw Mongoose model for advanced queries (aggregation, skip/limit pagination).
+   * Used by AdminController for DB-level pagination instead of in-memory slicing.
+   */
+  get model(): Model<UserDocument> {
+    return this.userModel;
+  }
+
   async create(createUserDto: CreateUserDto): Promise<UserDocument> {
     try {
       const user = new this.userModel(createUserDto);

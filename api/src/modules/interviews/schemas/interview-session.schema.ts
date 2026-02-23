@@ -21,7 +21,7 @@ export class InterviewSession {
 
   @Prop({
     type: String,
-    enum: ['junior', 'mid', 'senior'],
+    enum: ['junior', 'middle', 'senior', 'lead'],
     required: true,
   })
   difficulty: string;

@@ -96,10 +96,15 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
   }
 
   /**
-   * Hourly notification job - runs between 09:00 and 21:00 (Tashkent time)
-   * Spreads the load across the day instead of a single burst at 09:00
+   * AI engagement notifications — fires at 10:00 and 18:00 Tashkent.
+   *
+   * Two windows per day is enough for free/trial users.
+   * Premium users receive task reminders at 10:30 / 13:30 / 18:30 via TaskReminderService.
+   * The engagement.service dedup guard (lastNotificationSentAt < today) ensures each
+   * user receives at most ONE AI engagement message per calendar day regardless of how
+   * many times this cron fires.
    */
-  @Cron('0 9-21 * * *', { name: 'hourly-engagement-notifications', timeZone: 'Asia/Tashkent' })
+  @Cron('0 10,18 * * *', { name: 'hourly-engagement-notifications', timeZone: 'Asia/Tashkent' })
   async handleDailyNotifications(): Promise<void> {
     if (!this.isEnabled) {
       this.logger.debug('Scheduler disabled, skipping daily notifications');
@@ -170,14 +175,14 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
    * SCALABILITY: Processes max 1000 users per run = 4000/hour
    */
   /**
-   * Pending surveys job - runs once daily at 10:00 (Tashkent time)
+   * Pending surveys job - runs daily at 10:05 Tashkent (staggered 5 min after engagement cron).
    * Handles two categories:
    * 1. NEW USERS: Scheduled surveys (scheduledSurveyAt set by pre-save hook, 3-4h after registration)
-   * 2. EXISTING USERS: Backfill users who haven't completed survey
+   * 2. EXISTING USERS: Backfill users who haven't completed survey (7-day re-send guard)
    *
    * SCALABILITY: Processes max 1000 users per run
    */
-  @Cron('0 10 * * *', { name: 'process-pending-surveys', timeZone: 'Asia/Tashkent' })
+  @Cron('5 10 * * *', { name: 'process-pending-surveys', timeZone: 'Asia/Tashkent' })
   async handlePendingSurveys(): Promise<void> {
     if (!this.isEnabled) {
       return;
@@ -219,46 +224,39 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
       let existingUsers: any[] = [];
 
       if (remainingSlots > 0) {
+        // Users with unknown/unset job-seeking status: only those who:
+        //   - registered at least 3h ago (bot onboarding settled)
+        //   - have NEVER been surveyed OR last survey notification was 7+ days ago (weekly retry)
+        //   - survey still not completed
+        const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
         existingUsers = await this.userModel
           .find({
             createdAt: { $lte: new Date(now.getTime() - 3 * 60 * 60 * 1000) },
-            // Safety: Don't send if already notified today
-            $and: [
-              {
-                $or: [
-                  { 'engagement.lastNotificationSentAt': null },
-                  { 'engagement.lastNotificationSentAt': { $lt: startOfToday } },
-                ],
-              },
-              {
-                $or: [
-                  {
-                    'engagement.scheduledSurveyAt': { $exists: false },
-                    'engagement.surveyCompletedAt': null,
-                    'engagement.jobSeekingStatus': { $exists: false },
-                  },
-                  {
-                    'engagement.jobSeekingStatus': null,
-                    'engagement.surveyCompletedAt': null,
-                  },
-                  {
-                    'engagement.jobSeekingStatus': 'NOT_SET',
-                    $or: [
-                      { 'engagement.lastNotificationSentAt': { $exists: false } },
-                      {
-                        'engagement.lastNotificationSentAt': {
-                          $lte: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000),
-                        },
-                      },
-                    ],
-                  },
-                ],
-              },
-            ],
+            'engagement.surveyCompletedAt': null,
             'engagement.isBotBlocked': { $ne: true },
             'engagement.notificationsPaused': { $ne: true },
             telegramId: { $exists: true, $ne: null },
             deletedAt: null,
+            // Use $and to avoid duplicate $or key (TS1117)
+            $and: [
+              // Status is genuinely unknown (not_set / null / missing field)
+              {
+                $or: [
+                  { 'engagement.jobSeekingStatus': { $exists: false } },
+                  { 'engagement.jobSeekingStatus': null },
+                  { 'engagement.jobSeekingStatus': 'not_set' }, // canonical lowercase enum value
+                ],
+              },
+              // 7-day re-send guard: never notified OR last notification was 7+ days ago
+              {
+                $or: [
+                  { 'engagement.lastNotificationSentAt': null },
+                  { 'engagement.lastNotificationSentAt': { $exists: false } },
+                  { 'engagement.lastNotificationSentAt': { $lte: sevenDaysAgo } },
+                ],
+              },
+            ],
           })
           .select('_id telegramId language engagement')
           .limit(remainingSlots)
@@ -313,7 +311,9 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
    * Job-seeker inactivity check - runs twice daily at 10:00 and 18:00 (Tashkent time)
    * Sends motivational nudges to active job seekers who haven't used the bot in 24h
    */
-  @Cron('0 10,18 * * *', { name: 'jobseeker-inactivity-check', timeZone: 'Asia/Tashkent' })
+  // Staggered 10 min after surveys (10:10) to avoid DB collision at 10:00.
+  // 18:10 second run catches users who became inactive since morning.
+  @Cron('10 10,18 * * *', { name: 'jobseeker-inactivity-check', timeZone: 'Asia/Tashkent' })
   async handleJobseekerInactivity(): Promise<void> {
     if (!this.isEnabled) {
       return;
@@ -376,7 +376,9 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
    * - Still have default 'junior' position
    * - Haven't manually confirmed their position
    */
-  @Cron('*/15 9-21 * * *', { name: 'position-prompts', timeZone: 'Asia/Tashkent' })
+  // Position prompts: once daily at 10:15 (staggered after surveys + inactivity).
+  // One-shot per user (positionPromptSentAt guard), no need to run every 15 min.
+  @Cron('15 10 * * *', { name: 'position-prompts', timeZone: 'Asia/Tashkent' })
   async handlePositionPrompts(): Promise<void> {
     if (!this.isEnabled) {
       return;
@@ -449,11 +451,13 @@ export class EngagementSchedulerService implements OnModuleInit, OnModuleDestroy
           if (result.success) {
             sent++;
 
-            // CRITICAL: Mark as sent and clear scheduled time to prevent re-sending
+            // CRITICAL: Mark as sent and clear scheduled time to prevent re-sending.
+            // Also update shared daily cap so AI engagement cron skips this user today.
             await this.userModel.findByIdAndUpdate(user._id, {
               $set: {
                 'engagement.scheduledPositionPromptAt': null,
                 'engagement.positionPromptSentAt': new Date(),
+                'engagement.lastNotificationSentAt': new Date(),
               },
             });
           } else {

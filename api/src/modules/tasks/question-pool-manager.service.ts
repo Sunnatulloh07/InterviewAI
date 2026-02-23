@@ -127,57 +127,53 @@ export class QuestionPoolManagerService {
       let totalGenerated = 0;
       let totalSkipped = 0;
 
-      // 🌍 LANGUAGES: Generate for all 3 languages
-      const LANGUAGES = ['uz', 'ru', 'en'];
-
-      // Check each combination
+      // Check each combination (language is baked into question fields, no separate loop needed)
       for (const combo of this.COMBINATIONS) {
         // Get dynamic pool size based on priority
         const poolConfig = this.POOL_SIZES[combo.priority];
         
         for (const domain of combo.domains) {
-          for (const language of LANGUAGES) {
-            try {
-              const count = await this.questionModel.countDocuments({
-                position: combo.position,
-                type: combo.type,
-                domain: domain,
-                language: language, // 🌍 Check by language
-              });
+          try {
+            const count = await this.questionModel.countDocuments({
+              position: combo.position,
+              type: combo.type,
+              domain: domain,
+            });
 
-              this.logger.debug(
-                `Pool status: ${combo.position}/${combo.type}/${domain}/${language} (${combo.priority}) = ${count}/${poolConfig.target} (min: ${poolConfig.min})`,
+            this.logger.debug(
+              `Pool status: ${combo.position}/${combo.type}/${domain} (${combo.priority}) = ${count}/${poolConfig.target} (min: ${poolConfig.min})`,
+            );
+
+            // Refill if below minimum
+            if (count < poolConfig.min) {
+              const needed = poolConfig.target - count;
+              const toGenerate = Math.min(needed, this.BATCH_SIZE);
+
+              this.logger.log(
+                `🔥 Pool low! Generating ${toGenerate} questions for ${combo.position}/${combo.type}/${domain} (${combo.priority} priority)`,
               );
 
-              // Refill if below minimum
-              if (count < poolConfig.min) {
-                const needed = poolConfig.target - count;
-                const toGenerate = Math.min(needed, this.BATCH_SIZE);
-
-                this.logger.log(
-                  `🔥 Pool low! Generating ${toGenerate} questions for ${combo.position}/${combo.type}/${domain}/${language} (${combo.priority} priority)`,
-                );
-
-                const generated = await this.generateQuestionsForCombination(
-                  combo.position,
-                  combo.type,
-                  domain,
-                  language, // 🌍 Pass language
-                  toGenerate,
-                );
-
-                totalGenerated += generated;
-              } else {
-                totalSkipped++;
-              }
-
-              // Rate limiting: 500ms between batches
-              await this.delay(500);
-            } catch (error: any) {
-              this.logger.error(
-                `Failed to refill ${combo.position}/${combo.type}/${domain}/${language}: ${error.message}`,
+              // Generate in English as base; question_uz and question_ru stubs are seeded
+              // with the same text. A separate translation pipeline can refine them.
+              const generated = await this.generateQuestionsForCombination(
+                combo.position,
+                combo.type,
+                domain,
+                'en',
+                toGenerate,
               );
+
+              totalGenerated += generated;
+            } else {
+              totalSkipped++;
             }
+
+            // Rate limiting: 500ms between batches
+            await this.delay(500);
+          } catch (error: any) {
+            this.logger.error(
+              `Failed to refill ${combo.position}/${combo.type}/${domain}: ${error.message}`,
+            );
           }
         }
       }
@@ -218,12 +214,25 @@ export class QuestionPoolManagerService {
         const question = await this.generateSingleQuestion(position, type, domain, language);
 
         if (question) {
+          // Map the generated single-language string to the correct schema field.
+          // The other language fields are seeded with the same text as a stub;
+          // a dedicated multilingual generation pipeline can overwrite them later.
+          const questionFields: Record<string, string> = {
+            question_uz: question,
+            question_ru: question,
+            question_en: question,
+          };
+          // Overwrite only the generated language field to mark the canonical one
+          const langField = `question_${language}` as keyof typeof questionFields;
+          if (langField in questionFields) {
+            questionFields[langField] = question;
+          }
+
           await this.questionModel.create({
-            question: question,
+            ...questionFields,
             position: position,
             type: type,
             domain: domain,
-            language: language, // 🌍 Save language
             techStacks: [domain], // Simplified
             timesUsed: 0,
             metadata: {

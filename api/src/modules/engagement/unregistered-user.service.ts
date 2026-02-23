@@ -86,7 +86,9 @@ export class UnregisteredUserService {
     }
   }
 
-  @Cron('0 */6 * * *', {
+  // Runs once daily at 10:45 Tashkent (staggered after all registered-user crons).
+  // 3-day interval enforced per-user via lastEngagementSentAt check below.
+  @Cron('45 10 * * *', {
     name: 'engage-non-registered-users',
     timeZone: 'Asia/Tashkent',
   })
@@ -141,10 +143,11 @@ export class UnregisteredUserService {
             }
 
             const lastSent = user.lastEngagementSentAt || user.createdAt;
-            const hoursSinceLastMessage =
-              (now.getTime() - new Date(lastSent).getTime()) / (1000 * 60 * 60);
+            const daysSinceLastMessage =
+              (now.getTime() - new Date(lastSent).getTime()) / (1000 * 60 * 60 * 24);
 
-            if (hoursSinceLastMessage < 6) {
+            // 3-day minimum interval between messages for unregistered users
+            if (daysSinceLastMessage < 3) {
               skipped++;
               continue;
             }

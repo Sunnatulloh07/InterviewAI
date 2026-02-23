@@ -31,9 +31,9 @@ export class InactivityTrackerService {
   ) {}
 
   /**
-   * Daily inactivity reminders - runs at 10:00 AM Tashkent time
+   * Daily inactivity reminders — 10:35 Tashkent (staggered after all other 10:xx crons).
    */
-  @Cron('0 10 * * *', {
+  @Cron('35 10 * * *', {
     name: 'inactivity-reminders',
     timeZone: 'Asia/Tashkent',
   })
@@ -422,6 +422,8 @@ export class InactivityTrackerService {
           'engagement.inactiveReminderLevel': level,
           'engagement.inactiveDaysCount': daysInactive,
           'engagement.lastInactivityReminderSentAt': new Date(),
+          // Shared daily cap: prevents AI engagement cron sending another msg same day
+          'engagement.lastNotificationSentAt': new Date(),
         },
       });
     } catch (error: any) {

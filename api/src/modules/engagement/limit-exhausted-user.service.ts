@@ -5,6 +5,7 @@ import { Cron } from '@nestjs/schedule';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { TelegramService } from '../telegram/telegram.service';
 import { FailedNotificationRetryService } from './failed-notification-retry.service';
+import { getTashkentMidnight } from '@common/utils/tashkent-time';
 
 @Injectable()
 export class LimitExhaustedUserService {
@@ -27,6 +28,8 @@ export class LimitExhaustedUserService {
     try {
       const now = new Date();
 
+      const startOfToday = getTashkentMidnight(now);
+
       const usersWithExhaustedLimits = await this.userModel
         .find({
           'subscription.plan': 'free_trial',
@@ -34,13 +37,26 @@ export class LimitExhaustedUserService {
           isBlocked: false,
           'engagement.isBotBlocked': { $ne: true },
           'engagement.notificationsPaused': { $ne: true },
-          $or: [
-            // ALIGNED with COMPLETE_PLAN_LIMITS: free_trial = 1 mock interview
-            { 'usage.mockInterviewsThisMonth': { $gte: 1 } },
-            { 'voiceQuota.mockVoice.remaining': 0 },
+          // Shared daily cap: skip if ANY notification was sent today (trial-expired,
+          // inactivity, etc. may have already sent at 10:xx — don't double-notify at 12:00)
+          $and: [
+            {
+              $or: [
+                { 'engagement.lastNotificationSentAt': { $exists: false } },
+                { 'engagement.lastNotificationSentAt': null },
+                { 'engagement.lastNotificationSentAt': { $lt: startOfToday } },
+              ],
+            },
+            {
+              $or: [
+                // ALIGNED with COMPLETE_PLAN_LIMITS: free_trial = 1 mock interview
+                { 'usage.mockInterviewsThisMonth': { $gte: 1 } },
+                { 'voiceQuota.mockVoice.remaining': 0 },
+              ],
+            },
           ],
         })
-        .select('_id telegramId language usage voiceQuota limitExhaustedNotifiedAt subscription')
+        .select('_id telegramId language usage voiceQuota limitExhaustedNotifiedAt subscription engagement')
         .lean();
 
       this.logger.log(`Found ${usersWithExhaustedLimits.length} users with exhausted limits`);
@@ -89,7 +105,11 @@ export class LimitExhaustedUserService {
               });
 
               await this.userModel.findByIdAndUpdate(user._id, {
-                $set: { limitExhaustedNotifiedAt: now },
+                $set: {
+                  limitExhaustedNotifiedAt: now,
+                  // Shared daily cap: prevents AI engagement cron sending another msg today
+                  'engagement.lastNotificationSentAt': now,
+                },
               });
 
               sent++;
@@ -164,7 +184,7 @@ export class LimitExhaustedUserService {
 • 30 daqiqa ovozli javoblar
 • Haftalik AI tavsiyalar
 
-Rejalarni ko'rish: /plans`,
+Rejalarni ko'rish: /upgrade`,
 
       ru: `🎯 Вы исчерпали лимит бесплатных mock интервью!
 
@@ -181,7 +201,7 @@ Rejalarni ko'rish: /plans`,
 • 30 минут голосовых ответов
 • Еженедельные AI рекомендации
 
-Смотреть планы: /plans`,
+Смотреть планы: /upgrade`,
 
       en: `🎯 You've used your free mock interview limit!
 
@@ -198,7 +218,7 @@ Rejalarni ko'rish: /plans`,
 • 30 minutes voice responses
 • Weekly AI recommendations
 
-View plans: /plans`,
+View plans: /upgrade`,
     };
 
     return messages[lang] || messages.uz;
@@ -220,7 +240,7 @@ View plans: /plans`,
 • AI ovozli tahlil va feedback
 • 30 ta mock interview
 
-Rejalarni ko'rish: /plans`,
+Rejalarni ko'rish: /upgrade`,
 
       ru: `🎙️ Бесплатный лимит 2 минуты голосовых ответов исчерпан!
 
@@ -236,7 +256,7 @@ Rejalarni ko'rish: /plans`,
 • AI голосовой анализ и feedback
 • 30 mock интервью
 
-Смотреть планы: /plans`,
+Смотреть планы: /upgrade`,
 
       en: `🎙️ Your free 2-minute voice answer limit is exhausted!
 
@@ -252,7 +272,7 @@ Rejalarni ko'rish: /plans`,
 • AI voice analysis and feedback
 • 30 mock interviews
 
-View plans: /plans`,
+View plans: /upgrade`,
     };
 
     return messages[lang] || messages.uz;
@@ -281,7 +301,7 @@ View plans: /plans`,
 • 2 ta kunlik topshiriq
 • Shaxsiy karyera rejasi
 
-Rejalarni ko'rish: /plans`,
+Rejalarni ko'rish: /upgrade`,
 
       ru: `🚀 Вы использовали все бесплатные возможности!
 
@@ -304,7 +324,7 @@ Rejalarni ko'rish: /plans`,
 • 2 ежедневных задания
 • Персональный план карьеры
 
-Смотреть планы: /plans`,
+Смотреть планы: /upgrade`,
 
       en: `🚀 You've used all free features!
 
@@ -327,7 +347,7 @@ Rejalarni ko'rish: /plans`,
 • 2 daily tasks
 • Personal career roadmap
 
-View plans: /plans`,
+View plans: /upgrade`,
     };
 
     return messages[lang] || messages.uz;

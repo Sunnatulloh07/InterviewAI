@@ -1048,7 +1048,10 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
           } as any);
         }
 
-        // User is logged in - show main menu
+        // User is logged in - remove from unregistered tracking (in case they were there)
+        await this.unregisteredUserService.markAsRegistered(telegramId);
+
+        // Show main menu
         ctx.session.userId = (user as any).id?.toString() || (user as any)._id?.toString();
 
         const welcomeBackText: Record<string, string> = {
@@ -1145,6 +1148,9 @@ Let's get started! 🚀`,
       } catch (error: any) {
         this.logger.warn(`Failed to track analytics: ${error.message}`);
       }
+
+      // Remove from unregistered tracking now that registration is complete
+      await this.unregisteredUserService.markAsRegistered(telegramId);
 
       this.logger.log(
         `New user ${telegramId} registered with phone ${phoneNumber.substring(0, 5)}***`,
@@ -3744,9 +3750,9 @@ ${codeBlock}
   private mapPositionToInterviewDifficulty(position: string): string {
     const positionToDifficulty: Record<string, string> = {
       junior: 'junior',
-      middle: 'mid',
+      middle: 'middle',
       senior: 'senior',
-      lead: 'senior',
+      lead: 'lead',
     };
     return positionToDifficulty[position] || 'junior';
   }

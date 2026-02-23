@@ -12,10 +12,10 @@ export class StartInterviewDto {
 
   @ApiProperty({
     description: 'Difficulty level',
-    enum: ['junior', 'mid', 'senior'],
-    example: 'mid',
+    enum: ['junior', 'middle', 'senior', 'lead'],
+    example: 'middle',
   })
-  @IsEnum(['junior', 'mid', 'senior'])
+  @IsEnum(['junior', 'middle', 'senior', 'lead'])
   difficulty: string;
 
   @ApiPropertyOptional({

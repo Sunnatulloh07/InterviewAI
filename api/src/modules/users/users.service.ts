@@ -285,7 +285,7 @@ export class UsersService {
   ): Promise<{ allowed: boolean; message?: string; remaining?: number }> {
     try {
       const user = await this.findById(userId);
-      const plan = user.subscription?.plan || 'free';
+      const plan = user.subscription?.plan || 'free_trial';
       const limits = USAGE_LIMITS[plan];
 
       if (!limits) {
@@ -371,7 +371,7 @@ export class UsersService {
   }> {
     try {
       const user = await this.findById(userId);
-      const plan = user.subscription?.plan || 'free';
+      const plan = user.subscription?.plan || 'free_trial';
       const limits = USAGE_LIMITS[plan];
 
       return {

@@ -25,7 +25,6 @@ export class OtpService {
       otp += digits[randomIndex];
     }
 
-    this.logger.debug(`Generated OTP: ${otp}`);
     return otp;
   }
 
@@ -116,12 +115,10 @@ export class OtpService {
     telegramChatId: number,
   ): Promise<void> {
     try {
-      this.logger.log(`Sending OTP to phone: ${phoneNumber}, chat: ${telegramChatId}`);
+      this.logger.log(`Sending OTP to Telegram chat: ${telegramChatId}`);
 
       // TODO: Implement actual Telegram message sending
       // This will be handled by TelegramService
-      // For now, just log
-      this.logger.debug(`OTP: ${otp} for phone: ${phoneNumber}`);
 
       // In production, the Telegram bot will send:
       // "Your verification code is: {otp}\nThis code will expire in {expiry} minutes."

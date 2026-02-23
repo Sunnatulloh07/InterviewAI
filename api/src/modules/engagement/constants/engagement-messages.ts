@@ -104,11 +104,11 @@ export function getTrialReminderMessage(
  */
 export function getTrialEndingSoonMessage(language: string = 'uz'): string {
   const messages = {
-    uz: `⚠️ DIQQAT: Bepul sinov ERTAGA tugaydi!\n\n🎯 Premium bilan nimalar olasiz:\n\n💼 STARTER - $10/oy:\n• Kunlik savol va topshiriqlar\n• 10 ta mock interview\n• 10 daqiqa ovozli javoblar\n• 5 ta CV tahlili\n\n🚀 PRO - $20/oy:\n• Kunlik savol + AI progress tracking\n• 30 ta mock interview\n• 30 daqiqa ovozli javoblar\n• Haftalik AI tavsiyalar\n\nRejalarni ko'rish: /plans`,
+    uz: `⚠️ DIQQAT: Bepul sinov ERTAGA tugaydi!\n\n🎯 Premium bilan nimalar olasiz:\n\n💼 STARTER - $10/oy:\n• Kunlik savol va topshiriqlar\n• 10 ta mock interview\n• 10 daqiqa ovozli javoblar\n• 5 ta CV tahlili\n\n🚀 PRO - $20/oy:\n• Kunlik savol + AI progress tracking\n• 30 ta mock interview\n• 30 daqiqa ovozli javoblar\n• Haftalik AI tavsiyalar\n\nRejalarni ko'rish: /upgrade`,
 
-    ru: `⚠️ ВНИМАНИЕ: Пробный период заканчивается ЗАВТРА!\n\n🎯 Что вы получите с Premium:\n\n💼 STARTER - $10/мес:\n• Ежедневные вопросы и задания\n• 10 mock интервью\n• 10 минут голосовых ответов\n• 5 анализов CV\n\n🚀 PRO - $20/мес:\n• Ежедневные задания + AI прогресс\n• 30 mock интервью\n• 30 минут голосовых ответов\n• Еженедельные AI рекомендации\n\nСмотреть планы: /plans`,
+    ru: `⚠️ ВНИМАНИЕ: Пробный период заканчивается ЗАВТРА!\n\n🎯 Что вы получите с Premium:\n\n💼 STARTER - $10/мес:\n• Ежедневные вопросы и задания\n• 10 mock интервью\n• 10 минут голосовых ответов\n• 5 анализов CV\n\n🚀 PRO - $20/мес:\n• Ежедневные задания + AI прогресс\n• 30 mock интервью\n• 30 минут голосовых ответов\n• Еженедельные AI рекомендации\n\nСмотреть планы: /upgrade`,
 
-    en: `⚠️ ATTENTION: Free trial ends TOMORROW!\n\n🎯 What you get with Premium:\n\n💼 STARTER - $10/mo:\n• Daily questions and tasks\n• 10 mock interviews\n• 10 minutes voice responses\n• 5 CV analyses\n\n🚀 PRO - $20/mo:\n• Daily tasks + AI progress tracking\n• 30 mock interviews\n• 30 minutes voice responses\n• Weekly AI recommendations\n\nView plans: /plans`,
+    en: `⚠️ ATTENTION: Free trial ends TOMORROW!\n\n🎯 What you get with Premium:\n\n💼 STARTER - $10/mo:\n• Daily questions and tasks\n• 10 mock interviews\n• 10 minutes voice responses\n• 5 CV analyses\n\n🚀 PRO - $20/mo:\n• Daily tasks + AI progress tracking\n• 30 mock interviews\n• 30 minutes voice responses\n• Weekly AI recommendations\n\nView plans: /upgrade`,
   };
 
   return messages[language as keyof typeof messages] || messages.uz;

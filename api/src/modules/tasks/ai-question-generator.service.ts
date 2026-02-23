@@ -53,13 +53,12 @@ export class AIQuestionGeneratorService {
         return this.getFallbackQuestion(type, position);
       }
 
-      // Step 2: Check cache (find question NOT served to this user)
+      // Step 2: Check cache (find least-used question that hasn't expired)
       const cachedQuestion = await this.generatedModel
         .findOne({
           patternId: pattern._id,
           position,
           type,
-          servedToUsers: { $ne: userId }, // Not served to this user yet
           expiresAt: { $gt: new Date() }, // Not expired
         })
         .sort({ timesUsed: 1 }) // Prefer less-used questions
@@ -73,10 +72,9 @@ export class AIQuestionGeneratorService {
         // Update usage stats
         await this.generatedModel.findByIdAndUpdate(cachedQuestion._id, {
           $inc: { timesUsed: 1 },
-          $push: { servedToUsers: userId },
         });
 
-        return (cachedQuestion as any).question || cachedQuestion.question_en || cachedQuestion.question_uz || cachedQuestion.question_ru;
+        return cachedQuestion.question_en || cachedQuestion.question_uz || cachedQuestion.question_ru;
       }
 
       // Step 3: Cache MISS - Generate with AI
@@ -93,12 +91,14 @@ export class AIQuestionGeneratorService {
         patternId: pattern._id,
         position,
         type,
-        question: generatedQuestion.question,
+        // Store in all language fields; single-language AI result used for all
+        question_en: generatedQuestion.question,
+        question_uz: generatedQuestion.question,
+        question_ru: generatedQuestion.question,
         context: generatedQuestion.context,
         hints: generatedQuestion.hints,
         metadata: generatedQuestion.metadata,
         timesUsed: 1,
-        servedToUsers: [userId],
         expiresAt,
       });
 

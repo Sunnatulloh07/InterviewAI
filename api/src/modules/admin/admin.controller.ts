@@ -1,13 +1,28 @@
-import { Controller, Get, Post, Put, Body, Query, Param, UseGuards, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Query, Param, UseGuards, Delete, NotFoundException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { UsersRepository } from '../users/users.repository';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { VoiceQuotaService } from '../voice/voice-quota.service';
 import { JwtAuthGuard } from '@common/guards/jwt-auth.guard';
+import { RolesGuard } from '@common/guards/roles.guard';
+import { Roles } from '@common/decorators/roles.decorator';
+import { UserRole } from '@common/enums/user-role.enum';
 
+/**
+ * Admin Controller
+ *
+ * FIX BUG-01: Added RolesGuard + @Roles(UserRole.ADMIN) on every endpoint.
+ * Previously only JwtAuthGuard was present — any authenticated user could
+ * call all admin endpoints (view all users, change subscriptions, add voice
+ * quota, etc.).
+ *
+ * Now requires: valid JWT (JwtAuthGuard) AND role === 'admin' (RolesGuard).
+ * Non-admin users receive 403 Forbidden automatically via RolesGuard.
+ */
 @ApiTags('Admin')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.ADMIN)
 @Controller('admin')
 export class AdminController {
   constructor(
@@ -49,9 +64,14 @@ export class AdminController {
     @Query('search') search?: string,
     @Query('plan') plan?: string,
   ) {
-    const skip = (page - 1) * limit;
+    // FIX BUG-14: Replaced O(N) findAll()->slice() with DB-level skip/limit + countDocuments.
+    // Previously loaded entire user collection into RAM on every paginated request.
+    const safeLimit = Math.min(Number(limit) || 20, 100);
+    const safePage = Math.max(Number(page) || 1, 1);
+    const skip = (safePage - 1) * safeLimit;
 
-    let filters: any = {};
+    const filters: any = { deletedAt: null };
+
     if (search) {
       filters.$or = [
         { firstName: { $regex: search, $options: 'i' } },
@@ -65,16 +85,24 @@ export class AdminController {
       filters['subscription.plan'] = plan;
     }
 
-    const allUsers = await this.usersRepository.findAll(filters);
-    const users = allUsers.slice(skip, skip + limit);
-    const total = allUsers.length;
+    // Parallel: fetch page + total count in one round-trip
+    const [users, total] = await Promise.all([
+      this.usersRepository.model
+        .find(filters)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(safeLimit)
+        .lean(),
+      this.usersRepository.model.countDocuments(filters),
+    ]);
 
     return {
       users,
       pagination: {
-        page,
-        limit,
+        page: safePage,
+        limit: safeLimit,
         total,
+        pages: Math.ceil(total / safeLimit),
       },
     };
   }
@@ -82,11 +110,12 @@ export class AdminController {
   @Get('users/:userId')
   @ApiOperation({ summary: 'Get user details' })
   @ApiResponse({ status: 200, description: 'User details retrieved' })
+  @ApiResponse({ status: 404, description: 'User not found' })
   async getUserDetails(@Param('userId') userId: string) {
     const user = await this.usersRepository.findById(userId);
 
     if (!user) {
-      throw new Error('User not found');
+      throw new NotFoundException('User not found');
     }
 
     const [quota, analytics] = await Promise.all([
@@ -114,13 +143,14 @@ export class AdminController {
   @Post('users/:userId/subscription')
   @ApiOperation({ summary: 'Update user subscription' })
   @ApiResponse({ status: 200, description: 'Subscription updated' })
+  @ApiResponse({ status: 404, description: 'User not found' })
   async updateSubscription(
     @Param('userId') userId: string,
     @Body() data: { plan: string; duration?: number },
   ) {
     const user = await this.usersRepository.findById(userId);
     if (!user) {
-      throw new Error('User not found');
+      throw new NotFoundException('User not found');
     }
 
     const subscriptionData: any = {
@@ -141,10 +171,11 @@ export class AdminController {
   @Delete('users/:userId/subscription')
   @ApiOperation({ summary: 'Cancel user subscription' })
   @ApiResponse({ status: 200, description: 'Subscription cancelled' })
+  @ApiResponse({ status: 404, description: 'User or subscription not found' })
   async cancelSubscription(@Param('userId') userId: string) {
     const user = await this.usersRepository.findById(userId);
     if (!user || !user.subscription) {
-      throw new Error('User or subscription not found');
+      throw new NotFoundException('User or subscription not found');
     }
 
     await this.usersRepository.update(userId, {
@@ -161,13 +192,14 @@ export class AdminController {
   @Post('users/:userId/voice-quota')
   @ApiOperation({ summary: 'Add voice quota to user' })
   @ApiResponse({ status: 200, description: 'Voice quota added' })
+  @ApiResponse({ status: 404, description: 'User not found' })
   async addVoiceQuota(
     @Param('userId') userId: string,
     @Body() data: { type: 'mock' | 'real'; minutes: number },
   ) {
     const user = await this.usersRepository.findById(userId);
     if (!user) {
-      throw new Error('User not found');
+      throw new NotFoundException('User not found');
     }
 
     const quota = user.voiceQuota || {};
@@ -202,16 +234,25 @@ export class AdminController {
     @Query('page') page = 1,
     @Query('limit') limit = 20,
   ) {
-    let filters: any = {};
-    if (status) {
-      filters['subscription.status'] = status;
-    }
-    if (plan) {
-      filters['subscription.plan'] = plan;
-    }
+    // FIX BUG-14: DB-level pagination instead of in-memory slice
+    const safeLimit = Math.min(Number(limit) || 20, 100);
+    const safePage = Math.max(Number(page) || 1, 1);
+    const skip = (safePage - 1) * safeLimit;
 
-    const allUsers = await this.usersRepository.findAll(filters);
-    const users = allUsers.slice((page - 1) * limit, page * limit);
+    const filters: any = { deletedAt: null };
+    if (status) filters['subscription.status'] = status;
+    if (plan) filters['subscription.plan'] = plan;
+
+    const [users, total] = await Promise.all([
+      this.usersRepository.model
+        .find(filters)
+        .select('_id subscription')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(safeLimit)
+        .lean(),
+      this.usersRepository.model.countDocuments(filters),
+    ]);
 
     return {
       subscriptions: users
@@ -224,9 +265,10 @@ export class AdminController {
           endDate: u.subscription?.endDate,
         })),
       pagination: {
-        page,
-        limit,
-        total: allUsers.length,
+        page: safePage,
+        limit: safeLimit,
+        total,
+        pages: Math.ceil(total / safeLimit),
       },
     };
   }
@@ -283,23 +325,20 @@ export class AdminController {
   }
 
   private async getSubscriptionSummary() {
-    const allUsers = await this.usersRepository.findAll();
+    // FIX BUG-14: Use MongoDB aggregation instead of loading all users into RAM.
+    // Previously called findAll() (full collection) then iterated in JS memory.
+    const [total, active, trial] = await Promise.all([
+      this.usersRepository.model.countDocuments({ deletedAt: null }),
+      this.usersRepository.model.countDocuments({
+        deletedAt: null,
+        'subscription.status': 'active',
+      }),
+      this.usersRepository.model.countDocuments({
+        deletedAt: null,
+        'subscription.plan': 'free_trial',
+      }),
+    ]);
 
-    const summary = {
-      total: allUsers.length,
-      active: 0,
-      trial: 0,
-    };
-
-    for (const user of allUsers) {
-      if (user.subscription?.status === 'active') {
-        summary.active++;
-      }
-      if (user.subscription?.plan === 'free_trial') {
-        summary.trial++;
-      }
-    }
-
-    return summary;
+    return { total, active, trial };
   }
 }

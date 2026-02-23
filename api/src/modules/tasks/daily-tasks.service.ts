@@ -1537,6 +1537,12 @@ Respond ONLY with valid JSON:
           user.telegramId,
           notifMessages[userLanguage] || notifMessages.en,
         );
+
+        // Shared daily cap: prevents AI engagement cron sending another msg today
+        await this.userModel.updateOne(
+          { _id: user._id },
+          { $set: { 'engagement.lastNotificationSentAt': new Date() } },
+        );
       }
     } catch (sendError: any) {
       const errorMessage = sendError.description || sendError.message;
