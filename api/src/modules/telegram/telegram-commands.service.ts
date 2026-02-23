@@ -1096,8 +1096,8 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
 📊 <b>Bepul sinov davri:</b>
 • 7 kun bepul
 • 1 ta mock intervyu
-• 2 daqiqa ovozli javoblar
 • 1 ta CV tahlil
+• Faqat matn javoblari
 
 Keling, boshlaymiz! 🚀`,
 
@@ -1108,8 +1108,8 @@ Keling, boshlaymiz! 🚀`,
 📊 <b>Пробный период:</b>
 • 7 дней бесплатно
 • 1 пробное интервью
-• 2 минуты голосовых ответов
 • 1 анализ CV
+• Только текстовые ответы
 
 Давайте начнем! 🚀`,
 
@@ -1120,8 +1120,8 @@ Keling, boshlaymiz! 🚀`,
 📊 <b>Free trial:</b>
 • 7 days free
 • 1 mock interview
-• 2 minutes voice answers
 • 1 CV analysis
+• Text answers only
 
 Let's get started! 🚀`,
       };

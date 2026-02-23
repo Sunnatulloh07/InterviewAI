@@ -226,9 +226,9 @@ View plans: /upgrade`,
 
   private getVoiceExhaustedMessage(lang: string): string {
     const messages: Record<string, string> = {
-      uz: `🎙️ Bepul 2 daqiqa ovozli javob limitingiz tugadi!
+      uz: `🎙️ Bepul sinov davri faqat matn javoblarini qo'llab-quvvatlaydi!
 
-🚀 Premium bilan ko'proq ovozli mashq:
+🚀 Premium bilan ovozli mashq boshlang:
 
 💼 <b>STARTER</b> - $10/oy:
 • 10 daqiqa ovozli javoblar
@@ -242,9 +242,9 @@ View plans: /upgrade`,
 
 Rejalarni ko'rish: /upgrade`,
 
-      ru: `🎙️ Бесплатный лимит 2 минуты голосовых ответов исчерпан!
+      ru: `🎙️ В бесплатном пробном периоде доступны только текстовые ответы!
 
-🚀 Premium для больше голосовой практики:
+🚀 Получите голосовую практику с Premium:
 
 💼 <b>STARTER</b> - $10/мес:
 • 10 минут голосовых ответов
@@ -258,9 +258,9 @@ Rejalarni ko'rish: /upgrade`,
 
 Смотреть планы: /upgrade`,
 
-      en: `🎙️ Your free 2-minute voice answer limit is exhausted!
+      en: `🎙️ Voice answers are not available in the free trial (text only)!
 
-🚀 Premium for more voice practice:
+🚀 Get voice practice with Premium:
 
 💼 <b>STARTER</b> - $10/mo:
 • 10 minutes voice responses
@@ -282,7 +282,7 @@ View plans: /upgrade`,
     const messages: Record<string, string> = {
       uz: `🚀 Barcha bepul imkoniyatlardan foydalandingiz!
 
-✅ ${usedCount} ta mock interview + 2 daqiqa ovozli javob
+✅ ${usedCount} ta mock interview (matn javoblari)
 
 💎 Premium bilan karyerangizni oshiring:
 
@@ -305,7 +305,7 @@ Rejalarni ko'rish: /upgrade`,
 
       ru: `🚀 Вы использовали все бесплатные возможности!
 
-✅ ${usedCount} mock интервью + 2 минуты голосовых ответов
+✅ ${usedCount} mock интервью (текстовые ответы)
 
 💎 Поднимите карьеру с Premium:
 
@@ -328,7 +328,7 @@ Rejalarni ko'rish: /upgrade`,
 
       en: `🚀 You've used all free features!
 
-✅ ${usedCount} mock interviews + 2 minutes voice answers
+✅ ${usedCount} mock interviews (text answers only)
 
 💎 Level up your career with Premium:
 
