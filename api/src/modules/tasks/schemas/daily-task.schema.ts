@@ -49,7 +49,7 @@ export class DailyTask {
         imageUrl: { type: String }, // Image URL
         transcript: { type: String }, // STT transcript for voice
         completed: { type: Boolean, required: true, default: false },
-        score: { type: Number, min: 0, max: 10 }, // Score validation
+        score: { type: Number, min: 0, max: 100 }, // Score validation (0-100 scale)
         feedback: { type: String }, // AI feedback stored
         completedAt: { type: Date },
         // 🛡 PHASE 1.1: Race condition prevention fields
@@ -80,7 +80,7 @@ export class DailyTask {
     imageUrl?: string; // Image URL
     transcript?: string; // STT transcript for voice
     completed: boolean;
-    score?: number; // 0-10 range
+    score?: number; // 0-100 range
     feedback?: string; // AI feedback stored
     completedAt?: Date;
     scoringStatus?: 'pending' | 'completed' | 'failed'; // 🛡 PHASE 1.1

@@ -286,7 +286,7 @@ export class TelegramDailyTaskService {
 ✅ Bajarilgan: <b>${stats.completed}/${stats.totalTasks}</b> (${stats.completionRate}%)
 ❌ Bajarilmagan: <b>${stats.failed}/${stats.totalTasks}</b> (${failedPercentage}%)
 🤖 AI javoblar: <b>${stats.aiAnswered}</b>
-📊 O'rtacha ball: <b>${stats.averageScore}/10</b>
+📊 O'rtacha ball: <b>${stats.averageScore}/100</b>
 
 🔥 <b>Streak:</b>
 • Joriy: <b>${stats.currentStreak} kun</b>
@@ -301,7 +301,7 @@ export class TelegramDailyTaskService {
 ✅ Выполнено: <b>${stats.completed}/${stats.totalTasks}</b> (${stats.completionRate}%)
 ❌ Не выполнено: <b>${stats.failed}/${stats.totalTasks}</b> (${failedPercentage}%)
 🤖 AI ответы: <b>${stats.aiAnswered}</b>
-📊 Средний балл: <b>${stats.averageScore}/10</b>
+📊 Средний балл: <b>${stats.averageScore}/100</b>
 
 🔥 <b>Серия:</b>
 • Текущая: <b>${stats.currentStreak} дней</b>
@@ -316,7 +316,7 @@ export class TelegramDailyTaskService {
 ✅ Completed: <b>${stats.completed}/${stats.totalTasks}</b> (${stats.completionRate}%)
 ❌ Failed: <b>${stats.failed}/${stats.totalTasks}</b> (${failedPercentage}%)
 🤖 AI Answers: <b>${stats.aiAnswered}</b>
-📊 Average Score: <b>${stats.averageScore}/10</b>
+📊 Average Score: <b>${stats.averageScore}/100</b>
 
 🔥 <b>Streak:</b>
 • Current: <b>${stats.currentStreak} days</b>
@@ -614,7 +614,7 @@ export class TelegramDailyTaskService {
       if (task.completed) {
         // Completed task: show title with checkmark and score
         const score = task.score || 0;
-        const scoreEmoji = score >= 8 ? '🟢' : score >= 5 ? '🟡' : '🔴';
+        const scoreEmoji = score >= 80 ? '🟢' : score >= 50 ? '🟡' : '🔴';
 
         const scoreLabel = {
           uz: 'ball',
@@ -622,7 +622,7 @@ export class TelegramDailyTaskService {
           en: 'pts',
         };
 
-        tasksText += `✅ <b>${i + 1}. ${taskTitle}</b>\n   ${scoreEmoji} ${score}/10 ${scoreLabel[lang] || scoreLabel.uz}\n\n`;
+        tasksText += `✅ <b>${i + 1}. ${taskTitle}</b>\n   ${scoreEmoji} ${score}/100 ${scoreLabel[lang] || scoreLabel.uz}\n\n`;
       } else {
         // Incomplete task: show TITLE ONLY (full question shown on button click)
         tasksText += `🔄 <b>${i + 1}. ${taskTitle}</b>\n\n`;
@@ -1186,16 +1186,23 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
       return; // Don't send voice explanation for pending scores
     }
 
-    // Show completed score
+    // Show completed score (0-100 scale)
     let emoji = '⚪';
-    if (result.score >= 8) emoji = '🟢';
-    else if (result.score >= 5) emoji = '🟡';
+    if (result.score >= 80) emoji = '🟢';
+    else if (result.score >= 50) emoji = '🟡';
     else emoji = '🔴';
 
+    // FIX-7: HTML-escape feedback to prevent rendering issues with <> characters
+    const escapedFeedback = result.feedback
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .substring(0, 500);
+
     const resultText = {
-      uz: `${emoji} <b>Vazifa ${taskIndex + 1} bajarildi!</b>\n\n📊 <b>Baho:</b> ${result.score}/10\n💬 <b>Feedback:</b> ${result.feedback}`,
-      ru: `${emoji} <b>Задание ${taskIndex + 1} выполнено!</b>\n\n📊 <b>Оценка:</b> ${result.score}/10\n💬 <b>Отзыв:</b> ${result.feedback}`,
-      en: `${emoji} <b>Task ${taskIndex + 1} completed!</b>\n\n📊 <b>Score:</b> ${result.score}/10\n💬 <b>Feedback:</b> ${result.feedback}`,
+      uz: `${emoji} <b>Vazifa ${taskIndex + 1} bajarildi!</b>\n\n📊 <b>Baho:</b> ${result.score}/100\n💬 <b>Feedback:</b> ${escapedFeedback}`,
+      ru: `${emoji} <b>Задание ${taskIndex + 1} выполнено!</b>\n\n📊 <b>Оценка:</b> ${result.score}/100\n💬 <b>Отзыв:</b> ${escapedFeedback}`,
+      en: `${emoji} <b>Task ${taskIndex + 1} completed!</b>\n\n📊 <b>Score:</b> ${result.score}/100\n💬 <b>Feedback:</b> ${escapedFeedback}`,
     };
 
     await ctx.reply(resultText[lang] || resultText.uz, {
@@ -1454,8 +1461,8 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
         const rawTitle = (t as any).title || t.question.substring(0, 50);
         const title = this.escapeHtml(rawTitle);
         const score = t.score || 0;
-        const emoji = score >= 8 ? '🟢' : score >= 5 ? '🟡' : '🔴';
-        return `${emoji} ${i + 1}. ${title}: ${score}/10`;
+        const emoji = score >= 80 ? '🟢' : score >= 50 ? '🟡' : '🔴';
+        return `${emoji} ${i + 1}. ${title}: ${score}/100`;
       });
 
       const avgScore =
@@ -1478,11 +1485,11 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
 📋 <b>Bugungi natijalar:</b>
 ${taskSummaries.join('\n')}
 
-📈 <b>O'rtacha ball:</b> ${avgScore}/10
+📈 <b>O'rtacha ball:</b> ${avgScore}/100
 🔥 <b>Streak:</b> ${streak} kun
 
 💡 <b>AI tavsiya:</b>
-${avgScore >= 8 ? `Ajoyib natija! ${position} darajangizda siz juda yaxshi natijalarga erishyapsiz. Shu tezlikda davom eting!` : avgScore >= 5 ? `Yaxshi harakat! Javoblaringizni yanada chuqurroq va aniqroq qilishga e'tibor bering. Misollar va metrikalar qo'shing.` : `Mashq qilishda davom eting! Savollarni yaxshilab o'qib, strukturali javob berishga harakat qiling (STAR metodi).`}
+${avgScore >= 80 ? `Ajoyib natija! ${position} darajangizda siz juda yaxshi natijalarga erishyapsiz. Shu tezlikda davom eting!` : avgScore >= 50 ? `Yaxshi harakat! Javoblaringizni yanada chuqurroq va aniqroq qilishga e'tibor bering. Misollar va metrikalar qo'shing.` : `Mashq qilishda davom eting! Savollarni yaxshilab o'qib, strukturali javob berishga harakat qiling (STAR metodi).`}
 
 ━━━━━━━━━━━━━━━━━━`,
 
@@ -1493,11 +1500,11 @@ ${avgScore >= 8 ? `Ajoyib natija! ${position} darajangizda siz juda yaxshi natij
 📋 <b>Результаты за сегодня:</b>
 ${taskSummaries.join('\n')}
 
-📈 <b>Средний балл:</b> ${avgScore}/10
+📈 <b>Средний балл:</b> ${avgScore}/100
 🔥 <b>Серия:</b> ${streak} дней
 
 💡 <b>AI рекомендация:</b>
-${avgScore >= 8 ? `Отличный результат! На уровне ${position} вы показываете великолепные результаты. Продолжайте в том же духе!` : avgScore >= 5 ? `Хорошая работа! Обратите внимание на глубину и точность ответов. Добавляйте примеры и метрики.` : `Продолжайте практику! Внимательно читайте вопросы и старайтесь отвечать структурированно (метод STAR).`}
+${avgScore >= 80 ? `Отличный результат! На уровне ${position} вы показываете великолепные результаты. Продолжайте в том же духе!` : avgScore >= 50 ? `Хорошая работа! Обратите внимание на глубину и точность ответов. Добавляйте примеры и метрики.` : `Продолжайте практику! Внимательно читайте вопросы и старайтесь отвечать структурированно (метод STAR).`}
 
 ━━━━━━━━━━━━━━━━━━`,
 
@@ -1508,11 +1515,11 @@ ${avgScore >= 8 ? `Отличный результат! На уровне ${posi
 📋 <b>Today's results:</b>
 ${taskSummaries.join('\n')}
 
-📈 <b>Average score:</b> ${avgScore}/10
+📈 <b>Average score:</b> ${avgScore}/100
 🔥 <b>Streak:</b> ${streak} days
 
 💡 <b>AI recommendation:</b>
-${avgScore >= 8 ? `Excellent results! At ${position} level, you're performing outstandingly. Keep up the great work!` : avgScore >= 5 ? `Good effort! Focus on depth and specificity in your answers. Add concrete examples and metrics.` : `Keep practicing! Read questions carefully and try to answer in a structured way (STAR method).`}
+${avgScore >= 80 ? `Excellent results! At ${position} level, you're performing outstandingly. Keep up the great work!` : avgScore >= 50 ? `Good effort! Focus on depth and specificity in your answers. Add concrete examples and metrics.` : `Keep practicing! Read questions carefully and try to answer in a structured way (STAR method).`}
 
 ━━━━━━━━━━━━━━━━━━`,
       };
@@ -1577,7 +1584,7 @@ ${avgScore >= 8 ? `Excellent results! At ${position} level, you're performing ou
         ? Math.round((stats.completed / stats.totalTasks) * 100)
         : 0;
 
-      const growthEmoji = stats.averageScore >= 7 ? '📈' : stats.averageScore >= 5 ? '➡️' : '📉';
+      const growthEmoji = stats.averageScore >= 70 ? '📈' : stats.averageScore >= 50 ? '➡️' : '📉';
 
       const reportText: Record<string, string> = {
         uz: `━━━━━━━━━━━━━━━━━━
@@ -1591,7 +1598,7 @@ ${avgScore >= 8 ? `Excellent results! At ${position} level, you're performing ou
 • Jami vazifalar: <b>${stats.totalTasks}</b>
 • Bajarilgan: <b>${stats.completed}</b> (${stats.completionRate}%)
 • Bajarilmagan: <b>${stats.failed}</b>
-• O'rtacha ball: <b>${stats.averageScore}/10</b>
+• O'rtacha ball: <b>${stats.averageScore}/100</b>
 • AI javoblar: <b>${stats.aiAnswered}</b>
 
 🔥 <b>Streak:</b>
@@ -1602,7 +1609,7 @@ ${growthEmoji} <b>O'sish prognozi:</b>
 ${consistencyRate >= 80 ? `Ajoyib! Siz ${consistencyRate}% izchillik bilan mashq qilyapsiz. Bu tezlikda 2-3 oy ichida ${position === 'junior' ? 'middle' : position === 'middle' ? 'senior' : 'lead'} darajaga yetishingiz mumkin.` : consistencyRate >= 50 ? `Yaxshi boshlangich! ${consistencyRate}% izchillik yetarli, lekin har kuni mashq qilish natijalarni 2x yaxshilaydi. Kunlik streak ni uzmang!` : `Mashq qilishni ko'paytiring! Hozirgi ${consistencyRate}% izchillik past. Kunlik vazifalarni bajarishni odat qiling.`}
 
 💡 <b>AI tavsiyalar:</b>
-${stats.averageScore >= 8 ? `1. Yanada murakkab savollarga o'ting\n2. System design va behavioral savollarni ko'proq mashq qiling\n3. Haqiqiy intervyuga tayyorlaning — siz tayyor!` : stats.averageScore >= 5 ? `1. Javoblaringizga aniq misollar qo'shing\n2. STAR metodidan foydalaning\n3. Texnik terminlarni to'g'ri ishlating\n4. Haftalik 2-3 mock intervyu o'tkazing` : `1. Asosiy tushunchalarni qayta o'rganing\n2. Har bir javobni yozib, keyin tahlil qiling\n3. Oddiy savollardan boshlang, murakkablikni oshiring\n4. Kunlik mashqni uzluksiz davom ettiring`}
+${stats.averageScore >= 80 ? `1. Yanada murakkab savollarga o'ting\n2. System design va behavioral savollarni ko'proq mashq qiling\n3. Haqiqiy intervyuga tayyorlaning — siz tayyor!` : stats.averageScore >= 50 ? `1. Javoblaringizga aniq misollar qo'shing\n2. STAR metodidan foydalaning\n3. Texnik terminlarni to'g'ri ishlating\n4. Haftalik 2-3 mock intervyu o'tkazing` : `1. Asosiy tushunchalarni qayta o'rganing\n2. Har bir javobni yozib, keyin tahlil qiling\n3. Oddiy savollardan boshlang, murakkablikni oshiring\n4. Kunlik mashqni uzluksiz davom ettiring`}
 
 ━━━━━━━━━━━━━━━━━━
 <i>Keyingi oy ham muvaffaqiyatli bo'lsin!</i>`,
@@ -1618,7 +1625,7 @@ ${stats.averageScore >= 8 ? `1. Yanada murakkab savollarga o'ting\n2. System des
 • Всего заданий: <b>${stats.totalTasks}</b>
 • Выполнено: <b>${stats.completed}</b> (${stats.completionRate}%)
 • Не выполнено: <b>${stats.failed}</b>
-• Средний балл: <b>${stats.averageScore}/10</b>
+• Средний балл: <b>${stats.averageScore}/100</b>
 • AI ответы: <b>${stats.aiAnswered}</b>
 
 🔥 <b>Серия:</b>
@@ -1629,7 +1636,7 @@ ${growthEmoji} <b>Прогноз роста:</b>
 ${consistencyRate >= 80 ? `Отлично! ${consistencyRate}% последовательности. При таком темпе через 2-3 месяца вы можете достичь уровня ${position === 'junior' ? 'middle' : position === 'middle' ? 'senior' : 'lead'}.` : consistencyRate >= 50 ? `Хорошее начало! ${consistencyRate}% — неплохо, но ежедневная практика улучшит результаты в 2 раза. Не прерывайте серию!` : `Нужно больше практики! Текущая последовательность ${consistencyRate}% низкая. Сделайте ежедневные задания привычкой.`}
 
 💡 <b>AI рекомендации:</b>
-${stats.averageScore >= 8 ? `1. Переходите к более сложным вопросам\n2. Больше практикуйте system design и behavioral\n3. Готовьтесь к реальному интервью — вы готовы!` : stats.averageScore >= 5 ? `1. Добавляйте конкретные примеры в ответы\n2. Используйте метод STAR\n3. Правильно применяйте технические термины\n4. Проводите 2-3 mock-интервью в неделю` : `1. Повторите основные концепции\n2. Записывайте ответы и анализируйте\n3. Начните с простых вопросов\n4. Продолжайте ежедневную практику`}
+${stats.averageScore >= 80 ? `1. Переходите к более сложным вопросам\n2. Больше практикуйте system design и behavioral\n3. Готовьтесь к реальному интервью — вы готовы!` : stats.averageScore >= 50 ? `1. Добавляйте конкретные примеры в ответы\n2. Используйте метод STAR\n3. Правильно применяйте технические термины\n4. Проводите 2-3 mock-интервью в неделю` : `1. Повторите основные концепции\n2. Записывайте ответы и анализируйте\n3. Начните с простых вопросов\n4. Продолжайте ежедневную практику`}
 
 ━━━━━━━━━━━━━━━━━━
 <i>Успехов в следующем месяце!</i>`,
@@ -1645,7 +1652,7 @@ ${stats.averageScore >= 8 ? `1. Переходите к более сложны�
 • Total tasks: <b>${stats.totalTasks}</b>
 • Completed: <b>${stats.completed}</b> (${stats.completionRate}%)
 • Failed: <b>${stats.failed}</b>
-• Average score: <b>${stats.averageScore}/10</b>
+• Average score: <b>${stats.averageScore}/100</b>
 • AI answers: <b>${stats.aiAnswered}</b>
 
 🔥 <b>Streak:</b>
@@ -1656,7 +1663,7 @@ ${growthEmoji} <b>Growth Forecast:</b>
 ${consistencyRate >= 80 ? `Excellent! ${consistencyRate}% consistency. At this pace, you could reach ${position === 'junior' ? 'middle' : position === 'middle' ? 'senior' : 'lead'} level in 2-3 months.` : consistencyRate >= 50 ? `Good start! ${consistencyRate}% is decent, but daily practice doubles results. Don't break your streak!` : `Need more practice! Current ${consistencyRate}% consistency is low. Make daily tasks a habit.`}
 
 💡 <b>AI Recommendations:</b>
-${stats.averageScore >= 8 ? `1. Move to more complex questions\n2. Practice more system design & behavioral\n3. Prepare for real interviews — you're ready!` : stats.averageScore >= 5 ? `1. Add specific examples to your answers\n2. Use the STAR method\n3. Apply technical terms correctly\n4. Do 2-3 mock interviews per week` : `1. Review fundamental concepts\n2. Write down answers and analyze them\n3. Start with simple questions\n4. Keep practicing daily consistently`}
+${stats.averageScore >= 80 ? `1. Move to more complex questions\n2. Practice more system design & behavioral\n3. Prepare for real interviews — you're ready!` : stats.averageScore >= 50 ? `1. Add specific examples to your answers\n2. Use the STAR method\n3. Apply technical terms correctly\n4. Do 2-3 mock interviews per week` : `1. Review fundamental concepts\n2. Write down answers and analyze them\n3. Start with simple questions\n4. Keep practicing daily consistently`}
 
 ━━━━━━━━━━━━━━━━━━
 <i>Good luck next month!</i>`,

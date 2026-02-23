@@ -40,7 +40,7 @@ export class InterviewAnswer {
   duration: number; // Seconds taken
 
   @Prop({ type: Number })
-  score?: number; // 0-10
+  score?: number; // 0-100
 
   @Prop({ type: Object })
   feedback?: {

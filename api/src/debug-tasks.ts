@@ -114,7 +114,7 @@ async function debugUserTasks() {
       console.log('\nQuestions:');
       todayTask.tasks.forEach((t, i) => {
         const status = t.completed ? '✅' : '⬜';
-        const score = t.completed ? ` (${t.score}/10)` : '';
+        const score = t.completed ? ` (${t.score}/100)` : '';
         console.log(`  ${i + 1}. [${status}] ${t.question}${score}`);
       });
     }

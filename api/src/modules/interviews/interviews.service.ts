@@ -555,10 +555,10 @@ export class InterviewsService {
 
     // ADAPTIVE DIFFICULTY LOGIC
     // Use average score to determine if we should ramp up difficulty or focus on basics
-    // 0-50%: Foundational/Remedial
-    // 50-80%: Progressive/Standard
-    // 80-100%: Advanced/Challenging
-    const averageScore = historyContext.averageScore * 10; // Convert 0-10 to 0-100 scale for easier logic
+    // 0-50: Foundational/Remedial
+    // 50-80: Progressive/Standard
+    // 80-100: Advanced/Challenging
+    const averageScore = historyContext.averageScore; // Already 0-100 scale
 
     prompt += `\n## ADAPTIVE DIFFICULTY INSTRUCTIONS (USER LEVEL: ${averageScore}%)\n`;
 
@@ -1156,10 +1156,10 @@ Your response must be valid JSON that can be parsed directly. All questions must
         allQuestions.push(questionText);
 
         // Categorize based on score (if analyzed)
-        // Score >= 7: Considered correct (Mastered)
-        // Score < 7: Considered incorrect/partial (needs improvement)
+        // Score >= 70: Considered correct (Mastered)
+        // Score < 70: Considered incorrect/partial (needs improvement)
         if (answer.score !== undefined) {
-          if (answer.score >= 7) {
+          if (answer.score >= 70) {
             correctQuestions.push(questionText);
           } else {
             incorrectQuestions.push(questionText);

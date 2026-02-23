@@ -303,7 +303,7 @@ export class EngagementService implements OnModuleInit {
       firstName: user.firstName || user.telegramFirstName || 'Foydalanuvchi',
       language: user.language || 'uz',
       daysSinceActive,
-      averageScore: Math.round((interviewStats.averageScore || 0) * 10), // 0-10 to 0-100
+      averageScore: Math.round(interviewStats.averageScore || 0), // Already 0-100 scale
       hasPausedInterview: !!pausedSession,
       pausedInterviewTechnology,
       lastTechnology: Array.isArray(pausedTechnology) ? pausedTechnology[0] : pausedTechnology,
@@ -590,10 +590,10 @@ export class EngagementService implements OnModuleInit {
       // Get recent sessions with their scores
       const sessions = await this.interviewsService.getHistory(userId, limit, 0);
 
-      // Extract scores from completed sessions (convert 0-10 to 0-100)
+      // Extract scores from completed sessions (already 0-100 scale)
       const scores = sessions
         .filter((s: any) => s.status === 'completed' && typeof s.overallScore === 'number')
-        .map((s: any) => Math.round((s.overallScore || 0) * 10))
+        .map((s: any) => Math.round(s.overallScore || 0))
         .slice(0, limit);
 
       return scores;
