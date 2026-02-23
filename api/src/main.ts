@@ -21,6 +21,11 @@ import { MetricsService } from './modules/metrics/metrics.service';
 import { Reflector } from '@nestjs/core';
 
 async function bootstrap() {
+  // FIX #117: Set process timezone to Tashkent (UTC+5) so that
+  // NestJS ConsoleLogger timestamps display Tashkent local time
+  // instead of UTC in terminal logs.
+  process.env.TZ = 'Asia/Tashkent';
+
   // Create NestJS application
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     logger: ['error', 'warn', 'log', 'debug', 'verbose'],

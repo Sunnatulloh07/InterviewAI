@@ -55,6 +55,10 @@ export class FailedNotificationRetryService {
         Date.now() + this.RETRY_DELAYS_HOURS[0] * 60 * 60 * 1000,
       );
 
+      // FIX #119: telegramChatId was in BOTH $setOnInsert AND $set, causing
+      // MongoDB conflict error: "Updating the path 'telegramChatId' would
+      // create a conflict at 'telegramChatId'".
+      // Solution: Keep telegramChatId ONLY in $set (works for both insert and update).
       await this.failedNotificationModel.findOneAndUpdate(
         {
           userId,
@@ -64,7 +68,6 @@ export class FailedNotificationRetryService {
         {
           $setOnInsert: {
             userId,
-            telegramChatId,
             notificationType,
             retryCount: 0,
             isPermanentlyFailed: false,
@@ -74,7 +77,7 @@ export class FailedNotificationRetryService {
             errorMessage,
             errorCode,
             metadata,
-            telegramChatId, // update in case it changed
+            telegramChatId, // Always update to latest value
           },
         },
         { upsert: true },

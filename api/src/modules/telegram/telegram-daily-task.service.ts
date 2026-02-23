@@ -270,7 +270,9 @@ export class TelegramDailyTaskService {
           'December',
         ],
       };
-      const currentMonthName = monthNames[lang][now.getMonth()];
+      // FIX #116: Safe access — fallback to 'uz' if lang is not a valid key
+      const validMonthLang = (lang in monthNames) ? lang as 'uz' | 'ru' | 'en' : 'uz';
+      const currentMonthName = monthNames[validMonthLang][now.getMonth()];
 
       // SENIOR FIX: Safe calculation for failed percentage
       const failedPercentage =
@@ -446,7 +448,8 @@ export class TelegramDailyTaskService {
       this.logger.log(
         `Showing tasks overview for userId: ${userId}, taskCount: ${dailyTask.tasks.length}`,
       );
-      await this.showCurrentTask(ctx, dailyTask, currentTaskIndex);
+      // FIX #116: Pass userId explicitly to avoid session.userId being empty in callback context
+      await this.showCurrentTask(ctx, dailyTask, currentTaskIndex, userId);
       this.logger.log(`Successfully started daily task session for userId: ${userId}`);
     } catch (error: any) {
       this.logger.error(
@@ -477,18 +480,27 @@ export class TelegramDailyTaskService {
    * Incomplete tasks: full question + individual "Answer" button
    *
    * NEW UX: Each incomplete task has its own button, user can answer in any order
+   *
+   * FIX #116: Accept userId as parameter instead of relying on ctx.session.userId.
+   * In callback query context, Grammy session may not have userId loaded, causing
+   * this method to silently return without sending any message to the user.
    */
   private async showCurrentTask(
     ctx: BotContext,
     dailyTask: any,
     _currentTaskIndex: number, // Unused: all tasks shown in overview with individual buttons
+    explicitUserId?: string, // FIX #116: Pass userId explicitly from caller
   ): Promise<void> {
-    const lang = ctx.session?.language || 'uz';
-
-    // Get user info
-    const userId = ctx.session?.userId || '';
-    if (!userId) return;
+    // FIX #116: Use explicit userId first, then fallback to session
+    const userId = explicitUserId || ctx.session?.userId || '';
+    if (!userId) {
+      this.logger.error('showCurrentTask: No userId available (neither explicit nor session)');
+      return;
+    }
     const user = await this.usersService.findById(userId);
+
+    // FIX #116: Get language from session OR user preferences (callback context may lack session)
+    const lang = ctx.session?.language || user?.preferences?.language || (user as any)?.language || 'uz';
     const plan = user?.subscription?.plan || 'free_trial';
     const planLimits = this.getPlanLimits(plan);
     const position = user?.profile?.position || 'junior';
@@ -545,8 +557,10 @@ export class TelegramDailyTaskService {
         'December',
       ],
     };
-    const month = monthNames[lang][date.getMonth()];
-    const dateStr = lang === 'en' ? `${month} ${day}` : `${day}-${month}`;
+    // FIX #116: Safe access — fallback to 'uz' if lang is not a valid key
+    const validLang = (lang in monthNames) ? lang as 'uz' | 'ru' | 'en' : 'uz';
+    const month = monthNames[validLang][date.getMonth()];
+    const dateStr = validLang === 'en' ? `${month} ${day}` : `${day}-${month}`;
 
     // Build header
     const headerText = {
@@ -608,7 +622,7 @@ export class TelegramDailyTaskService {
           en: 'pts',
         };
 
-        tasksText += `✅ <b>${i + 1}. ${taskTitle}</b>\n   ${scoreEmoji} ${score}/10 ${scoreLabel[lang]}\n\n`;
+        tasksText += `✅ <b>${i + 1}. ${taskTitle}</b>\n   ${scoreEmoji} ${score}/10 ${scoreLabel[lang] || scoreLabel.uz}\n\n`;
       } else {
         // Incomplete task: show TITLE ONLY (full question shown on button click)
         tasksText += `🔄 <b>${i + 1}. ${taskTitle}</b>\n\n`;
@@ -620,7 +634,7 @@ export class TelegramDailyTaskService {
           en: `📝 View & Answer (${i + 1})`,
         };
 
-        keyboard.text(buttonLabel[lang] || buttonLabel.uz, `daily_task_answer_${i}`);
+        keyboard.text(buttonLabel[lang as keyof typeof buttonLabel] || buttonLabel.uz, `daily_task_answer_${i}`);
         buttonCount++;
 
         // Add row break after every 2 buttons for better UX
@@ -664,8 +678,8 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
 📝 <b>Answer types:</b> ${answerInstructions}`,
     };
 
-    // Combine full message
-    const fullMessage = headerText[lang] + tasksText + footerText[lang];
+    // Combine full message — FIX #116: Safe fallback to 'uz' for invalid lang keys
+    const fullMessage = (headerText[lang] || headerText.uz) + tasksText + (footerText[lang] || footerText.uz);
 
     try {
       await ctx.reply(fullMessage, {
@@ -1320,7 +1334,8 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
       }
 
       // Show tasks overview (all tasks with individual buttons for incomplete ones)
-      await this.showCurrentTask(ctx, dailyTask, fallbackIndex);
+      // FIX #116: Pass userId explicitly
+      await this.showCurrentTask(ctx, dailyTask, fallbackIndex, session.userId.toString());
 
       // Update session with next incomplete task index
       await this.sessionModel.findByIdAndUpdate(session._id, {
