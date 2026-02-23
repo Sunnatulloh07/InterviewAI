@@ -54,40 +54,68 @@ export class DailyTasksService implements OnApplicationBootstrap {
 
   /**
    * One-time startup migration: initialize missing dailyTasks fields.
+   *
    * BUG-B fix: older user documents may have no dailyTasks field (or null counters).
    * MongoDB $add with null → null, so streak never increments.
-   * This runs once per app start and is idempotent (only touches missing fields).
+   *
+   * SAFETY GUARANTEES:
+   * 1. Redis flag 'migration:dailyTasks:v1:done' ensures this runs ONLY ONCE ever,
+   *    not on every restart — so it can never touch data after the first run.
+   * 2. Case 1 only touches users with no dailyTasks field at all ($exists: false).
+   *    Users with existing valid data are completely untouched.
+   * 3. Case 2 fixes each null counter INDEPENDENTLY — only the null field is set to 0,
+   *    existing non-null fields (e.g. longestStreak: 10, totalCompleted: 20) are preserved.
    */
   async onApplicationBootstrap(): Promise<void> {
+    const MIGRATION_KEY = 'migration:dailyTasks:v1:done';
     try {
-      // Case 1: dailyTasks field entirely missing
+      // Check if migration already ran (Redis flag)
+      const alreadyDone = await this.redis.get(MIGRATION_KEY);
+      if (alreadyDone) {
+        return; // Already ran — never touch the DB again
+      }
+
+      // Case 1: dailyTasks field entirely missing → initialize whole object
       const missingResult = await this.userModel.updateMany(
         { dailyTasks: { $exists: false } },
         { $set: { dailyTasks: { currentStreak: 0, longestStreak: 0, totalCompleted: 0 } } },
       );
 
-      // Case 2: dailyTasks exists but currentStreak is null
-      const nullResult = await this.userModel.updateMany(
+      // Case 2: dailyTasks exists but individual counters are null.
+      // Each counter is fixed INDEPENDENTLY — non-null fields are NOT touched.
+      const nullStreakResult = await this.userModel.updateMany(
         { 'dailyTasks.currentStreak': null },
-        {
-          $set: {
-            'dailyTasks.currentStreak': 0,
-            'dailyTasks.longestStreak': 0,
-            'dailyTasks.totalCompleted': 0,
-          },
-        },
+        { $set: { 'dailyTasks.currentStreak': 0 } },
+      );
+      const nullLongestResult = await this.userModel.updateMany(
+        { 'dailyTasks.longestStreak': null },
+        { $set: { 'dailyTasks.longestStreak': 0 } },
+      );
+      const nullTotalResult = await this.userModel.updateMany(
+        { 'dailyTasks.totalCompleted': null },
+        { $set: { 'dailyTasks.totalCompleted': 0 } },
       );
 
-      const total = missingResult.modifiedCount + nullResult.modifiedCount;
-      if (total > 0) {
-        this.logger.log(
-          `[Migration] Initialized dailyTasks for ${total} users ` +
-          `(${missingResult.modifiedCount} missing field, ${nullResult.modifiedCount} null counters)`,
-        );
-      }
+      const total =
+        missingResult.modifiedCount +
+        nullStreakResult.modifiedCount +
+        nullLongestResult.modifiedCount +
+        nullTotalResult.modifiedCount;
+
+      this.logger.log(
+        `[Migration] dailyTasks init complete: ` +
+        `${missingResult.modifiedCount} missing, ` +
+        `${nullStreakResult.modifiedCount} null currentStreak, ` +
+        `${nullLongestResult.modifiedCount} null longestStreak, ` +
+        `${nullTotalResult.modifiedCount} null totalCompleted fixed. ` +
+        `Total: ${total} users affected.`,
+      );
+
+      // Mark migration as done — will never run again (TTL: 10 years)
+      await this.redis.set(MIGRATION_KEY, '1', 'EX', 60 * 60 * 24 * 365 * 10);
     } catch (err: any) {
-      // Non-fatal: log and continue. Next app restart will retry.
-      this.logger.error(`[Migration] Failed to initialize dailyTasks fields: ${err.message}`);
+      // Non-fatal: log and continue. Redis flag not set → will retry on next restart.
+      this.logger.error(`[Migration] dailyTasks init failed: ${err.message}`);
     }
   }
 
