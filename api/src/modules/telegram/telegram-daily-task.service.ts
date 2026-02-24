@@ -5,6 +5,7 @@ import { Model } from 'mongoose';
 // FIX #88: Removed unused axios import (was dead code)
 import { AiOcrService } from '../ai/ai-ocr.service';
 import { AiTtsService } from '../ai/ai-tts.service';
+import { AiGeminiAudioService } from '../ai/ai-gemini-audio.service';
 import { TelegramService, BotContext } from './telegram.service';
 import { InputFile, InlineKeyboard } from 'grammy';
 import { DailyTasksService } from '../tasks/daily-tasks.service';
@@ -39,6 +40,7 @@ export class TelegramDailyTaskService {
     private readonly voiceQuotaService: VoiceQuotaService,
     private readonly voiceQuotaGuardService: VoiceQuotaGuardService,
     private readonly sttService: AiSttService,
+    private readonly geminiAudioService: AiGeminiAudioService,
     private readonly configService: ConfigService,
     private readonly ocrService: AiOcrService,
     private readonly ttsService: AiTtsService,
@@ -902,13 +904,38 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
       const response = await fetch(fileUrl);
       const arrayBuffer = await response.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
-
-      // Transcribe using STT
       const base64Audio = buffer.toString('base64');
-      const transcription = await this.sttService.transcribe({
-        audioData: `data:audio/ogg;base64,${base64Audio}`,
-        language: lang,
-      });
+
+      // ═══════════════════════════════════════════════════════════════════
+      // Use Gemini for audio processing (same as mock interview)
+      // Gemini transcribes + understands context in one call
+      // Falls back to STT if Gemini is not available
+      // ═══════════════════════════════════════════════════════════════════
+      let transcribedText: string;
+
+      if (this.geminiAudioService.isEnabled()) {
+        this.logger.log(`Using Gemini for daily task voice answer: user=${userId}`);
+        const geminiResponse = await this.geminiAudioService.processLiveAudio({
+          audioBase64: base64Audio,
+          mimeType: 'audio/ogg',
+          language: lang,
+          context: {
+            // Daily task context — Gemini will transcribe and understand
+          },
+        });
+        transcribedText = geminiResponse.text || '';
+        this.logger.log(
+          `Gemini audio processed for daily task: ${geminiResponse.processingTime}ms, user=${userId}`,
+        );
+      } else {
+        // Fallback to STT (legacy, may fail)
+        this.logger.warn(`Gemini not enabled, falling back to STT for user ${userId}`);
+        const transcription = await this.sttService.transcribe({
+          audioData: `data:audio/ogg;base64,${base64Audio}`,
+          language: lang,
+        });
+        transcribedText = transcription.text || '';
+      }
 
       // Delete processing message
       try {
@@ -925,8 +952,8 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
 
       const result = await this.dailyTasksService.completeTask(userId, date, currentTaskIndex, {
         type: 'voice',
-        content: transcription.text,
-        transcript: transcription.text,
+        content: transcribedText,
+        transcript: transcribedText,
       });
 
       // ═══════════════════════════════════════════════════════════════════
