@@ -523,7 +523,7 @@ export class InterviewsService {
 
     // Build prompt for question generation
     // CRITICAL: Language instruction MUST be at the beginning for maximum enforcement
-    let prompt = `You are an expert interview question generator with 10+ years of experience in technical recruitment and interview design. Generate ${count} unique, professional interview questions for a ${difficultyName}-level ${categoryName} interview.\n\n`;
+    let prompt = `You are a REAL senior tech interviewer (not a question generator). You are sitting across from a candidate in a live interview. Generate ${count} interview questions the way a REAL human interviewer would naturally ask them — conversational, contextual, and engaging.\n\n`;
 
     // CRITICAL LANGUAGE REQUIREMENT - Must be at the beginning
     prompt += `## CRITICAL LANGUAGE REQUIREMENT - READ THIS FIRST\n`;
@@ -563,26 +563,29 @@ export class InterviewsService {
     prompt += `\n## ADAPTIVE DIFFICULTY INSTRUCTIONS (USER LEVEL: ${averageScore}%)\n`;
 
     if (averageScore >= 80) {
-      // High performer - Challenge them
-      prompt += `\n🔥 **STRATEGY: ADVANCED CHALLENGE**\n`;
-      prompt += `The candidate has a high performance history (${averageScore}% avg). DO NOT ask basic questions.\n`;
-      prompt += `- Focus on **System Design, Architecture, Optimization, and Edge Cases**.\n`;
-      prompt += `- Ask "How would you design..." or "How to optimize..." style questions.\n`;
-      prompt += `- Test deep understanding of the core mechanics, not just syntax.\n`;
+      // High performer - Tough, pressure-style like FAANG interviews
+      prompt += `\n🔥 **STRATEGY: ADVANCED CHALLENGE (Tough interviewer)**\n`;
+      prompt += `Candidate is strong (${averageScore}% avg). Be a TOUGH senior interviewer.\n`;
+      prompt += `- Ask system design, architecture, edge cases, and real production scenarios.\n`;
+      prompt += `- Use scenario-based questions: "Aytaylik sizda... bo'lsa, qanday hal qilasiz?"\n`;
+      prompt += `- Push for depth: "Nima uchun aynan shu yechim? Boshqa alternativalar-chi?"\n`;
+      prompt += `- Sound like a demanding but fair tech lead, not a textbook.\n`;
     } else if (averageScore >= 50) {
-      // Average performer - Progressive growth
-      prompt += `\n📈 **STRATEGY: PROGRESSIVE GROWTH**\n`;
-      prompt += `The candidate is performing well (${averageScore}% avg). Challenge them to level up.\n`;
-      prompt += `- Mix 70% standard questions with 30% advanced concepts.\n`;
-      prompt += `- Push them slightly beyond standard "textbook" answers.\n`;
-      prompt += `- Focus on "Why" and "When" to use specific technologies.\n`;
+      // Average performer - Professional but warm
+      prompt += `\n📈 **STRATEGY: PROGRESSIVE GROWTH (Professional interviewer)**\n`;
+      prompt += `Candidate is growing (${averageScore}% avg). Be professional but encouraging.\n`;
+      prompt += `- Mix practical questions with "why" and "when" questions.\n`;
+      prompt += `- Reference real-world scenarios: "Loyihangizda... holatga duch kelganmisiz?"\n`;
+      prompt += `- 70% standard depth, 30% push beyond comfort zone.\n`;
+      prompt += `- Sound like a senior colleague evaluating for promotion.\n`;
     } else {
-      // Struggling or New - Foundational
-      prompt += `\n🌱 **STRATEGY: FOUNDATIONAL REINFORCEMENT**\n`;
-      prompt += `The candidate needs to build stronger basics (Avg: ${averageScore}%).\n`;
-      prompt += `- Focus on **Core Concepts, Basic Syntax, and Fundamental Principles**.\n`;
-      prompt += `- ensure questions are clear and about the most essential parts of the technology.\n`;
-      prompt += `- Avoid obscure edge cases or complex architecture questions for now.\n`;
+      // Struggling or New - Friendly, supportive
+      prompt += `\n🌱 **STRATEGY: FOUNDATIONAL (Friendly interviewer)**\n`;
+      prompt += `Candidate is building basics (${averageScore}% avg). Be warm and supportive.\n`;
+      prompt += `- Focus on core concepts, fundamentals, and essential knowledge.\n`;
+      prompt += `- Use conversational phrasing: "Aytingchi...", "...haqida nima bilasiz?"\n`;
+      prompt += `- Make questions approachable, not intimidating.\n`;
+      prompt += `- Sound like a mentor, not an examiner.\n`;
     }
 
     // Add CV Context if available (personalized questions based on candidate's CV)
@@ -635,12 +638,15 @@ export class InterviewsService {
     prompt += `- Generate exactly ${count} unique, non-repetitive questions\n`;
     prompt += `- Questions must be appropriate for ${difficultyName} level candidates\n`;
     prompt += `- Questions must be ${categoryName} type (technical, behavioral, case study, or mixed)\n`;
-    prompt += `- Questions should be specific and relevant to the domain/technologies mentioned\n`;
-    prompt += `- Avoid generic questions - make them practical, real-world, and interview-relevant\n`;
-    prompt += `- Questions should test both knowledge and problem-solving ability\n`;
-    prompt += `- For technical questions: focus on concepts, implementation, and best practices\n`;
-    prompt += `- For behavioral questions: focus on past experiences, teamwork, and leadership\n`;
-    prompt += `- For case study questions: provide realistic scenarios with clear problem statements\n\n`;
+    prompt += `- **CRITICAL TONE:** Every question must sound like a REAL person is asking it face-to-face.\n`;
+    prompt += `  - BAD (robotic): "MongoDB va PostgreSQL o'rtasida qanday farqlar mavjud?"\n`;
+    prompt += `  - GOOD (human): "Aytingchi, MongoDB bilan PostgreSQL orasida tanlashga to'g'ri kelganmi? Qaysi holatlarda qaysi birini tanlardingiz?"\n`;
+    prompt += `  - BAD (robotic): "Docker konteynerlarini qanday optimallashtirasiz?"\n`;
+    prompt += `  - GOOD (human): "Docker image hajmi kattalashib ketgan holatga duch kelganmisiz? Qanday yechim topdingiz?"\n`;
+    prompt += `- Use scenario-based, experience-based, and conversational phrasing\n`;
+    prompt += `- Include variety: some "Aytingchi...", some "Aytaylik sizda...", some "...haqida gapiring"\n`;
+    prompt += `- Mix question types: 40% scenario-based, 30% experience-based, 30% knowledge-check\n`;
+    prompt += `- Avoid generic textbook questions - make them feel like a real conversation\n\n`;
 
     prompt += `## CRITICAL OUTPUT FORMAT\n`;
     prompt += `You MUST return a valid JSON object with this EXACT structure:\n`;
