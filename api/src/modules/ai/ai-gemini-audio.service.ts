@@ -56,6 +56,30 @@ export interface ProcessLiveAudioParams {
   language: string;
 }
 
+/**
+ * Parameters for transcription-only audio processing
+ */
+export interface TranscribeAudioParams {
+  /** Base64 encoded audio data */
+  audioBase64: string;
+  /** Audio MIME type (e.g., 'audio/ogg') */
+  mimeType: string;
+  /** User language (uz/ru/en) */
+  language: string;
+}
+
+/**
+ * Response from Gemini transcription-only
+ */
+export interface GeminiTranscriptionResponse {
+  /** Transcribed text */
+  text: string;
+  /** Processing time in milliseconds */
+  processingTime: number;
+  /** Model used */
+  model: string;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Service Implementation
 // ═══════════════════════════════════════════════════════════════════════════
@@ -229,6 +253,113 @@ export class AiGeminiAudioService {
 
     throw new BadRequestException(
       `Audio processing failed: ${lastError?.message || 'Unknown error'}`,
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Transcription-Only Method (for Mock Interviews)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * Transcribe audio to text WITHOUT generating AI response.
+   *
+   * This is optimized for Mock Interviews where we only need the user's
+   * spoken answer as text. All answers are collected and scored at the end.
+   *
+   * Benefits vs processLiveAudio():
+   * - ~3x fewer tokens (no AI response generated)
+   * - ~2x faster (smaller prompt, shorter response)
+   * - Lower cost per voice answer
+   *
+   * @param params - Transcription parameters
+   * @returns Transcribed text with metadata
+   * @throws BadRequestException if service is disabled
+   */
+  async transcribeAudio(params: TranscribeAudioParams): Promise<GeminiTranscriptionResponse> {
+    const startTime = Date.now();
+
+    if (!this.isEnabled()) {
+      throw new BadRequestException(
+        'Gemini Audio Service is not enabled. Set GEMINI_AUDIO_ENABLED=true in environment.',
+      );
+    }
+
+    if (!params.audioBase64 || params.audioBase64.length === 0) {
+      throw new BadRequestException('Audio data is empty');
+    }
+
+    const maxBase64Size = 10 * 1024 * 1024;
+    if (params.audioBase64.length > maxBase64Size) {
+      throw new BadRequestException(
+        `Audio file too large: ${(params.audioBase64.length / 1024 / 1024).toFixed(2)}MB (max: 10MB)`,
+      );
+    }
+
+    const model = this.getModel();
+    const audioFormat = getGeminiAudioFormatSafe(params.mimeType);
+    const transcriptionPrompt = this.buildTranscriptionPrompt(params.language);
+
+    this.logger.debug(
+      `Transcribing audio (mock interview): model=${model}, format=${audioFormat}, lang=${params.language}, size=${(params.audioBase64.length / 1024).toFixed(1)}KB`,
+    );
+
+    const maxRetries = 2;
+    let lastError: Error | null = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await this.callGeminiWithTimeout(
+          model,
+          transcriptionPrompt,
+          params.audioBase64,
+          audioFormat,
+          20000, // 20s timeout (transcription is faster)
+        );
+
+        const processingTime = Date.now() - startTime;
+        const text = response.choices[0]?.message?.content || '';
+
+        if (!text.trim()) {
+          this.logger.warn('Gemini transcription returned empty, may need retry');
+          if (attempt < maxRetries) {
+            continue;
+          }
+        }
+
+        this.logger.log(
+          `Gemini transcription done: ${processingTime}ms, tokens=${response.usage?.total_tokens || 'N/A'}, attempt=${attempt}`,
+        );
+
+        return {
+          text: text.trim(),
+          processingTime,
+          model,
+        };
+      } catch (error: any) {
+        lastError = error;
+        const processingTime = Date.now() - startTime;
+        const isRetryable = this.isRetryableError(error);
+
+        this.logger.warn(
+          `Gemini transcription attempt ${attempt}/${maxRetries} failed after ${processingTime}ms: ${error.message} (retryable: ${isRetryable})`,
+        );
+
+        if (!isRetryable || attempt >= maxRetries) {
+          break;
+        }
+
+        await this.sleep(1000 * attempt);
+      }
+    }
+
+    const processingTime = Date.now() - startTime;
+    this.logger.error(
+      `Gemini transcription failed after ${processingTime}ms and ${maxRetries} attempts: ${lastError?.message}`,
+      lastError?.stack,
+    );
+
+    throw new BadRequestException(
+      `Audio transcription failed: ${lastError?.message || 'Unknown error'}`,
     );
   }
 
@@ -452,5 +583,40 @@ The user is currently in a real interview and you are helping them.
 [One single most important senior tip - e.g., about performance, security, or best practices]
 
 ⚠️ IMPORTANT: Do not alter the meaning of the questions. If the audio asks two things, answer both!`;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Transcription-Only Prompts (for Mock Interviews)
+  // Minimal token usage — only transcribe, no AI response
+  // ═══════════════════════════════════════════════════════════════════════
+
+  private buildTranscriptionPrompt(lang: string): string {
+    const prompts: Record<string, string> = {
+      uz: `Siz audio transkripsiya tizimisiz. Vazifangiz:
+
+1. Berilgan audiodagi nutqni ANIQ matnga aylantiring.
+2. Faqat foydalanuvchi AYTGAN so'zlarni yozing.
+3. Hech narsa qo'shmang, sharh bermang, javob bermang.
+4. Agar audio tushunarsiz bo'lsa, "[tushunarsiz]" deb belgilang.
+5. Javobingiz FAQAT transkripsiya matni bo'lsin — boshqa hech narsa emas.`,
+
+      ru: `Вы система транскрипции аудио. Ваша задача:
+
+1. Точно преобразуйте речь из аудио в текст.
+2. Запишите ТОЛЬКО то, что сказал пользователь.
+3. Ничего не добавляйте, не комментируйте, не отвечайте.
+4. Если аудио неразборчиво, отметьте "[неразборчиво]".
+5. Ваш ответ должен содержать ТОЛЬКО текст транскрипции — ничего больше.`,
+
+      en: `You are an audio transcription system. Your task:
+
+1. Accurately convert the speech in the audio to text.
+2. Write ONLY what the user said.
+3. Do not add anything, do not comment, do not answer.
+4. If audio is unclear, mark it as "[unclear]".
+5. Your response must contain ONLY the transcription text — nothing else.`,
+    };
+
+    return prompts[lang] || prompts.en;
   }
 }

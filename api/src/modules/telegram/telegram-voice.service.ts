@@ -190,81 +190,138 @@ export class TelegramVoiceService {
       }
 
       // ═══════════════════════════════════════════════════════════════════
-      // GEMINI MULTIMODAL: Process ALL voice messages with Gemini
-      // This handles audio directly without separate STT step
+      // GEMINI MULTIMODAL: Process voice messages with Gemini
+      //
+      // CRITICAL ROUTING:
+      // - MOCK INTERVIEW → transcribeAudio() only (store answer, score at end)
+      // - LIVE SESSION   → processLiveAudio() (full AI response as helper)
       // ═══════════════════════════════════════════════════════════════════
 
       if (this.geminiAudioService.isEnabled()) {
-        this.logger.log(`Using Gemini for voice message from user ${userId}`);
+        // ─────────────────────────────────────────────────────────────────
+        // PATH A: MOCK INTERVIEW — Transcribe only, store answer
+        // User's voice answer → text → submitAnswer() → next question
+        // All answers scored together at the END of interview
+        // ─────────────────────────────────────────────────────────────────
+        if (isInMockInterview) {
+          this.logger.log(`Using Gemini TRANSCRIPTION for mock interview: user=${userId}`);
 
-        try {
-          // Get session metadata if available
-          const metadata = ctx.session?.liveSessionMetadata || {};
-
-          // Process audio with Gemini
-          const response = await this.geminiAudioService.processLiveAudio({
-            audioBase64: base64Audio,
-            mimeType: 'audio/ogg', // Telegram voice messages are OGG
-            context: {
-              domain: metadata.domain,
-              technologies: metadata.technologies,
-              position: metadata.position,
-              company: metadata.company,
-            },
-            language: lang,
-          });
-
-          // CRITICAL FIX: Deduct quota BEFORE sending response to user
-          // If quota fails, don't send response (user not charged for failed service)
-          const estimatedDurationSeconds = Math.max(30, voice.duration || 30);
-
-          // BUG FIX: Use correct quota type based on session mode.
-          // Gemini block handles BOTH mock and live sessions.
-          // Mock interview → deduct from mockVoice
-          // Live interview → deduct from realVoice
-          const geminiQuotaType = isInMockInterview ? 'mock' : 'real';
-          const geminiSessionId = isInMockInterview
-            ? ctx.session.currentInterviewSessionId
-            : undefined;
-
-          await this.voiceQuotaService.checkAndUseVoice(
-            userId,
-            geminiQuotaType,
-            estimatedDurationSeconds,
-            geminiSessionId,
-            response.text?.substring(0, 500), // Log AI response for tracking
-          );
-
-          // Delete processing message AFTER quota deduction succeeds
           try {
-            await ctx.api.deleteMessage(processingMsg.chat.id, processingMsg.message_id);
-          } catch {
-            // Ignore delete errors
+            const transcription = await this.geminiAudioService.transcribeAudio({
+              audioBase64: base64Audio,
+              mimeType: 'audio/ogg',
+              language: lang,
+            });
+
+            const transcribedText = transcription.text || '';
+
+            if (!transcribedText.trim()) {
+              this.logger.warn(`Empty transcription for mock interview: user=${userId}`);
+              const emptyText: Record<string, string> = {
+                uz: `⚠️ Ovozli xabar tushunilmadi. Iltimos qayta yuboring yoki matn yozing.`,
+                ru: `⚠️ Голосовое сообщение не распознано. Пожалуйста, повторите или напишите текстом.`,
+                en: `⚠️ Voice message not recognized. Please try again or type your answer.`,
+              };
+              await ctx.reply(emptyText[lang] || emptyText['en']);
+              return;
+            }
+
+            // Delete processing message
+            try {
+              await ctx.api.deleteMessage(processingMsg.chat.id, processingMsg.message_id);
+            } catch {
+              // Ignore delete errors
+            }
+
+            this.logger.log(
+              `Gemini transcription for mock: ${transcription.processingTime}ms, user=${userId}, text="${transcribedText.substring(0, 100)}..."`,
+            );
+
+            // Route to the correct mock interview answer handler
+            // This stores the answer, deducts quota, moves to next question
+            await this.handleInterviewVoiceAnswer(
+              ctx,
+              transcribedText,
+              userId,
+              base64Audio,
+              { text: transcribedText, duration: voice.duration || 0 },
+            );
+            return;
+          } catch (error: any) {
+            this.logger.error(
+              `Gemini transcription failed for mock interview: ${error.message}`,
+              error.stack,
+            );
+            const errorText: Record<string, string> = {
+              uz: `❌ Ovozli javobni qayta ishlashda xatolik. Iltimos matn shaklida javob yuboring.`,
+              ru: `❌ Ошибка обработки голосового ответа. Пожалуйста, отправьте ответ текстом.`,
+              en: `❌ Error processing voice answer. Please send your answer as text.`,
+            };
+            await ctx.reply(errorText[lang] || errorText['en']);
+            return;
           }
+        }
 
-          // Now send response (quota already deducted, user gets service)
-          const responseText = `${response.text}\n\n⏱️ ${response.processingTime}ms | 🤖 Gemini`;
-          await this.sendSafeMessage(ctx, responseText);
+        // ─────────────────────────────────────────────────────────────────
+        // PATH B: LIVE SESSION — Full AI response (interview helper)
+        // User records real interviewer's question → Gemini answers it
+        // ─────────────────────────────────────────────────────────────────
+        if (isInLiveSession) {
+          this.logger.log(`Using Gemini FULL RESPONSE for live session: user=${userId}`);
 
-          // CRITICAL: Mark quota as deducted to prevent duplicate charging in STT fallback
-          voiceQuotaDeducted = true;
+          try {
+            const metadata = ctx.session?.liveSessionMetadata || {};
 
-          this.logger.log(`Gemini audio processed: ${response.processingTime}ms, user=${userId}`);
-          return;
-        } catch (error: any) {
-          this.logger.error(
-            `Gemini audio failed: ${error.message}. STT is disabled, cannot fallback.`,
-            error.stack,
-          );
-          const errorText: Record<string, string> = {
-            uz: `❌ Ovozli xabarni qayta ishlashda xatolik: ${error.message}`,
-            ru: `❌ Ошибка обработки голосового сообщения: ${error.message}`,
-            en: `❌ Voice message processing error: ${error.message}`,
-          };
-          await ctx.reply(errorText[lang] || errorText['en'], {
-            parse_mode: 'HTML',
-          });
-          return;
+            const response = await this.geminiAudioService.processLiveAudio({
+              audioBase64: base64Audio,
+              mimeType: 'audio/ogg',
+              context: {
+                domain: metadata.domain,
+                technologies: metadata.technologies,
+                position: metadata.position,
+                company: metadata.company,
+              },
+              language: lang,
+            });
+
+            // Deduct quota BEFORE sending response
+            const estimatedDurationSeconds = Math.max(30, voice.duration || 30);
+
+            await this.voiceQuotaService.checkAndUseVoice(
+              userId,
+              'real',
+              estimatedDurationSeconds,
+              undefined,
+              response.text?.substring(0, 500),
+            );
+
+            // Delete processing message
+            try {
+              await ctx.api.deleteMessage(processingMsg.chat.id, processingMsg.message_id);
+            } catch {
+              // Ignore delete errors
+            }
+
+            const responseText = `${response.text}\n\n⏱️ ${response.processingTime}ms | 🤖 Gemini`;
+            await this.sendSafeMessage(ctx, responseText);
+
+            voiceQuotaDeducted = true;
+
+            this.logger.log(`Gemini live response: ${response.processingTime}ms, user=${userId}`);
+            return;
+          } catch (error: any) {
+            this.logger.error(
+              `Gemini audio failed for live session: ${error.message}`,
+              error.stack,
+            );
+            const errorText: Record<string, string> = {
+              uz: `❌ Ovozli xabarni qayta ishlashda xatolik: ${error.message}`,
+              ru: `❌ Ошибка обработки голосового сообщения: ${error.message}`,
+              en: `❌ Voice message processing error: ${error.message}`,
+            };
+            await ctx.reply(errorText[lang] || errorText['en']);
+            return;
+          }
         }
       }
 
