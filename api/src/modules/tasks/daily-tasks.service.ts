@@ -1615,15 +1615,78 @@ Respond ONLY with valid JSON (all text in ${langName}):
     try {
       const bot = this.telegramService.getBot();
       if (bot && user.telegramId) {
-        const notifMessages: Record<string, string> = {
-          uz: "🎯 Kunlik topshiriqlaringiz tayyor! Ko'rish uchun /tasks bosing.",
-          ru: '🎯 Ваши ежедневные задания готовы! Нажмите /tasks чтобы посмотреть.',
-          en: '🎯 Your daily tasks are ready! Use /tasks to see them.',
-        };
-        await bot.api.sendMessage(
-          user.telegramId,
-          notifMessages[userLanguage] || notifMessages.en,
+        // Motivational openers — picked deterministically by day-of-year so the
+        // same user never sees the same opener two days in a row (cycles every N days)
+        const dayOfYear = Math.floor(
+          (today.getTime() - new Date(today.getFullYear(), 0, 0).getTime()) / 86400000,
         );
+
+        const motivationalOpeners: Record<string, string[]> = {
+          uz: [
+            "💡 Har bir savol — o'sish imkoniyati. Bugun ham bir qadam oldinga!",
+            "🚀 Eng yaxshi dasturchlar har kuni o'rganishni to'xtatmaydi. Siz ham!",
+            "🔥 Bugungi mashq — ertangi intervyudagi ishonchingiz!",
+            "🧠 Bilim — bu eng foydali investitsiya. Bugun ham qo'shilsin!",
+            "⚡ Professional bo'lish — bu odatlar yig'indisi. Davom eting!",
+            "🎯 Har bir bajarilgan topshiriq sizni orzuingizga yaqinlashtiradi!",
+            "💪 Qiyin savollar — kuchli mutaxassislar uchun. Siz uddalaysiz!",
+            "🌟 Bugun o'rgangan narsangiz — ertaga intervyuda ishlaydi!",
+            "📈 Har kun bir foiz o'sish — bir yilda 37 barobarga o'sish demak!",
+            "🏆 Maqsad — yaxshi intervyu emas, yaxshi mutaxassis bo'lish!",
+          ],
+          ru: [
+            "💡 Каждый вопрос — шанс вырасти. Ещё один шаг вперёд сегодня!",
+            "🚀 Лучшие разработчики никогда не перестают учиться. И вы тоже!",
+            "🔥 Сегодняшняя практика — ваша уверенность на завтрашнем интервью!",
+            "🧠 Знания — самая выгодная инвестиция. Пополняйте их каждый день!",
+            "⚡ Профессионализм — это сумма привычек. Продолжайте!",
+            "🎯 Каждое выполненное задание приближает вас к мечте!",
+            "💪 Сложные вопросы — для сильных специалистов. У вас получится!",
+            "🌟 То, что вы изучите сегодня, сработает на интервью завтра!",
+            "📈 Рост на 1% каждый день — это рост в 37 раз за год!",
+            "🏆 Цель — не просто пройти интервью, а стать сильным специалистом!",
+          ],
+          en: [
+            "💡 Every question is a chance to grow. One more step forward today!",
+            "🚀 The best engineers never stop learning. Neither should you!",
+            "🔥 Today's practice is tomorrow's interview confidence!",
+            "🧠 Knowledge is the best investment. Keep adding to it every day!",
+            "⚡ Professionalism is the sum of habits. Keep going!",
+            "🎯 Every completed task brings you closer to your dream job!",
+            "💪 Hard questions are for strong engineers. You've got this!",
+            "🌟 What you learn today will work for you in tomorrow's interview!",
+            "📈 1% growth every day — that's 37x growth in a year!",
+            "🏆 The goal isn't just to pass interviews — it's to become great!",
+          ],
+        };
+
+        const openers = motivationalOpeners[userLanguage] || motivationalOpeners.en;
+        const opener = openers[dayOfYear % openers.length];
+
+        // Build task list (titles only, numbered)
+        const taskLines = tasks
+          .map((t, i) => `${i + 1}. ${t.title}`)
+          .join('\n');
+
+        const taskListLabel: Record<string, string> = {
+          uz: '📋 Bugungi topshiriqlar:',
+          ru: '📋 Задания на сегодня:',
+          en: '📋 Today\'s tasks:',
+        };
+        const ctaLabel: Record<string, string> = {
+          uz: "Boshlash uchun /tasks bosing.",
+          ru: 'Нажмите /tasks чтобы начать.',
+          en: 'Use /tasks to start.',
+        };
+
+        const lang = userLanguage as keyof typeof taskListLabel;
+        const notifText =
+          `${opener}\n\n` +
+          `${taskListLabel[lang] || taskListLabel.en}\n` +
+          `${taskLines}\n\n` +
+          `${ctaLabel[lang] || ctaLabel.en}`;
+
+        await bot.api.sendMessage(user.telegramId, notifText);
 
         // Shared daily cap: prevents AI engagement cron sending another msg today
         await this.userModel.updateOne(
