@@ -805,21 +805,38 @@ export class DailyTasksService implements OnApplicationBootstrap {
       // pipeline, both see the new incremented value atomically.
       // BUG-B FIX: Use $ifNull to handle null/missing dailyTasks fields on older user documents.
       // Without $ifNull, MongoDB pipeline: null + 1 = null, causing streak to always stay 0.
-      await this.userModel.findByIdAndUpdate(userId, [
-        {
-          $set: {
-            'dailyTasks.currentStreak': { $add: [{ $ifNull: ['$dailyTasks.currentStreak', 0] }, 1] },
-            'dailyTasks.totalCompleted': { $add: [{ $ifNull: ['$dailyTasks.totalCompleted', 0] }, 1] },
-          },
-        },
-        {
-          $set: {
-            'dailyTasks.longestStreak': {
-              $max: [{ $ifNull: ['$dailyTasks.longestStreak', 0] }, '$dailyTasks.currentStreak'],
+      // IMPORTANT: Use userObjectId (ObjectId), not userId (string) — pipeline array update
+      // syntax requires exact _id match; string vs ObjectId mismatch = silent no-op.
+      const streakResult = await this.userModel.findByIdAndUpdate(
+        userObjectId,
+        [
+          {
+            $set: {
+              'dailyTasks.currentStreak': { $add: [{ $ifNull: ['$dailyTasks.currentStreak', 0] }, 1] },
+              'dailyTasks.totalCompleted': { $add: [{ $ifNull: ['$dailyTasks.totalCompleted', 0] }, 1] },
             },
           },
-        },
-      ]);
+          {
+            $set: {
+              'dailyTasks.longestStreak': {
+                $max: [{ $ifNull: ['$dailyTasks.longestStreak', 0] }, '$dailyTasks.currentStreak'],
+              },
+            },
+          },
+        ],
+        { new: true, select: 'dailyTasks' },
+      );
+
+      if (!streakResult) {
+        this.logger.error(`Streak update failed: user ${userId} not found (ObjectId: ${userObjectId})`);
+      } else {
+        this.logger.log(
+          `Streak updated for user ${userId}: ` +
+          `currentStreak=${streakResult.dailyTasks?.currentStreak}, ` +
+          `longestStreak=${streakResult.dailyTasks?.longestStreak}, ` +
+          `totalCompleted=${streakResult.dailyTasks?.totalCompleted}`,
+        );
+      }
     }
 
     // Return immediately with pending score (0-100 scale)
