@@ -1621,10 +1621,12 @@ Respond ONLY with valid JSON (all text in ${langName}):
           (today.getTime() - new Date(today.getFullYear(), 0, 0).getTime()) / 86400000,
         );
 
+        // Universal motivational openers — NO profession-specific words.
+        // Works for any career: IT, finance, medicine, law, marketing, etc.
         const motivationalOpeners: Record<string, string[]> = {
           uz: [
             "💡 Har bir savol — o'sish imkoniyati. Bugun ham bir qadam oldinga!",
-            "🚀 Eng yaxshi dasturchlar har kuni o'rganishni to'xtatmaydi. Siz ham!",
+            "🚀 Muvaffaqiyatli karera — har kungi kichik harakatlar yig'indisi!",
             "🔥 Bugungi mashq — ertangi intervyudagi ishonchingiz!",
             "🧠 Bilim — bu eng foydali investitsiya. Bugun ham qo'shilsin!",
             "⚡ Professional bo'lish — bu odatlar yig'indisi. Davom eting!",
@@ -1632,11 +1634,15 @@ Respond ONLY with valid JSON (all text in ${langName}):
             "💪 Qiyin savollar — kuchli mutaxassislar uchun. Siz uddalaysiz!",
             "🌟 Bugun o'rgangan narsangiz — ertaga intervyuda ishlaydi!",
             "📈 Har kun bir foiz o'sish — bir yilda 37 barobarga o'sish demak!",
-            "🏆 Maqsad — yaxshi intervyu emas, yaxshi mutaxassis bo'lish!",
+            "🏆 Maqsad — yaxshi intervyu emas, haqiqiy mutaxassis bo'lish!",
+            "🎓 Tayyorgarlik — tasodifiy emas, ongli tanlov. Bugun ham shunday!",
+            "🌱 Har bir topshiriq — kelajak karerангizга qo'yilgan g'isht!",
+            "⭐ Eng yaxshi natijalar — eng izchil odamlarnikida bo'ladi!",
+            "🔑 Bilimingiz — hech kim tortib ololmaydigan boylik. Ko'paytiring!",
           ],
           ru: [
             "💡 Каждый вопрос — шанс вырасти. Ещё один шаг вперёд сегодня!",
-            "🚀 Лучшие разработчики никогда не перестают учиться. И вы тоже!",
+            "🚀 Успешная карьера — это сумма ежедневных маленьких усилий!",
             "🔥 Сегодняшняя практика — ваша уверенность на завтрашнем интервью!",
             "🧠 Знания — самая выгодная инвестиция. Пополняйте их каждый день!",
             "⚡ Профессионализм — это сумма привычек. Продолжайте!",
@@ -1644,19 +1650,27 @@ Respond ONLY with valid JSON (all text in ${langName}):
             "💪 Сложные вопросы — для сильных специалистов. У вас получится!",
             "🌟 То, что вы изучите сегодня, сработает на интервью завтра!",
             "📈 Рост на 1% каждый день — это рост в 37 раз за год!",
-            "🏆 Цель — не просто пройти интервью, а стать сильным специалистом!",
+            "🏆 Цель — не просто пройти интервью, а стать настоящим профи!",
+            "🎓 Подготовка — это не случайность, а осознанный выбор. Вперёд!",
+            "🌱 Каждое задание — это кирпичик в фундаменте вашей карьеры!",
+            "⭐ Лучших результатов достигают самые последовательные люди!",
+            "🔑 Ваши знания — богатство, которое никто не отнимет. Умножайте!",
           ],
           en: [
             "💡 Every question is a chance to grow. One more step forward today!",
-            "🚀 The best engineers never stop learning. Neither should you!",
+            "🚀 A great career is built from small daily actions — keep going!",
             "🔥 Today's practice is tomorrow's interview confidence!",
             "🧠 Knowledge is the best investment. Keep adding to it every day!",
             "⚡ Professionalism is the sum of habits. Keep going!",
             "🎯 Every completed task brings you closer to your dream job!",
-            "💪 Hard questions are for strong engineers. You've got this!",
+            "💪 Hard questions separate good candidates from great ones. Be great!",
             "🌟 What you learn today will work for you in tomorrow's interview!",
             "📈 1% growth every day — that's 37x growth in a year!",
-            "🏆 The goal isn't just to pass interviews — it's to become great!",
+            "🏆 The goal isn't just to pass interviews — it's to become truly great!",
+            "🎓 Preparation is not an accident — it's a conscious choice. Let's go!",
+            "🌱 Each task is a building block of your future career!",
+            "⭐ The best results belong to the most consistent people!",
+            "🔑 Your knowledge is wealth no one can take away. Keep growing!",
           ],
         };
 
