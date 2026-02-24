@@ -2,7 +2,8 @@ import { Injectable, Logger, OnModuleInit, Inject, forwardRef } from '@nestjs/co
 import { ConfigService } from '@nestjs/config';
 import { InjectRedis } from '@nestjs-modules/ioredis';
 import Redis from 'ioredis';
-import { Bot, Context, session, InputFile } from 'grammy';
+import { Bot, Context, session, InputFile, SessionFlavor } from 'grammy';
+import { RedisAdapter } from '@grammyjs/storage-redis';
 import { TelegramCommandsService } from './telegram-commands.service';
 import { TelegramVoiceService } from './telegram-voice.service';
 import { TelegramLiveService } from './telegram-live.service';
@@ -94,7 +95,10 @@ export class TelegramService implements OnModuleInit {
     try {
       this.bot = new Bot<BotContext>(this.botToken);
 
-      // Setup session middleware
+      // Setup session middleware with Redis persistence
+      // Sessions survive server restarts/deploys — users won't lose interview state
+      const redisStorage = new RedisAdapter({ instance: this.redis });
+
       this.bot.use(
         session({
           initial: () => ({
@@ -121,8 +125,11 @@ export class TelegramService implements OnModuleInit {
             liveSessionMetadata: undefined,
             profileUpdateStep: undefined,
           }),
+          storage: redisStorage,
         }),
       );
+
+      this.logger.log('Grammy session storage: Redis (persistent)');
 
       // CRITICAL SECURITY: Rate limiting middleware to prevent abuse
       // Limits: 30 actions per minute per user (commands, voice, text)

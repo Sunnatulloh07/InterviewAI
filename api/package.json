@@ -36,6 +36,7 @@
     "@grammyjs/conversations": "^2.1.0",
     "@grammyjs/menu": "^1.2.1",
     "@grammyjs/runner": "^2.0.3",
+    "@grammyjs/storage-redis": "^2.5.1",
     "@nestjs-modules/ioredis": "^2.0.2",
     "@nestjs/axios": "^4.0.1",
     "@nestjs/bull": "^11.0.4",
