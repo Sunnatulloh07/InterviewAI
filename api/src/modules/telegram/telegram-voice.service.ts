@@ -218,17 +218,20 @@ export class TelegramVoiceService {
           // If quota fails, don't send response (user not charged for failed service)
           const estimatedDurationSeconds = Math.max(30, voice.duration || 30);
 
-          // REMOVED: Old double tracking system
-          // await this.subscriptionService.addLiveMinutes(userId, 1);
-          // REASON: voiceQuota.realVoice.used already tracks live interview usage
-          // No need for separate usage.liveInterviewMinutesThisMonth counter
+          // BUG FIX: Use correct quota type based on session mode.
+          // Gemini block handles BOTH mock and live sessions.
+          // Mock interview → deduct from mockVoice
+          // Live interview → deduct from realVoice
+          const geminiQuotaType = isInMockInterview ? 'mock' : 'real';
+          const geminiSessionId = isInMockInterview
+            ? ctx.session.currentInterviewSessionId
+            : undefined;
 
-          // Deduct from realVoice quota (throws if insufficient)
           await this.voiceQuotaService.checkAndUseVoice(
             userId,
-            'real', // ✅ Use 'real' type for live interviews
+            geminiQuotaType,
             estimatedDurationSeconds,
-            undefined, // No session ID for live interviews
+            geminiSessionId,
             response.text?.substring(0, 500), // Log AI response for tracking
           );
 
