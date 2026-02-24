@@ -837,14 +837,40 @@ Progress: ${completedCount}/${totalTasks} completed (${progressPercent}%)
       }
 
       // ═══════════════════════════════════════════════════════════════════
-      // STEP 2: PRE-FLIGHT CHECK (before downloading audio)
-      // Saves bandwidth if user has no quota
+      // STEP 2: PRE-FLIGHT CHECK with exact seconds
+      // Saves bandwidth + AI cost if user has no quota
       // ═══════════════════════════════════════════════════════════════════
+      const audioDurationSeconds = voice.duration || 0;
+
       const preflight = await this.voiceQuotaGuardService.preFlightCheck(
         userId,
         'mock', // Daily tasks use mock quota
-        voice.duration || 30,
+        audioDurationSeconds || 30,
       );
+
+      // Check if remaining seconds < 5 → limit fully exhausted
+      const remainingSeconds = (preflight.quotaInfo?.remaining || 0) * 60;
+
+      if (remainingSeconds < 5) {
+        const limitDoneText = {
+          uz: `🔒 <b>Ovozli limit tugadi</b>\n\nSizning ovozli daqiqalaringiz tugagan.\nMatn shaklida javob yuboring yoki /upgrade orqali tarifni yangilang.`,
+          ru: `🔒 <b>Голосовой лимит исчерпан</b>\n\nВаши голосовые минуты закончились.\nПродолжите текстом или обновите тариф через /upgrade.`,
+          en: `🔒 <b>Voice limit exhausted</b>\n\nYour voice minutes have run out.\nContinue with text or upgrade via /upgrade.`,
+        };
+        await ctx.reply(limitDoneText[lang] || limitDoneText.uz, { parse_mode: 'HTML' });
+        return;
+      }
+
+      // Check if audio duration exceeds remaining seconds
+      if (audioDurationSeconds > remainingSeconds) {
+        const tooLongText = {
+          uz: `⚠️ <b>Ovozli xabar limitdan oshib ketdi</b>\n\nSizning xabaringiz: ${audioDurationSeconds}s\nQolgan limit: ${remainingSeconds}s\n\nIltimos qisqaroq ovozli xabar yuboring yoki matn yozing.`,
+          ru: `⚠️ <b>Голосовое сообщение превышает лимит</b>\n\nВаше сообщение: ${audioDurationSeconds}с\nОстаток лимита: ${remainingSeconds}с\n\nОтправьте короче или напишите текстом.`,
+          en: `⚠️ <b>Voice message exceeds limit</b>\n\nYour message: ${audioDurationSeconds}s\nRemaining: ${remainingSeconds}s\n\nPlease send a shorter voice or type your answer.`,
+        };
+        await ctx.reply(tooLongText[lang] || tooLongText.uz, { parse_mode: 'HTML' });
+        return;
+      }
 
       if (!preflight.allowed) {
         const noQuotaText = {

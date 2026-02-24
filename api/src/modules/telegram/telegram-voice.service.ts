@@ -110,41 +110,64 @@ export class TelegramVoiceService {
         throw new Error('Voice message not found');
       }
 
-      // CRITICAL PERFORMANCE FIX: Pre-check quota BEFORE downloading file
-      // This saves bandwidth if user has no quota
+      // ═══════════════════════════════════════════════════════════════════
+      // STRICT QUOTA PRE-CHECK: Compare exact seconds BEFORE AI call
+      // This saves bandwidth + AI cost if user has no quota
+      //
+      // Logic:
+      //   remainingSeconds = quota.remaining * 60 (DB stores minutes)
+      //   if remainingSeconds < 5  → "Limit tugadi"
+      //   if voice.duration > remainingSeconds → "Qisqaroq voice yuboring"
+      // ═══════════════════════════════════════════════════════════════════
+      const audioDurationSeconds = voice.duration || 0;
+
       if (isInMockInterview && ctx.session.interviewMode === 'mock') {
         const quota = await this.voiceQuotaService.getQuota(userId);
-        const estimatedMinutes = Math.ceil(voice.duration / 60);
+        const remainingSeconds = quota.mockVoice.remaining * 60;
 
-        if (quota.mockVoice.remaining < estimatedMinutes) {
-          const quotaExceededText: Record<string, string> = {
-            uz: `❌ Ovozli xabar uchun yetarli daqiqalar yo'q.\n\nKerak: ${estimatedMinutes} min\nMavjud: ${quota.mockVoice.remaining} min\n\nMatn shaklida davom eting yoki /voice buyrug'i orqali tarifni yangilang.`,
-            ru: `❌ Недостаточно минут для голосового сообщения.\n\nНужно: ${estimatedMinutes} мин\nДоступно: ${quota.mockVoice.remaining} min\n\nПродолжите текстом или обновите тариф через /voice.`,
-            en: `❌ Not enough voice minutes.\n\nNeed: ${estimatedMinutes} min\nAvailable: ${quota.mockVoice.remaining} min\n\nContinue with text or upgrade via /voice.`,
+        if (remainingSeconds < 5) {
+          const limitDoneText: Record<string, string> = {
+            uz: `🔒 <b>Ovozli limit tugadi</b>\n\nSizning ovozli daqiqalaringiz tugagan.\nMatn shaklida davom eting yoki /upgrade orqali tarifni yangilang.`,
+            ru: `🔒 <b>Голосовой лимит исчерпан</b>\n\nВаши голосовые минуты закончились.\nПродолжите текстом или обновите тариф через /upgrade.`,
+            en: `🔒 <b>Voice limit exhausted</b>\n\nYour voice minutes have run out.\nContinue with text or upgrade via /upgrade.`,
           };
-          await ctx.reply(quotaExceededText[lang] || quotaExceededText['en'], {
-            parse_mode: 'HTML',
-          });
-          return; // ✅ Don't download file if quota exhausted
+          await ctx.reply(limitDoneText[lang] || limitDoneText['en'], { parse_mode: 'HTML' });
+          return;
+        }
+
+        if (audioDurationSeconds > remainingSeconds) {
+          const tooLongText: Record<string, string> = {
+            uz: `⚠️ <b>Ovozli xabar limitdan oshib ketdi</b>\n\nSizning xabaringiz: ${audioDurationSeconds}s\nQolgan limit: ${remainingSeconds}s\n\nIltimos qisqaroq ovozli xabar yuboring yoki matn yozing.`,
+            ru: `⚠️ <b>Голосовое сообщение превышает лимит</b>\n\nВаше сообщение: ${audioDurationSeconds}с\nОстаток лимита: ${remainingSeconds}с\n\nОтправьте короче или напишите текстом.`,
+            en: `⚠️ <b>Voice message exceeds limit</b>\n\nYour message: ${audioDurationSeconds}s\nRemaining: ${remainingSeconds}s\n\nPlease send a shorter voice or type your answer.`,
+          };
+          await ctx.reply(tooLongText[lang] || tooLongText['en'], { parse_mode: 'HTML' });
+          return;
         }
       }
 
-      // FIX #3: Pre-check quota for LIVE sessions to prevent bandwidth waste
-      // Same logic as mock interviews - check before downloading
       if (isInLiveSession) {
         const quota = await this.voiceQuotaService.getQuota(userId);
-        const estimatedMinutes = Math.ceil(voice.duration / 60);
+        const remainingSeconds = quota.realVoice.remaining * 60;
 
-        if (quota.realVoice.remaining < estimatedMinutes) {
-          const quotaExceededText: Record<string, string> = {
-            uz: `❌ Live sessiya uchun yetarli daqiqalar yo'q.\n\nKerak: ${estimatedMinutes} min\nMavjud: ${quota.realVoice.remaining} min\n\nMatn shaklida davom eting yoki /voice buyrug'i orqali tarifni yangilang.`,
-            ru: `❌ Недостаточно минут для live сессии.\n\nНужно: ${estimatedMinutes} мин\nДоступно: ${quota.realVoice.remaining} min\n\nПродолжите текстом или обновите тариф через /voice.`,
-            en: `❌ Not enough voice minutes for live session.\n\nNeed: ${estimatedMinutes} min\nAvailable: ${quota.realVoice.remaining} min\n\nContinue with text or upgrade via /voice.`,
+        if (remainingSeconds < 5) {
+          const limitDoneText: Record<string, string> = {
+            uz: `🔒 <b>Live ovozli limit tugadi</b>\n\nSizning live daqiqalaringiz tugagan.\nMatn shaklida davom eting yoki /upgrade orqali tarifni yangilang.`,
+            ru: `🔒 <b>Лимит live голоса исчерпан</b>\n\nВаши минуты live закончились.\nПродолжите текстом или обновите тариф через /upgrade.`,
+            en: `🔒 <b>Live voice limit exhausted</b>\n\nYour live minutes have run out.\nContinue with text or upgrade via /upgrade.`,
           };
-          await ctx.reply(quotaExceededText[lang] || quotaExceededText['en'], {
-            parse_mode: 'HTML',
-          });
-          return; // ✅ Don't download file if quota exhausted
+          await ctx.reply(limitDoneText[lang] || limitDoneText['en'], { parse_mode: 'HTML' });
+          return;
+        }
+
+        if (audioDurationSeconds > remainingSeconds) {
+          const tooLongText: Record<string, string> = {
+            uz: `⚠️ <b>Ovozli xabar limitdan oshib ketdi</b>\n\nSizning xabaringiz: ${audioDurationSeconds}s\nQolgan limit: ${remainingSeconds}s\n\nIltimos qisqaroq ovozli xabar yuboring yoki matn yozing.`,
+            ru: `⚠️ <b>Голосовое сообщение превышает лимит</b>\n\nВаше сообщение: ${audioDurationSeconds}с\nОстаток лимита: ${remainingSeconds}с\n\nОтправьте короче или напишите текстом.`,
+            en: `⚠️ <b>Voice message exceeds limit</b>\n\nYour message: ${audioDurationSeconds}s\nRemaining: ${remainingSeconds}s\n\nPlease send a shorter voice or type your answer.`,
+          };
+          await ctx.reply(tooLongText[lang] || tooLongText['en'], { parse_mode: 'HTML' });
+          return;
         }
       }
 
