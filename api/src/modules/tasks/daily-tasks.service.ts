@@ -1636,7 +1636,7 @@ Respond ONLY with valid JSON (all text in ${langName}):
             "📈 Har kun bir foiz o'sish — bir yilda 37 barobarga o'sish demak!",
             "🏆 Maqsad — yaxshi intervyu emas, haqiqiy mutaxassis bo'lish!",
             "🎓 Tayyorgarlik — tasodifiy emas, ongli tanlov. Bugun ham shunday!",
-            "🌱 Har bir topshiriq — kelajak karerангizга qo'yilgan g'isht!",
+            "🌱 Har bir topshiriq — kelajak karerangizga qo'yilgan g'isht!",
             "⭐ Eng yaxshi natijalar — eng izchil odamlarnikida bo'ladi!",
             "🔑 Bilimingiz — hech kim tortib ololmaydigan boylik. Ko'paytiring!",
           ],
