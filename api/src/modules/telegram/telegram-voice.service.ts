@@ -665,7 +665,10 @@ export class TelegramVoiceService {
       } else {
         // Show next question
         const nextQuestion = allQuestions[ctx.session.currentQuestionIndex];
-        const questionText = typeof nextQuestion === 'object' ? nextQuestion.text : nextQuestion;
+        // Schema field is .question (not .text) — match text handler in telegram-commands.service.ts
+        const questionText = typeof nextQuestion === 'object'
+          ? (nextQuestion.question || nextQuestion.text || 'Savol yuklanmoqda...')
+          : nextQuestion;
 
         const nextQuestionText: Record<string, string> = {
           uz: `📝 <b>Savol ${ctx.session.currentQuestionIndex + 1}/${allQuestions.length}:</b>\n\n${questionText}`,
