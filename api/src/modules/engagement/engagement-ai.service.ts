@@ -156,8 +156,8 @@ export class EngagementAiService {
         : undefined,
     });
 
-    // Use Z-AI GLM-4.5-Flash (FREE) if using OpenRouter
-    this.model = isOpenRouter ? 'zhipu/glm-4.5-flash' : 'gpt-4o-mini';
+    // Use Z-AI GLM-4-32b if using OpenRouter (zhipu/glm-4.5-flash is not a valid OpenRouter model ID)
+    this.model = isOpenRouter ? 'z-ai/glm-4-32b' : 'gpt-4o-mini';
 
     this.logger.log(`EngagementAiService initialized with model: ${this.model}`);
   }
