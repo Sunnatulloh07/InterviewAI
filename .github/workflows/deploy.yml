@@ -162,8 +162,10 @@ jobs:
                   - REDIS_PORT=6379
                   - REDIS_PASSWORD=${REDIS_PASSWORD}
                 depends_on:
-                  - mongodb
-                  - redis
+                  mongodb:
+                    condition: service_started
+                  redis:
+                    condition: service_started
                 networks:
                   - app-network
             
@@ -175,8 +177,6 @@ jobs:
                   MONGO_INITDB_ROOT_USERNAME: ${MONGODB_ROOT_USERNAME}
                   MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_ROOT_PASSWORD}
                   MONGO_INITDB_DATABASE: ${MONGODB_DB_NAME}
-                ports:
-                  - '127.0.0.1:27017:27017'
                 volumes:
                   - mongodb_data:/data/db
                 networks:
@@ -187,8 +187,6 @@ jobs:
                 container_name: jobi-redis
                 restart: unless-stopped
                 command: redis-server --requirepass ${REDIS_PASSWORD}
-                ports:
-                  - '127.0.0.1:6379:6379'
                 volumes:
                   - redis_data:/data
                 networks:
@@ -211,6 +209,10 @@ jobs:
             
             echo "🛑 Stopping old containers..."
             docker compose -f docker-compose.prod.yml down || true
+            
+            echo "🧹 Cleaning up any orphan containers on conflicting ports..."
+            docker stop jobi-api jobi-mongodb jobi-redis 2>/dev/null || true
+            docker rm jobi-api jobi-mongodb jobi-redis 2>/dev/null || true
             
             echo "▶️ Starting containers..."
             docker compose -f docker-compose.prod.yml up -d
