@@ -3,6 +3,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { ConfigModule } from '@nestjs/config';
 
 import { LeaderboardService } from './leaderboard.service';
+import { LeaderboardController } from './leaderboard.controller';
 import { TelegramLeaderboardService } from './telegram-leaderboard.service';
 import {
   LeaderboardEntry,
@@ -14,6 +15,7 @@ import { User, UserSchema } from '../users/schemas/user.schema';
  * LeaderboardModule — competitive ranking system
  *
  * Provides:
+ *   - LeaderboardController: REST API (GET /api/leaderboard/:period, GET /api/leaderboard/me)
  *   - LeaderboardService: point awarding, rank calculation, period management
  *   - TelegramLeaderboardService: bot UI for /leaderboard command
  *
@@ -35,6 +37,7 @@ import { User, UserSchema } from '../users/schemas/user.schema';
     ]),
     ConfigModule,
   ],
+  controllers: [LeaderboardController],
   providers: [LeaderboardService, TelegramLeaderboardService],
   exports: [LeaderboardService, TelegramLeaderboardService],
 })

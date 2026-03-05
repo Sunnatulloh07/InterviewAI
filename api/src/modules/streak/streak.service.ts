@@ -349,6 +349,74 @@ export class StreakService implements OnModuleInit {
     return result.modifiedCount;
   }
 
+  // ─── Manual Freeze ──────────────────────────────────────────
+
+  /**
+   * Manually freeze the user's streak (user-initiated, Pro/Elite only).
+   * Returns { success, freezesRemaining, message }.
+   *
+   * Validates:
+   * - User's plan supports freeze
+   * - User has an active/at_risk streak to freeze
+   * - User has remaining freezes this month
+   */
+  async manualFreeze(
+    userId: string,
+    userPlan: string,
+  ): Promise<{
+    success: boolean;
+    freezesRemaining: number;
+    message: string;
+  }> {
+    if (!canUseStreakFreeze(userPlan)) {
+      return {
+        success: false,
+        freezesRemaining: 0,
+        message: 'Streak freeze is available for Pro and Elite plans only.',
+      };
+    }
+
+    const streak = await this.getOrCreateStreak(userId);
+
+    if (!['active', 'at_risk'].includes(streak.state)) {
+      return {
+        success: false,
+        freezesRemaining: streak.freezesRemaining,
+        message:
+          streak.state === 'frozen'
+            ? 'Your streak is already frozen.'
+            : 'You have no active streak to freeze.',
+      };
+    }
+
+    if (streak.currentStreak === 0) {
+      return {
+        success: false,
+        freezesRemaining: streak.freezesRemaining,
+        message: 'You have no active streak to freeze.',
+      };
+    }
+
+    const froze = await this.tryFreeze(userId, streak);
+
+    if (!froze) {
+      return {
+        success: false,
+        freezesRemaining: 0,
+        message: 'No freezes remaining this month.',
+      };
+    }
+
+    // Reload to get updated freezesRemaining
+    const updated = await this.getOrCreateStreak(userId);
+
+    return {
+      success: true,
+      freezesRemaining: updated.freezesRemaining,
+      message: `Streak frozen! ${updated.freezesRemaining} freeze(s) remaining this month.`,
+    };
+  }
+
   // ─── Freeze Logic ─────────────────────────────────────────
 
   /**

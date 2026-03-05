@@ -3,6 +3,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { ConfigModule } from '@nestjs/config';
 
 import { BadgeService } from './badge.service';
+import { GamificationController } from './gamification.controller';
 import {
   BadgeDefinition,
   BadgeDefinitionSchema,
@@ -16,6 +17,7 @@ import {
  * GamificationModule — badges and gamification elements
  *
  * Provides:
+ *   - GamificationController: REST API (GET /api/badges/all, GET /api/badges/me, POST /api/badges/:id/claim)
  *   - BadgeService: badge awarding, seeding, event listeners
  *
  * Exports:
@@ -35,6 +37,7 @@ import {
     ]),
     ConfigModule,
   ],
+  controllers: [GamificationController],
   providers: [BadgeService],
   exports: [BadgeService],
 })
