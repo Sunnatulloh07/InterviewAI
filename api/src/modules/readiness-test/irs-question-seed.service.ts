@@ -1,452 +1,273 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import { ConfigService } from '@nestjs/config';
 import { Model } from 'mongoose';
+import OpenAI from 'openai';
 import { IrsQuestion, IrsQuestionDocument } from './schemas/irs-question-pool.schema';
+import { IRS_CATEGORIES, IRS_DIFFICULTIES, IRS_TOTAL_QUESTIONS } from './constants/irs.constants';
 
 /**
- * IRS Question Seed Service
+ * IRS Question Generator Service
  *
- * Seeds the irs_questions collection on application startup if empty.
- * Idempotent: only inserts if collection has fewer than MINIMUM_QUESTIONS.
+ * 3-LEVEL DEFENSE (same pattern as SafeQuestionProviderService):
+ * 1. DB pool (fast, free)
+ * 2. AI generation (on-demand, saves to DB for future)
+ * 3. Static fallback (always works)
  *
- * Strategy: Create questions for the most common techStacks with all
- * positions, categories, and difficulties. The fallback system in
- * ReadinessTestService ensures less common techStacks still work by
- * falling back to any-techStack questions.
+ * Also seeds a minimal set of questions on first startup via AI.
  */
 @Injectable()
 export class IrsQuestionSeedService implements OnModuleInit {
   private readonly logger = new Logger(IrsQuestionSeedService.name);
-  private readonly MINIMUM_QUESTIONS = 50;
+  private readonly openai: OpenAI | null;
+  private readonly MINIMUM_SEED_QUESTIONS = 20;
 
   constructor(
     @InjectModel(IrsQuestion.name)
     private readonly irsQuestionModel: Model<IrsQuestionDocument>,
-  ) {}
-
-  async onModuleInit(): Promise<void> {
-    try {
-      const count = await this.irsQuestionModel.countDocuments();
-      if (count >= this.MINIMUM_QUESTIONS) {
-        this.logger.log(`IRS question pool has ${count} questions. Skipping seed.`);
-        return;
-      }
-
-      this.logger.log(`IRS question pool has ${count} questions. Seeding...`);
-      const questions = this.buildSeedQuestions();
-
-      // Use insertMany with ordered:false to skip duplicates
-      const result = await this.irsQuestionModel.insertMany(questions, { ordered: false });
-      this.logger.log(`Seeded ${result.length} IRS questions successfully.`);
-    } catch (error: any) {
-      // BulkWriteError with duplicates is fine
-      if (error.code === 11000 || error.name === 'BulkWriteError') {
-        this.logger.log(`IRS seed completed (some duplicates skipped).`);
-      } else {
-        this.logger.error(`IRS seed failed: ${error.message}`, error.stack);
-      }
+    private readonly configService: ConfigService,
+  ) {
+    const apiKey = this.configService.get<string>('OPENAI_API_KEY');
+    if (apiKey && apiKey.trim() && !apiKey.includes('your-')) {
+      this.openai = new OpenAI({
+        baseURL: 'https://openrouter.ai/api/v1',
+        apiKey,
+        defaultHeaders: {
+          'HTTP-Referer': this.configService.get<string>('OPENROUTER_HTTP_REFERER') || 'https://getjobi.app',
+          'X-Title': this.configService.get<string>('OPENROUTER_X_TITLE') || 'Jobi',
+        },
+        timeout: 30000,
+      });
+    } else {
+      this.openai = null;
     }
-  }
-
-  private buildSeedQuestions(): Partial<IrsQuestion>[] {
-    const questions: Partial<IrsQuestion>[] = [];
-
-    // Core tech stacks to seed (most popular)
-    const techStacks = [
-      'javascript', 'typescript', 'python', 'java', 'react', 'node',
-      'golang', 'csharp', 'php', 'vue', 'angular', 'kotlin', 'swift',
-      'flutter', 'react_native', 'django', 'spring', 'dotnet', 'ruby', 'rust',
-    ];
-
-    for (const tech of techStacks) {
-      for (const position of ['junior', 'middle', 'senior', 'lead'] as const) {
-        // Each position gets questions across all categories and difficulties
-        questions.push(...this.generateQuestionsForCombo(tech, position));
-      }
-    }
-
-    return questions;
   }
 
   /**
-   * Generate a set of questions for a specific techStack + position combo.
-   * Creates 2 technical + 1 behavioral + 1 problemSolving + 1 systemDesign
-   * with appropriate difficulty spread.
+   * On startup: seed minimal questions if pool is empty
    */
-  private generateQuestionsForCombo(
-    techStack: string,
+  async onModuleInit(): Promise<void> {
+    try {
+      const count = await this.irsQuestionModel.countDocuments();
+      if (count >= this.MINIMUM_SEED_QUESTIONS) {
+        this.logger.log(`IRS pool has ${count} questions. OK.`);
+        return;
+      }
+
+      this.logger.log(`IRS pool has ${count} questions (need ${this.MINIMUM_SEED_QUESTIONS}). Seeding...`);
+
+      // Seed top 3 tech stacks x 4 positions = 12 combos, 5 questions each = 60 questions
+      const topTechStacks = ['javascript', 'python', 'react'];
+      const positions = ['junior', 'middle', 'senior', 'lead'];
+
+      let generated = 0;
+      for (const tech of topTechStacks) {
+        for (const pos of positions) {
+          const existing = await this.irsQuestionModel.countDocuments({ position: pos, techStack: tech });
+          if (existing >= IRS_TOTAL_QUESTIONS) continue;
+
+          const needed = IRS_TOTAL_QUESTIONS - existing;
+          const questions = await this.generateQuestionsWithAI(pos, tech, needed);
+          if (questions.length > 0) {
+            await this.irsQuestionModel.insertMany(questions, { ordered: false }).catch(() => {});
+            generated += questions.length;
+          }
+          // Rate limit
+          await this.delay(1500);
+        }
+      }
+
+      this.logger.log(`IRS seed complete: generated ${generated} questions via AI.`);
+    } catch (error: any) {
+      this.logger.error(`IRS seed failed: ${error.message}`);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // PUBLIC: Generate questions on-demand (called from selectQuestions)
+  // ═══════════════════════════════════════════════════════════════
+
+  /**
+   * Generate IRS questions for a specific position + techStack.
+   * Saves to DB and returns generated documents.
+   *
+   * Called when selectQuestions() can't find enough questions in the pool.
+   */
+  async generateAndSaveQuestions(
     position: string,
-  ): Partial<IrsQuestion>[] {
+    techStack: string,
+    count: number = IRS_TOTAL_QUESTIONS,
+  ): Promise<IrsQuestionDocument[]> {
+    this.logger.log(`Generating ${count} IRS questions for ${position}/${techStack} via AI...`);
+
+    // Level 2: AI generation
+    const generated = await this.generateQuestionsWithAI(position, techStack, count);
+    if (generated.length > 0) {
+      try {
+        const docs = await this.irsQuestionModel.insertMany(generated, { ordered: false });
+        this.logger.log(`Saved ${docs.length} AI-generated questions for ${position}/${techStack}`);
+        return docs as IrsQuestionDocument[];
+      } catch (error: any) {
+        this.logger.error(`Failed to save generated questions: ${error.message}`);
+      }
+    }
+
+    // Level 3: Static fallback
+    this.logger.warn(`AI generation failed for ${position}/${techStack}. Using static fallback.`);
+    const fallbacks = this.getStaticFallbackQuestions(position, techStack);
+    try {
+      const docs = await this.irsQuestionModel.insertMany(fallbacks, { ordered: false });
+      return docs as IrsQuestionDocument[];
+    } catch (error: any) {
+      // If even insert fails (duplicates), just query what exists
+      this.logger.warn(`Static fallback insert failed: ${error.message}`);
+      return await this.irsQuestionModel
+        .find({ position, isActive: true })
+        .limit(count)
+        .exec();
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // LEVEL 2: AI Generation
+  // ═══════════════════════════════════════════════════════════════
+
+  private async generateQuestionsWithAI(
+    position: string,
+    techStack: string,
+    count: number,
+  ): Promise<Partial<IrsQuestion>[]> {
+    if (!this.openai) {
+      this.logger.warn('OpenAI client not configured. Skipping AI generation.');
+      return [];
+    }
+
     const techLabel = this.getTechLabel(techStack);
     const posLabel = this.getPosLabel(position);
-    const result: Partial<IrsQuestion>[] = [];
 
-    // Difficulty based on position
-    const diffMap: Record<string, string[]> = {
-      junior: ['easy', 'easy', 'medium', 'easy', 'easy'],
-      middle: ['medium', 'medium', 'easy', 'medium', 'hard'],
-      senior: ['hard', 'medium', 'medium', 'hard', 'hard'],
-      lead: ['hard', 'hard', 'medium', 'hard', 'hard'],
-    };
-    const diffs = diffMap[position] || diffMap['middle'];
+    const prompt = `Siz ekspert texnik intervyuer siz. ${posLabel} darajadagi ${techLabel} dasturchisi uchun ${count} ta intervyu savoli generatsiya qiling.
 
-    // 1. Technical question 1
-    result.push({
-      ...this.getTechnicalQ1(techStack, techLabel, posLabel),
-      category: 'technical',
-      difficulty: diffs[0],
-      position,
-      techStack,
-      isActive: true,
-    });
+Har bir savol 3 tilda bo'lsin (O'zbek, Rus, Ingliz).
 
-    // 2. Technical question 2
-    result.push({
-      ...this.getTechnicalQ2(techStack, techLabel, posLabel),
-      category: 'technical',
-      difficulty: diffs[1],
-      position,
-      techStack,
-      isActive: true,
-    });
+Savollar kategoriyalari:
+- technical (texnik bilim)
+- behavioral (xulq-atvor, jamoa ishlashi)
+- problemSolving (muammo yechish, algoritm)
+- systemDesign (tizim dizayni, arxitektura)
 
-    // 3. Behavioral question
-    result.push({
-      ...this.getBehavioralQ(techStack, techLabel, posLabel, position),
-      category: 'behavioral',
-      difficulty: diffs[2],
-      position,
-      techStack,
-      isActive: true,
-    });
+Qiyinchilik darajalari: easy, medium, hard
+- ${position === 'junior' ? 'Ko\'proq easy va medium' : position === 'middle' ? 'Medium asosiy, easy va hard aralash' : 'Ko\'proq hard va medium'}
 
-    // 4. Problem solving question
-    result.push({
-      ...this.getProblemSolvingQ(techStack, techLabel, posLabel),
-      category: 'problemSolving',
-      difficulty: diffs[3],
-      position,
-      techStack,
-      isActive: true,
-    });
+Talablar:
+1. Har bir savol REAL intervyuda so'raladigan bo'lsin
+2. ${techLabel} ga TEGISHLI texnik savollar
+3. Har xil kategoriya va qiyinlik aralashtirilsin
+4. Takrorlanmasin
 
-    // 5. System design question
-    result.push({
-      ...this.getSystemDesignQ(techStack, techLabel, posLabel, position),
-      category: 'systemDesign',
-      difficulty: diffs[4],
-      position,
-      techStack,
-      isActive: true,
-    });
+FAQAT valid JSON massivi qaytaring:
+[
+  {
+    "text_uz": "Savol o'zbek tilida",
+    "text_ru": "Вопрос на русском",
+    "text_en": "Question in English",
+    "category": "technical|behavioral|problemSolving|systemDesign",
+    "difficulty": "easy|medium|hard",
+    "hints": ["maslahat1", "maslahat2"]
+  }
+]`;
 
-    return result;
+    try {
+      const response = await this.openai.chat.completions.create({
+        model: 'z-ai/glm-4-32b',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.8,
+        max_tokens: 3000,
+      });
+
+      const content = response.choices[0]?.message?.content?.trim();
+      if (!content) return [];
+
+      // Extract JSON array
+      const jsonMatch = content.match(/\[[\s\S]*\]/);
+      if (!jsonMatch) return [];
+
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (!Array.isArray(parsed)) return [];
+
+      // Validate and map
+      const validCategories = ['technical', 'behavioral', 'problemSolving', 'systemDesign'];
+      const validDifficulties = ['easy', 'medium', 'hard'];
+
+      return parsed
+        .filter((q: any) =>
+          q.text_uz && q.text_ru && q.text_en &&
+          validCategories.includes(q.category) &&
+          validDifficulties.includes(q.difficulty),
+        )
+        .map((q: any) => ({
+          text_uz: q.text_uz,
+          text_ru: q.text_ru,
+          text_en: q.text_en,
+          category: q.category,
+          difficulty: q.difficulty,
+          position,
+          techStack,
+          hints: Array.isArray(q.hints) ? q.hints : [],
+          isActive: true,
+          timesUsed: 0,
+          avgScore: 0,
+        }));
+    } catch (error: any) {
+      this.logger.error(`AI question generation failed: ${error.message}`);
+      return [];
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // TECHNICAL QUESTIONS
+  // LEVEL 3: Static Fallback (always works, no AI needed)
   // ═══════════════════════════════════════════════════════════════
 
-  private getTechnicalQ1(tech: string, techLabel: string, posLabel: string): Pick<IrsQuestion, 'text_uz' | 'text_ru' | 'text_en' | 'hints'> {
-    const templates: Record<string, Pick<IrsQuestion, 'text_uz' | 'text_ru' | 'text_en' | 'hints'>> = {
-      javascript: {
-        text_uz: `${posLabel} JavaScript dasturchisi sifatida: closure nima va u qanday ishlaydi? Amaliy misol keltiring.`,
-        text_ru: `Как ${posLabel.toLowerCase()} JavaScript разработчик: что такое замыкание (closure) и как оно работает? Приведите практический пример.`,
-        text_en: `As a ${posLabel.toLowerCase()} JavaScript developer: what is a closure and how does it work? Give a practical example.`,
-        hints: ['Scope chain haqida o\'ylang', 'Funksiya ichida funksiya', 'Ma\'lumotni yashirish'],
-      },
-      typescript: {
-        text_uz: `${posLabel} TypeScript dasturchisi sifatida: Generic turlar nima va ular qachon ishlatiladi? Misol yozing.`,
-        text_ru: `Как ${posLabel.toLowerCase()} TypeScript разработчик: что такое дженерики (generics) и когда их использовать? Напишите пример.`,
-        text_en: `As a ${posLabel.toLowerCase()} TypeScript developer: what are generics and when should they be used? Write an example.`,
-        hints: ['Qayta foydalanish mumkin bo\'lgan turlar', 'Type safety', 'Collection patterns'],
-      },
-      python: {
-        text_uz: `${posLabel} Python dasturchisi sifatida: dekoratorlar (decorators) nima va ular qanday ishlaydi?`,
-        text_ru: `Как ${posLabel.toLowerCase()} Python разработчик: что такое декораторы и как они работают?`,
-        text_en: `As a ${posLabel.toLowerCase()} Python developer: what are decorators and how do they work?`,
-        hints: ['Higher-order functions', '@syntax', 'Wrapper pattern'],
-      },
-      java: {
-        text_uz: `${posLabel} Java dasturchisi sifatida: OOP ning 4 ta asosiy tamoyilini tushuntiring.`,
-        text_ru: `Как ${posLabel.toLowerCase()} Java разработчик: объясните 4 основных принципа ООП.`,
-        text_en: `As a ${posLabel.toLowerCase()} Java developer: explain the 4 main principles of OOP.`,
-        hints: ['Encapsulation', 'Inheritance', 'Polymorphism', 'Abstraction'],
-      },
-      react: {
-        text_uz: `${posLabel} React dasturchisi sifatida: useEffect hook qanday ishlaydi va dependency array nima?`,
-        text_ru: `Как ${posLabel.toLowerCase()} React разработчик: как работает хук useEffect и что такое массив зависимостей?`,
-        text_en: `As a ${posLabel.toLowerCase()} React developer: how does the useEffect hook work and what is the dependency array?`,
-        hints: ['Side effects', 'Cleanup function', 'Render cycle'],
-      },
-      node: {
-        text_uz: `${posLabel} Node.js dasturchisi sifatida: Event Loop qanday ishlaydi? Asinxron kodni tushuntiring.`,
-        text_ru: `Как ${posLabel.toLowerCase()} Node.js разработчик: как работает Event Loop? Объясните асинхронный код.`,
-        text_en: `As a ${posLabel.toLowerCase()} Node.js developer: how does the Event Loop work? Explain asynchronous code.`,
-        hints: ['Single-threaded', 'Callback queue', 'Non-blocking I/O'],
-      },
-      golang: {
-        text_uz: `${posLabel} Go dasturchisi sifatida: goroutine va channel nima? Concurrency misolini keltiring.`,
-        text_ru: `Как ${posLabel.toLowerCase()} Go разработчик: что такое горутины и каналы? Приведите пример конкурентности.`,
-        text_en: `As a ${posLabel.toLowerCase()} Go developer: what are goroutines and channels? Give a concurrency example.`,
-        hints: ['Lightweight threads', 'CSP model', 'go keyword'],
-      },
-      csharp: {
-        text_uz: `${posLabel} C# dasturchisi sifatida: async/await qanday ishlaydi va Task nima?`,
-        text_ru: `Как ${posLabel.toLowerCase()} C# разработчик: как работает async/await и что такое Task?`,
-        text_en: `As a ${posLabel.toLowerCase()} C# developer: how does async/await work and what is Task?`,
-        hints: ['Task-based async', 'State machine', 'ConfigureAwait'],
-      },
-      php: {
-        text_uz: `${posLabel} PHP dasturchisi sifatida: namespace va autoloading qanday ishlaydi?`,
-        text_ru: `Как ${posLabel.toLowerCase()} PHP разработчик: как работают пространства имён и автозагрузка?`,
-        text_en: `As a ${posLabel.toLowerCase()} PHP developer: how do namespaces and autoloading work?`,
-        hints: ['PSR-4', 'Composer autoload', 'use statement'],
-      },
-      vue: {
-        text_uz: `${posLabel} Vue.js dasturchisi sifatida: reaktivlik (reactivity) tizimi qanday ishlaydi?`,
-        text_ru: `Как ${posLabel.toLowerCase()} Vue.js разработчик: как работает система реактивности?`,
-        text_en: `As a ${posLabel.toLowerCase()} Vue.js developer: how does the reactivity system work?`,
-        hints: ['Proxy/Object.defineProperty', 'ref vs reactive', 'Watchers'],
-      },
-      angular: {
-        text_uz: `${posLabel} Angular dasturchisi sifatida: Dependency Injection qanday ishlaydi?`,
-        text_ru: `Как ${posLabel.toLowerCase()} Angular разработчик: как работает внедрение зависимостей (DI)?`,
-        text_en: `As a ${posLabel.toLowerCase()} Angular developer: how does Dependency Injection work?`,
-        hints: ['Providers', 'Injector hierarchy', '@Injectable'],
-      },
-      kotlin: {
-        text_uz: `${posLabel} Kotlin dasturchisi sifatida: coroutines nima va ular qanday ishlaydi?`,
-        text_ru: `Как ${posLabel.toLowerCase()} Kotlin разработчик: что такое корутины и как они работают?`,
-        text_en: `As a ${posLabel.toLowerCase()} Kotlin developer: what are coroutines and how do they work?`,
-        hints: ['suspend functions', 'CoroutineScope', 'Dispatchers'],
-      },
-      swift: {
-        text_uz: `${posLabel} Swift dasturchisi sifatida: protocol-oriented programming tushuntiring.`,
-        text_ru: `Как ${posLabel.toLowerCase()} Swift разработчик: объясните протокол-ориентированное программирование.`,
-        text_en: `As a ${posLabel.toLowerCase()} Swift developer: explain protocol-oriented programming.`,
-        hints: ['Protocol extensions', 'Value types', 'Composition over inheritance'],
-      },
-      flutter: {
-        text_uz: `${posLabel} Flutter dasturchisi sifatida: Widget lifecycle va StatefulWidget qanday ishlaydi?`,
-        text_ru: `Как ${posLabel.toLowerCase()} Flutter разработчик: как работает жизненный цикл виджетов и StatefulWidget?`,
-        text_en: `As a ${posLabel.toLowerCase()} Flutter developer: how does Widget lifecycle and StatefulWidget work?`,
-        hints: ['initState', 'build method', 'dispose'],
-      },
-      react_native: {
-        text_uz: `${posLabel} React Native dasturchisi sifatida: bridge arxitekturasi qanday ishlaydi?`,
-        text_ru: `Как ${posLabel.toLowerCase()} React Native разработчик: как работает архитектура моста (bridge)?`,
-        text_en: `As a ${posLabel.toLowerCase()} React Native developer: how does the bridge architecture work?`,
-        hints: ['JS thread', 'Native thread', 'JSON serialization'],
-      },
-      django: {
-        text_uz: `${posLabel} Django dasturchisi sifatida: ORM va QuerySet qanday ishlaydi?`,
-        text_ru: `Как ${posLabel.toLowerCase()} Django разработчик: как работает ORM и QuerySet?`,
-        text_en: `As a ${posLabel.toLowerCase()} Django developer: how does the ORM and QuerySet work?`,
-        hints: ['Lazy evaluation', 'Chaining', 'N+1 problem'],
-      },
-      spring: {
-        text_uz: `${posLabel} Spring dasturchisi sifatida: IoC Container va Bean lifecycle tushuntiring.`,
-        text_ru: `Как ${posLabel.toLowerCase()} Spring разработчик: объясните IoC контейнер и жизненный цикл бинов.`,
-        text_en: `As a ${posLabel.toLowerCase()} Spring developer: explain the IoC Container and Bean lifecycle.`,
-        hints: ['ApplicationContext', '@Bean', 'Scopes'],
-      },
-      dotnet: {
-        text_uz: `${posLabel} .NET dasturchisi sifatida: middleware pipeline ASP.NET Core da qanday ishlaydi?`,
-        text_ru: `Как ${posLabel.toLowerCase()} .NET разработчик: как работает конвейер middleware в ASP.NET Core?`,
-        text_en: `As a ${posLabel.toLowerCase()} .NET developer: how does the middleware pipeline work in ASP.NET Core?`,
-        hints: ['Request delegate', 'app.Use vs app.Map', 'Order matters'],
-      },
-      ruby: {
-        text_uz: `${posLabel} Ruby dasturchisi sifatida: block, proc va lambda orasidagi farq nima?`,
-        text_ru: `Как ${posLabel.toLowerCase()} Ruby разработчик: в чём разница между block, proc и lambda?`,
-        text_en: `As a ${posLabel.toLowerCase()} Ruby developer: what is the difference between block, proc, and lambda?`,
-        hints: ['Yield', 'Arity checking', 'Return behavior'],
-      },
-      rust: {
-        text_uz: `${posLabel} Rust dasturchisi sifatida: ownership va borrowing tizimi qanday ishlaydi?`,
-        text_ru: `Как ${posLabel.toLowerCase()} Rust разработчик: как работает система владения (ownership) и заимствования (borrowing)?`,
-        text_en: `As a ${posLabel.toLowerCase()} Rust developer: how does the ownership and borrowing system work?`,
-        hints: ['Move semantics', 'Mutable references', 'Lifetime annotations'],
-      },
-    };
+  private getStaticFallbackQuestions(position: string, techStack: string): Partial<IrsQuestion>[] {
+    const techLabel = this.getTechLabel(techStack);
+    const base = { position, techStack, isActive: true, timesUsed: 0, avgScore: 0, hints: [] };
 
-    return templates[tech] || {
-      text_uz: `${posLabel} ${techLabel} dasturchisi sifatida: ${techLabel} ning asosiy xususiyatlarini tushuntiring.`,
-      text_ru: `Как ${posLabel.toLowerCase()} ${techLabel} разработчик: объясните основные особенности ${techLabel}.`,
-      text_en: `As a ${posLabel.toLowerCase()} ${techLabel} developer: explain the core features of ${techLabel}.`,
-      hints: ['Core concepts', 'Best practices', 'Common patterns'],
-    };
-  }
-
-  private getTechnicalQ2(tech: string, techLabel: string, posLabel: string): Pick<IrsQuestion, 'text_uz' | 'text_ru' | 'text_en' | 'hints'> {
-    const templates: Record<string, Pick<IrsQuestion, 'text_uz' | 'text_ru' | 'text_en' | 'hints'>> = {
-      javascript: {
-        text_uz: `Promise va async/await orasidagi farq nima? Xatoliklarni qanday ushlaysiz (error handling)?`,
-        text_ru: `В чём разница между Promise и async/await? Как обрабатывать ошибки?`,
-        text_en: `What is the difference between Promise and async/await? How do you handle errors?`,
-        hints: ['try/catch', '.catch() chain', 'Promise.all vs Promise.allSettled'],
+    return [
+      {
+        ...base,
+        text_uz: `${techLabel} ning asosiy xususiyatlarini va ularni real loyihada qanday ishlatganingizni tushuntiring.`,
+        text_ru: `Объясните основные особенности ${techLabel} и как вы использовали их в реальном проекте.`,
+        text_en: `Explain the core features of ${techLabel} and how you've used them in a real project.`,
+        category: 'technical', difficulty: position === 'junior' ? 'easy' : 'medium',
       },
-      typescript: {
-        text_uz: `Union types, intersection types va type guards qanday ishlaydi?`,
-        text_ru: `Как работают union types, intersection types и type guards?`,
-        text_en: `How do union types, intersection types, and type guards work?`,
-        hints: ['Narrowing', 'typeof/instanceof', 'Discriminated unions'],
+      {
+        ...base,
+        text_uz: `${techLabel} da eng ko'p uchraydigan xatoliklarni qanday debug qilasiz?`,
+        text_ru: `Как вы отлаживаете наиболее частые ошибки в ${techLabel}?`,
+        text_en: `How do you debug the most common errors in ${techLabel}?`,
+        category: 'technical', difficulty: 'medium',
       },
-      python: {
-        text_uz: `List comprehension va generator orasidagi farq nima? Qachon qaysi birini ishlatish kerak?`,
-        text_ru: `В чём разница между list comprehension и генераторами? Когда использовать каждый?`,
-        text_en: `What is the difference between list comprehension and generators? When to use each?`,
-        hints: ['Memory efficiency', 'Lazy evaluation', 'yield keyword'],
+      {
+        ...base,
+        text_uz: `Jamoada texnik qaror bo'yicha kelishmovchilik bo'lganini va uni qanday hal qilganingizni aytib bering.`,
+        text_ru: `Расскажите о разногласиях в команде по техническому решению и как вы их разрешили.`,
+        text_en: `Tell me about a technical disagreement in your team and how you resolved it.`,
+        category: 'behavioral', difficulty: 'easy',
       },
-      java: {
-        text_uz: `Java Streams API qanday ishlaydi? map, filter, reduce misollari keltiring.`,
-        text_ru: `Как работает Java Streams API? Приведите примеры map, filter, reduce.`,
-        text_en: `How does Java Streams API work? Give examples of map, filter, reduce.`,
-        hints: ['Lazy processing', 'Terminal vs intermediate', 'Parallel streams'],
+      {
+        ...base,
+        text_uz: `Katta hajmdagi ma'lumotlarni qayta ishlashda performance muammosini qanday hal qilgan bo'lar edingiz?`,
+        text_ru: `Как бы вы решили проблему производительности при обработке большого объёма данных?`,
+        text_en: `How would you solve a performance problem when processing large amounts of data?`,
+        category: 'problemSolving', difficulty: position === 'junior' ? 'easy' : 'hard',
       },
-      react: {
-        text_uz: `React da state management: useState, useReducer va Context API qachon ishlatiladi?`,
-        text_ru: `Управление состоянием в React: когда использовать useState, useReducer и Context API?`,
-        text_en: `State management in React: when to use useState, useReducer, and Context API?`,
-        hints: ['Local vs global state', 'Complex state logic', 'Prop drilling'],
+      {
+        ...base,
+        text_uz: `Oddiy URL qisqartiruvchi xizmatini loyihalang. Asosiy komponentlar va texnologiyalarni tushuntiring.`,
+        text_ru: `Спроектируйте простой сервис для сокращения URL. Объясните основные компоненты и технологии.`,
+        text_en: `Design a simple URL shortener service. Explain the main components and technologies.`,
+        category: 'systemDesign', difficulty: position === 'lead' ? 'hard' : 'medium',
       },
-      node: {
-        text_uz: `Node.js da stream'lar qanday ishlaydi? Readable, Writable va Transform stream tushuntiring.`,
-        text_ru: `Как работают потоки (streams) в Node.js? Объясните Readable, Writable и Transform.`,
-        text_en: `How do streams work in Node.js? Explain Readable, Writable, and Transform streams.`,
-        hints: ['Backpressure', 'Piping', 'Chunk processing'],
-      },
-    };
-
-    return templates[tech] || {
-      text_uz: `${techLabel} da eng ko'p ishlatiladigan design pattern'larni tushuntiring va misol keltiring.`,
-      text_ru: `Объясните наиболее используемые паттерны проектирования в ${techLabel} и приведите примеры.`,
-      text_en: `Explain the most commonly used design patterns in ${techLabel} and give examples.`,
-      hints: ['Singleton', 'Observer', 'Factory'],
-    };
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  // BEHAVIORAL QUESTIONS
-  // ═══════════════════════════════════════════════════════════════
-
-  private getBehavioralQ(tech: string, techLabel: string, posLabel: string, position: string): Pick<IrsQuestion, 'text_uz' | 'text_ru' | 'text_en' | 'hints'> {
-    const templates: Record<string, Pick<IrsQuestion, 'text_uz' | 'text_ru' | 'text_en' | 'hints'>> = {
-      junior: {
-        text_uz: `Yangi texnologiyani tez o'rganishingiz kerak bo'lgan vaziyat haqida gapiring. Qanday yondashuvda oldingiz?`,
-        text_ru: `Расскажите о ситуации, когда вам нужно было быстро освоить новую технологию. Как вы подошли к этому?`,
-        text_en: `Tell me about a time you had to quickly learn a new technology. How did you approach it?`,
-        hints: ['STAR metodi', 'Resurslar va strategiya', 'Natija'],
-      },
-      middle: {
-        text_uz: `Jamoadagi texnik qaror bo'yicha kelishmovchilikni qanday hal qilgansiz? Misol keltiring.`,
-        text_ru: `Как вы решали разногласия в команде по техническому решению? Приведите пример.`,
-        text_en: `How did you resolve a technical disagreement in your team? Give an example.`,
-        hints: ['Muloqot', 'Trade-offs tahlili', 'Konsensus'],
-      },
-      senior: {
-        text_uz: `Junior dasturchiga murakkab kontseptsiyani o'rgatishingiz kerak bo'lgan vaqt haqida gapiring.`,
-        text_ru: `Расскажите о случае, когда вам пришлось обучить младшего разработчика сложной концепции.`,
-        text_en: `Tell me about a time you had to teach a junior developer a complex concept.`,
-        hints: ['Mentorlik yondashuvi', 'Soddalash-tirish', 'Natijani kuzatish'],
-      },
-      lead: {
-        text_uz: `Jamoadagi past motivatsiyani qanday aniqlagan va hal qilgansiz?`,
-        text_ru: `Как вы выявляли и решали проблему низкой мотивации в команде?`,
-        text_en: `How did you identify and address low motivation in your team?`,
-        hints: ['1-on-1 suhbatlar', 'Root cause analysis', 'Action plan'],
-      },
-    };
-
-    return templates[position] || templates['middle'];
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  // PROBLEM SOLVING QUESTIONS
-  // ═══════════════════════════════════════════════════════════════
-
-  private getProblemSolvingQ(tech: string, techLabel: string, posLabel: string): Pick<IrsQuestion, 'text_uz' | 'text_ru' | 'text_en' | 'hints'> {
-    const templates: Record<string, Pick<IrsQuestion, 'text_uz' | 'text_ru' | 'text_en' | 'hints'>> = {
-      javascript: {
-        text_uz: `Massivdagi takrorlanuvchi elementlarni O(n) murakkablikda qanday topasiz?`,
-        text_ru: `Как найти дублирующиеся элементы в массиве с O(n) сложностью?`,
-        text_en: `How would you find duplicate elements in an array with O(n) complexity?`,
-        hints: ['Set/Map', 'Hash table', 'Space-time tradeoff'],
-      },
-      typescript: {
-        text_uz: `Type-safe event emitter qanday yaratish mumkin? Generic type'lardan foydalaning.`,
-        text_ru: `Как создать типобезопасный event emitter? Используйте дженерики.`,
-        text_en: `How would you create a type-safe event emitter? Use generics.`,
-        hints: ['Mapped types', 'Conditional types', 'Infer keyword'],
-      },
-      python: {
-        text_uz: `Katta CSV faylni (10GB) memory cheklovida qanday qayta ishlaysiz?`,
-        text_ru: `Как обработать большой CSV файл (10GB) с ограничением памяти?`,
-        text_en: `How would you process a large CSV file (10GB) with memory constraints?`,
-        hints: ['Generator/iterator', 'Chunk processing', 'pandas chunksize'],
-      },
-      java: {
-        text_uz: `Multi-threaded muhitda thread-safe counter qanday yaratish mumkin?`,
-        text_ru: `Как создать потокобезопасный счётчик в многопоточной среде?`,
-        text_en: `How would you create a thread-safe counter in a multithreaded environment?`,
-        hints: ['AtomicInteger', 'synchronized', 'Concurrent classes'],
-      },
-      react: {
-        text_uz: `10,000 ta elementli ro'yxatni render qilishda performance muammolarni qanday hal qilasiz?`,
-        text_ru: `Как решить проблемы производительности при рендеринге списка из 10000 элементов?`,
-        text_en: `How would you solve performance issues when rendering a list of 10,000 items?`,
-        hints: ['Virtualization', 'React.memo', 'useMemo/useCallback'],
-      },
-      node: {
-        text_uz: `Memory leak'ni Node.js dasturda qanday aniqlaysiz va tuzatasiz?`,
-        text_ru: `Как обнаружить и устранить утечку памяти в Node.js приложении?`,
-        text_en: `How would you detect and fix a memory leak in a Node.js application?`,
-        hints: ['Heap snapshot', 'process.memoryUsage', 'WeakRef/WeakMap'],
-      },
-    };
-
-    return templates[tech] || {
-      text_uz: `${techLabel} loyihada performance bottleneck ni qanday aniqlaysiz va optimizatsiya qilasiz?`,
-      text_ru: `Как вы определяете и оптимизируете узкие места производительности в ${techLabel} проекте?`,
-      text_en: `How do you identify and optimize performance bottlenecks in a ${techLabel} project?`,
-      hints: ['Profiling', 'Benchmarking', 'Caching strategies'],
-    };
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  // SYSTEM DESIGN QUESTIONS
-  // ═══════════════════════════════════════════════════════════════
-
-  private getSystemDesignQ(tech: string, techLabel: string, posLabel: string, position: string): Pick<IrsQuestion, 'text_uz' | 'text_ru' | 'text_en' | 'hints'> {
-    const templates: Record<string, Pick<IrsQuestion, 'text_uz' | 'text_ru' | 'text_en' | 'hints'>> = {
-      junior: {
-        text_uz: `Oddiy REST API qanday tuzilishda bo'ladi? Endpoint dizayni va HTTP metodlarini tushuntiring.`,
-        text_ru: `Как устроен простой REST API? Объясните дизайн эндпоинтов и HTTP методы.`,
-        text_en: `How is a simple REST API structured? Explain endpoint design and HTTP methods.`,
-        hints: ['CRUD operations', 'Status codes', 'Resource naming'],
-      },
-      middle: {
-        text_uz: `Real-time chat tizimini qanday loyihalaysiz? Asosiy komponentlar va texnologiyalarni tushuntiring.`,
-        text_ru: `Как вы спроектируете систему чата в реальном времени? Объясните компоненты и технологии.`,
-        text_en: `How would you design a real-time chat system? Explain the main components and technologies.`,
-        hints: ['WebSocket', 'Message queue', 'Database choice'],
-      },
-      senior: {
-        text_uz: `Katta masshtabli notification tizimini dizayn qiling (10M+ foydalanuvchi).`,
-        text_ru: `Спроектируйте масштабную систему уведомлений (10M+ пользователей).`,
-        text_en: `Design a large-scale notification system (10M+ users).`,
-        hints: ['Message queue', 'Priority system', 'Delivery guarantee'],
-      },
-      lead: {
-        text_uz: `Microservices arxitekturasiga monolitdan migratsiya strategiyasini tushuntiring.`,
-        text_ru: `Объясните стратегию миграции с монолита на микросервисную архитектуру.`,
-        text_en: `Explain the strategy for migrating from monolith to microservices architecture.`,
-        hints: ['Strangler fig pattern', 'Domain boundaries', 'Data consistency'],
-      },
-    };
-
-    return templates[position] || templates['middle'];
+    ];
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -465,9 +286,11 @@ export class IrsQuestionSeedService implements OnModuleInit {
   }
 
   private getPosLabel(position: string): string {
-    const labels: Record<string, string> = {
-      junior: 'Junior', middle: 'Middle', senior: 'Senior', lead: 'Lead',
-    };
+    const labels: Record<string, string> = { junior: 'Junior', middle: 'Middle', senior: 'Senior', lead: 'Lead' };
     return labels[position] || position;
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

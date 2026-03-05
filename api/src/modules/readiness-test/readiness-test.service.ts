@@ -19,6 +19,7 @@ import {
   ReadinessTestScoringService,
   IrsScoreResult,
 } from './readiness-test-scoring.service';
+import { IrsQuestionSeedService } from './irs-question-seed.service';
 import {
   IRS_TOTAL_QUESTIONS,
   IRS_ANSWER_TIME_LIMIT,
@@ -45,6 +46,7 @@ export class ReadinessTestService {
     @InjectModel(IrsQuestion.name)
     private irsQuestionModel: Model<IrsQuestionDocument>,
     private scoringService: ReadinessTestScoringService,
+    private irsQuestionGenerator: IrsQuestionSeedService,
     private configService: ConfigService,
     private eventEmitter: EventEmitter2,
     @InjectRedis() private redis: Redis,
@@ -87,16 +89,36 @@ export class ReadinessTestService {
       { $set: { status: 'expired' } },
     );
 
-    // 3. Select questions
-    const questions = await this.selectQuestions(
+    // 3. Select questions from pool
+    let questions = await this.selectQuestions(
       params.position,
       params.techStack,
       params.telegramId,
     );
 
+    // 3b. If not enough questions in pool → generate via AI → save to DB → retry
+    if (questions.length < IRS_TOTAL_QUESTIONS) {
+      this.logger.log(
+        `Pool insufficient for ${params.position}/${params.techStack}: ${questions.length}/${IRS_TOTAL_QUESTIONS}. Generating via AI...`,
+      );
+
+      await this.irsQuestionGenerator.generateAndSaveQuestions(
+        params.position,
+        params.techStack,
+        IRS_TOTAL_QUESTIONS + 5, // Generate extra for future tests
+      );
+
+      // Retry selection from pool (now has AI-generated questions)
+      questions = await this.selectQuestions(
+        params.position,
+        params.techStack,
+        params.telegramId,
+      );
+    }
+
     if (questions.length < IRS_TOTAL_QUESTIONS) {
       throw new BadRequestException(
-        `Not enough questions for ${params.position} ${params.techStack}. Found: ${questions.length}, need: ${IRS_TOTAL_QUESTIONS}`,
+        `Not enough questions for ${params.position} ${params.techStack}. Found: ${questions.length}, need: ${IRS_TOTAL_QUESTIONS}. Please try again.`,
       );
     }
 
