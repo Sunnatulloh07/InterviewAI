@@ -6,6 +6,7 @@ import { ReadinessTestController } from './readiness-test.controller';
 import { ReadinessTestService } from './readiness-test.service';
 import { ReadinessTestScoringService } from './readiness-test-scoring.service';
 import { TelegramReadinessService } from './telegram-readiness.service';
+import { IrsQuestionSeedService } from './irs-question-seed.service';
 import {
   ReadinessTest,
   ReadinessTestSchema,
@@ -28,6 +29,7 @@ import {
     ReadinessTestService,
     ReadinessTestScoringService,
     TelegramReadinessService,
+    IrsQuestionSeedService,
   ],
   exports: [
     ReadinessTestService,
