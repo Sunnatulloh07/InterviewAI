@@ -208,11 +208,15 @@ jobs:
             docker compose -f docker-compose.prod.yml pull
             
             echo "🛑 Stopping old containers..."
-            docker compose -f docker-compose.prod.yml down || true
+            docker compose -f docker-compose.prod.yml down --remove-orphans || true
             
-            echo "🧹 Cleaning up any orphan containers on conflicting ports..."
+            echo "🧹 Cleaning up any orphan containers..."
             docker stop jobi-api jobi-mongodb jobi-redis 2>/dev/null || true
-            docker rm jobi-api jobi-mongodb jobi-redis 2>/dev/null || true
+            docker rm -f jobi-api jobi-mongodb jobi-redis 2>/dev/null || true
+            
+            echo "🔌 Killing any process holding port 3000..."
+            fuser -k 3000/tcp 2>/dev/null || true
+            sleep 3
             
             echo "▶️ Starting containers..."
             docker compose -f docker-compose.prod.yml up -d
