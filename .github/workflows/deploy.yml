@@ -207,16 +207,34 @@ jobs:
             echo "⬇️ Pulling images..."
             docker compose -f docker-compose.prod.yml pull
             
-            echo "🛑 Stopping old containers..."
-            docker compose -f docker-compose.prod.yml down --remove-orphans || true
-            
-            echo "🧹 Cleaning up any orphan containers..."
+            echo "🛑 Stopping ALL Docker containers using our names..."
             docker stop jobi-api jobi-mongodb jobi-redis 2>/dev/null || true
             docker rm -f jobi-api jobi-mongodb jobi-redis 2>/dev/null || true
             
-            echo "🔌 Killing any process holding port 3000..."
-            fuser -k 3000/tcp 2>/dev/null || true
+            echo "🛑 Stopping any compose project in this directory..."
+            docker compose -f docker-compose.prod.yml down --remove-orphans 2>/dev/null || true
+            
+            echo "🔌 Finding what holds port 3000..."
+            ss -tlnp | grep 3000 || echo "No process on 3000"
+            
+            echo "🔌 Stopping ALL Docker containers binding to port 3000..."
+            docker ps -q --filter "publish=3000" | xargs -r docker stop 2>/dev/null || true
+            docker ps -aq --filter "publish=3000" | xargs -r docker rm -f 2>/dev/null || true
+            
+            echo "🔌 Killing any remaining process on port 3000 (SIGKILL)..."
+            fuser -k -9 3000/tcp 2>/dev/null || true
+            sleep 2
+            fuser -k -9 3000/tcp 2>/dev/null || true
             sleep 3
+            
+            echo "🔍 Verifying port 3000 is free..."
+            if ss -tlnp | grep -q ':3000 '; then
+              echo "⚠️ Port 3000 still occupied! Showing details:"
+              ss -tlnp | grep 3000
+              echo "Attempting final force cleanup..."
+              fuser -k -9 3000/tcp 2>/dev/null || true
+              sleep 5
+            fi
             
             echo "▶️ Starting containers..."
             docker compose -f docker-compose.prod.yml up -d
