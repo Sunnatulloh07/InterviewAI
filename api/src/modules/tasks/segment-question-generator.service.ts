@@ -5,6 +5,7 @@ import { Model } from 'mongoose';
 import { SegmentQuestion, SegmentQuestionDocument } from './schemas/segment-question.schema';
 import { CareerPath, CareerPathDocument } from './schemas/career-path.schema';
 import axios from 'axios';
+import { buildSegmentQuestionGenerationPrompt } from '@common/constants/ai-prompts.constant';
 
 /**
  * Segment Question Generator Service
@@ -155,48 +156,13 @@ export class SegmentQuestionGeneratorService {
     const careerName = careerPath?.name?.en || careerPathSlug;
     const technologies = careerPath?.commonTechnologies?.join(', ') || 'relevant technologies';
 
-    // Determine difficulty based on position
-    const difficultyMap = {
-      junior: 'entry-level (0-2 years)',
-      middle: 'mid-level (2-5 years)',
-      senior: 'senior-level (5+ years)',
-      lead: 'lead/architect level',
-    };
-
-    const typeDescriptions = {
-      technical: 'technical coding/implementation questions',
-      behavioral: 'behavioral and soft skills questions',
-      system_design: 'system design and architecture questions',
-    };
-
-    const prompt = `You are an expert technical interviewer specializing in ${careerName}.
-
-Generate 3 unique ${typeDescriptions[type]} for a ${difficultyMap[position]} candidate.
-
-Context:
-- Career: ${careerName}
-- Position: ${position}
-- Technologies: ${technologies}
-- Week: ${weekNumber} (different week = different focus)
-
-Requirements for each question:
-1. RELEVANT to ${careerName} role (not generic)
-2. APPROPRIATE difficulty for ${position} level
-3. PRACTICAL real-world scenario (not theoretical)
-4. CLEAR and concise wording
-5. Include 3 progressive hints (concept → approach → solution)
-
-Output format: JSON array with 3 questions:
-[
-  {
-    "question": "detailed interview question",
-    "context": "brief scenario context",
-    "hints": ["hint1", "hint2", "hint3"],
-    "difficulty": 1-10,
-    "estimatedTime": minutes,
-    "tags": ["relevant", "tags"]
-  }
-]`;
+    const prompt = buildSegmentQuestionGenerationPrompt({
+      careerName,
+      position,
+      type,
+      technologies,
+      weekNumber,
+    });
 
     try {
       const response = await axios.post(

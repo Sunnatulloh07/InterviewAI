@@ -18,6 +18,12 @@ import {
   getModelForPlan,
 } from '@common/utils/openai-client.factory';
 import { OPENAI_TEMPERATURE, AI_MODELS, CACHE_TTL_MEDIUM } from '@common/constants';
+import {
+  buildAnswerGenerationSystemPrompt,
+  buildAnswerGenerationUserPrompt,
+  AI_SERVICE_CONFIG,
+  type AnswerGenerationUserParams,
+} from '@common/constants/ai-prompts.constant';
 import * as crypto from 'crypto';
 
 @Injectable()
@@ -185,35 +191,47 @@ export class AiAnswerService {
     const variant =
       variantIndex === 0 ? style : ['professional', 'balanced', 'simple'][variantIndex % 3];
 
-    const prompt = this.buildPrompt(
-      dto,
+    // Build enterprise-grade prompts from centralized constants
+    const isBehavioral = this.isBehavioralQuestion(dto.question);
+
+    const userPromptParams: AnswerGenerationUserParams = {
+      question: dto.question,
       style,
       length,
-      context,
-      cvData,
-      interviewHistory,
       language,
-    );
+      domain: dto.domain,
+      position: dto.position,
+      technologies: dto.technologies,
+      conversationHistory: context.messages?.slice(-3),
+      cvData: cvData ? {
+        fullText: cvData.fullText || '',
+        technologies: cvData.technologies || [],
+        education: cvData.education,
+      } : undefined,
+      isBehavioral,
+    };
+
+    const systemPrompt = buildAnswerGenerationSystemPrompt({ style: variant, language });
+    const userPrompt = buildAnswerGenerationUserPrompt(userPromptParams);
 
     // Adjust temperature based on language to ensure consistency
     // Lower temperature for non-English to ensure language adherence
-    const temperature = language !== 'en' ? Math.min(OPENAI_TEMPERATURE, 0.5) : OPENAI_TEMPERATURE;
+    const temperature = language !== 'en'
+      ? Math.min(AI_SERVICE_CONFIG.answerGeneration.defaultTemperature, AI_SERVICE_CONFIG.answerGeneration.nonEnglishTemperature)
+      : AI_SERVICE_CONFIG.answerGeneration.defaultTemperature;
+
+    const maxTokens = AI_SERVICE_CONFIG.answerGeneration.maxTokensByLength[length] ||
+      AI_SERVICE_CONFIG.answerGeneration.maxTokensByLength['medium'];
 
     const completion = await this.openai.chat.completions.create({
       model,
       messages: [
-        {
-          role: 'system',
-          content: this.getSystemPrompt(variant, language),
-        },
-        {
-          role: 'user',
-          content: prompt,
-        },
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
       ],
-      max_tokens: this.getMaxTokensByLength(length),
+      max_tokens: maxTokens,
       temperature,
-      response_format: { type: 'json_object' },
+      response_format: AI_SERVICE_CONFIG.answerGeneration.responseFormat,
     });
 
     const responseText = completion.choices[0].message.content || '{}';
@@ -393,346 +411,6 @@ export class AiAnswerService {
       confidence: parsed.confidence || 0.9,
       suggestedFollowups: parsed.suggestedFollowups || [],
     };
-  }
-
-  /**
-   * Build prompt for answer generation
-   * Professional Senior Prompt Engineer Logic: Comprehensive context, structured data, clear instructions
-   */
-  /**
-   * Build prompt for answer generation
-   * Professional Senior Prompt Engineer Logic: Comprehensive context, structured data, clear instructions
-   */
-  private buildPrompt(
-    dto: GenerateAnswerDto,
-    style: string,
-    length: string,
-    context: any,
-    cvData: any,
-    interviewHistory: any,
-    language: string,
-  ): string {
-    // 1. Determine Question Type (Technical vs Behavioral)
-    const isBehavioral = this.isBehavioralQuestion(dto.question);
-    const isTechnical = this.isTechnicalQuestion(dto.question);
-    // If not explicitly detected, assume technical/conceptual if it contains tech terms, else behavioral preference if CV is rich
-    const effectiveType = isBehavioral ? 'behavioral' : 'technical';
-
-    let prompt = `## INTERVIEW QUESTION\n`;
-    prompt += `**Question:** "${dto.question}"\n\n`;
-
-    // 2. Transcription Error Correction (Consolidated)
-    prompt += `## TRANSCRIPTION CORRECTION\n`;
-    prompt += `This question is from STT (Speech-to-Text). It may have typos (e.g., "nojes" -> "Node.js").\n`;
-    prompt += `**Task:** Identify the intent. If it asks about a specific tech, answer about that tech.\n\n`;
-
-    // 3. Live Context (Metadata)
-    if (dto.domain || dto.technologies?.length || dto.position) {
-      prompt += `## INTERVIEW CONTEXT\n`;
-      if (dto.domain) prompt += `- Domain: ${dto.domain}\n`;
-      if (dto.position) prompt += `- Position: ${dto.position}\n`;
-      if (dto.technologies?.length) prompt += `- Stack: ${dto.technologies.join(', ')}\n`;
-      prompt += `Use this to disambiguate terms (e.g., "Java" vs "JavaScript").\n\n`;
-    }
-
-    // 4. Previous Conversation (Last 3-5 messages only to save tokens)
-    if (context.messages && context.messages.length > 0) {
-      prompt += `## CONVERSATION HISTORY (Last 3)\n`;
-      const recentMessages = context.messages.slice(-3);
-      recentMessages.forEach((msg: any, idx: number) => {
-        const role = msg.role === 'user' ? 'Q' : 'A';
-        const content =
-          msg.content.length > 300 ? `${msg.content.substring(0, 300)}...` : msg.content;
-        prompt += `${role}: ${content}\n`;
-      });
-      prompt += `\nIf this question is a follow-up, build on previous answers.\n\n`;
-    }
-
-    // 5. SMART CONTEXT INJECTION (The Core Optimization)
-    if (cvData) {
-      prompt += `## CANDIDATE BACKGROUND\n`;
-
-      // Always show what the candidate KNOWS (Technologies/Skills)
-      prompt += `**Known Technologies:** ${cvData.technologies?.join(', ') || 'N/A'}\n`;
-      prompt += `**Education:** ${cvData.education?.map((e: any) => e.field).join(', ') || 'N/A'}\n\n`;
-
-      // CONDITIONAL FULL CV INJECTION
-      if (effectiveType === 'behavioral') {
-        prompt += `**FULL CV TEXT (Use for Behavioral/Experience questions):**\n`;
-        prompt += `"${cvData.fullText.substring(0, 4000)}"\n\n`; // Cap at 4000 chars
-        prompt += `**INSTRUCTION:** Search the CV above. If the candidate has specific experience matching the question, cite it (Company, Project, Result). Use STAR method.\n`;
-      } else {
-        // Technical Question - DO NOT INJECT FULL CV
-        prompt += `**NOTE:** Full CV omitted for this Technical/Conceptual question to save tokens.\n`;
-        prompt += `**INSTRUCTION:** Answer as a knowledgeable candidate. Do NOT invent specific personal stories. Focus on explaining the concept ("What", "How", "Why").\n`;
-        prompt += `Use "Men bilaman..." (I know...) or "Mening tajribamda..." (In my experience [general]).\n`;
-      }
-    }
-
-    // 6. Output Requirements
-    prompt += `## ANSWER REQUIREMENTS\n`;
-    prompt += `- Style: ${style}\n`;
-    prompt += `- Length: ${length}\n`;
-    prompt += `- Language: ${language.toUpperCase()} ONLY.\n`;
-
-    return prompt;
-  }
-
-  /**
-   * Get style description
-   */
-  private getStyleDescription(style: string): string {
-    const descriptions: Record<string, string> = {
-      professional: 'polished, articulate, demonstrating leadership and expertise',
-      balanced: 'clear, natural, balancing professionalism with authenticity',
-      simple: 'straightforward, easy-to-understand, honest and relatable',
-    };
-    return descriptions[style] || descriptions['balanced'];
-  }
-
-  /**
-   * Get length description
-   */
-  private getLengthDescription(length: string): string {
-    const descriptions: Record<string, string> = {
-      short: 'concise, 30-60 seconds when spoken',
-      medium: 'moderate, 1-2 minutes when spoken',
-      long: 'detailed, 2-3 minutes when spoken',
-    };
-    return descriptions[length] || descriptions['medium'];
-  }
-
-  /**
-   * Get length word count
-   */
-  private getLengthWordCount(length: string): string {
-    const counts: Record<string, string> = {
-      short: '50-100',
-      medium: '150-250',
-      long: '300-500',
-    };
-    return counts[length] || counts['medium'];
-  }
-
-  /**
-   * Check if question is technical
-   */
-  private isTechnicalQuestion(question: string): boolean {
-    const technicalKeywords = [
-      'algorithm',
-      'data structure',
-      'design pattern',
-      'architecture',
-      'database',
-      'api',
-      'framework',
-      'language',
-      'code',
-      'programming',
-      'implementation',
-      'optimize',
-      'performance',
-      'scalability',
-      'security',
-      'testing',
-      'debugging',
-      'system design',
-      'how would you',
-      'explain',
-      'what is',
-      'difference between',
-    ];
-    const lowerQuestion = question.toLowerCase();
-    return technicalKeywords.some((keyword) => lowerQuestion.includes(keyword));
-  }
-
-  /**
-   * Get system prompt based on style and language
-   */
-  /**
-   * Get system prompt - Master Instructions (Optimized)
-   * Consolidates Role, Tone, Language, and Output Format to save User Prompt tokens.
-   */
-  private getSystemPrompt(style: string, language: string = 'en'): string {
-    const languageName = this.getLanguageName(language);
-    const languageCode = language.toUpperCase();
-
-    // 1. ROLE DEFINITION
-    let systemPrompt = `ROLE: You are an expert Software Engineer candidate in a job interview.\n`;
-    systemPrompt += `TASK: Generate a perfect, ${style} answer to the interviewer's question.\n`;
-    systemPrompt += `PERSPECTIVE: Speak in FIRST PERSON ("I...", "Men...", "Mening...").\n`;
-    systemPrompt += `Never say "If you..." or "You should...". You ARE the candidate.\n\n`;
-
-    // 2. LANGUAGE RULES (Strict)
-    systemPrompt += `LANGUAGE: Respond EXCLUSIVELY in ${languageName} (${languageCode}).\n`;
-    systemPrompt += `Do NOT use English unless the question asks for an English answer.\n\n`;
-
-    // 3. TONE & STYLE
-    const toneMap: Record<string, string> = {
-      professional: 'Polished, articulate, senior-level expert.',
-      balanced: 'Natural, confident, human-like (not robotic).',
-      simple: 'Straightforward, easy to understand, relatable.',
-    };
-    systemPrompt += `TONE: ${toneMap[style] || toneMap['balanced']}\n`;
-    systemPrompt += `Make it sound like a REAL person, not ChatGPT. Use simple words where possible.\n\n`;
-
-    // 4. OUTPUT FORMAT (JSON only)
-    systemPrompt += `OUTPUT FORMAT: Return STRICT JSON only. No markdown before/after.\n`;
-    systemPrompt += `Structure:\n`;
-    systemPrompt += `{\n`;
-    systemPrompt += `  "answer": "The text of your answer (in ${languageName})",\n`;
-    systemPrompt += `  "keyPoints": ["Key point 1", "Key point 2"],\n`;
-    systemPrompt += `  "starMethod": { "situation": "...", "task": "...", "action": "...", "result": "..." }, // Use only for behavioral questions\n`;
-    systemPrompt += `  "confidence": 0.95,\n`;
-    systemPrompt += `  "suggestedFollowups": ["Question 1?", "Question 2?"]\n`;
-    systemPrompt += `}\n\n`;
-
-    // 5. CRITICAL LOGIC
-    systemPrompt += `LOGIC:\n`;
-    systemPrompt += `- If the question implies you don't know something (and it's not in the Context), admit it professionally or give a theoretical answer.\n`;
-    systemPrompt += `- Correct any transcription typos in the question (e.g., "nojes" -> "Node.js") silently and answer the INTENDED question.\n`;
-    systemPrompt += `- If asked for code, use markdown code blocks inside the "answer" string.\n`;
-
-    return systemPrompt;
-  }
-
-  private getSystemPrompt_Legacy(style: string, language: string = 'en'): string {
-    const languageName = this.getLanguageName(language);
-    const languageCode = language.toUpperCase();
-
-    // Language-specific system prompts for better adherence
-    const languageInstructions: Record<string, string> = {
-      uz: `Siz IT sohasida professional intervyu murabbiysi va texnik mentorsiz. Barcha javoblarni O'ZBEK TILIDA berishingiz kerak. Hech qachon ingliz yoki boshqa tillarda javob bermang. Javoblaringiz xuddi haqiqiy odam gapirayotgandek sodda, tushunarli va do'stona bo'lsin.`,
-      ru: `Вы профессиональный тренер по IT-собеседованиям и технический наставник. Вы ДОЛЖНЫ отвечать на РУССКОМ ЯЗЫКЕ. Никогда не отвечайте на английском или других языках. Ваши ответы должны быть простыми, понятными и дружелюбными, как будто отвечает реальный человек.`,
-      en: `You are a professional IT interview coach and technical mentor. You MUST respond in ENGLISH. Never respond in other languages. Your answers should be simple, easy to understand, and friendly - like a real person talking.`,
-    };
-
-    const basePrompts: Record<string, string> = {
-      professional:
-        'You are an expert IT interview coach and technical mentor. Provide articulate, polished answers that demonstrate deep knowledge but in a simple, human-like way.',
-      balanced:
-        'You are an IT interview coach and technical mentor. Provide clear, natural answers that balance professionalism with authenticity. Speak like a real person, not a robot.',
-      simple:
-        'You are an IT interview coach and technical mentor. Provide straightforward, easy-to-understand answers like a friendly colleague explaining things.',
-    };
-    const basePrompt = basePrompts[style] || basePrompts['balanced'];
-
-    // Add explicit language instruction in the target language itself
-    const languageInstruction = languageInstructions[language] || languageInstructions['en'];
-
-    // Critical instructions for answer types - IT Interview focused
-    const answerTypeInstructions = `
-
-🎯 **IT INTERVYU KONTEKSTI - MUHIM!**
-Bu IT sohasidagi intervyu savollari. Savollar dasturlash, texnologiyalar, framework'lar, 
-database'lar, API'lar, arxitektura va boshqa IT mavzulari haqida bo'ladi.
-
-📝 **TRANSKRIPTSIYA XATOLARINI AVTOMATIK TUZATISH - JUDA MUHIM!**
-Savollar AUDIO dan TEXT ga aylantirilgan bo'lishi mumkin. Shuning uchun:
-- Sintaksis xatolari bo'lishi mumkin (masalan: "riekt" → "React", "nodjes" → "Node.js")
-- Texnologiya nomlari noto'g'ri yozilishi mumkin (masalan: "postgressql" → "PostgreSQL")
-- So'zlar qo'shib yoki ajratib yozilishi mumkin (masalan: "java script" → "JavaScript")
-- Harflar almashib ketishi mumkin (masalan: "mongodv" → "MongoDB")
-
-⚡ **SEN QILISHING KERAK:**
-1. Xatoli so'zlarni o'zing tuzat va to'g'ri ma'noni tushun
-2. Savolning ASLIY maqsadini anglab ol
-3. To'g'ri texnologiya/konseptni aniqlash uchun kontekstdan foydalang
-4. Hech qachon "tushunmadim" dema - o'zing tuzatib javob ber
-
-🗣️ **JAVOB BERISH USLUBI - HAQIQIY ODAM KABI!**
-Javoblaringiz xuddi TAJRIBALI DASTURCHI do'stingiz gapirayotgandek bo'lsin:
-- SODDA va TUSHUNARLI til ishlat
-- Murakkab tushunchalarni ODDIY so'zlar bilan tushuntir
-- Texnik atamalarni ishlatganda QISQA izoh qo'sh
-- QISQA jumlalar yoz, uzun paragraflardan qoching
-- Haqiqiy misollar va analogiyalar keltir
-
-💻 **KOD MISOLLARI - MAJBURIY QOIDALAR!**
-Qachonki:
-- Savol "qanday yoziladi", "misol keltiring", "kod ko'rsating" desa
-- Yoki savol sintaksis/implementatsiya haqida bo'lsa
-- Yoki tushuntirish uchun kod kerak bo'lsa
-
-ALBATTA kod misolini \`\`\`code\`\`\` blokida ko'rsat:
-
-\`\`\`javascript
-// Misol: React component
-function HelloWorld() {
-  return <h1>Salom Dunyo!</h1>;
-}
-\`\`\`
-
-**Kod blok qoidalari:**
-- Har doim tilni ko'rsat: \`\`\`javascript, \`\`\`python, \`\`\`sql, \`\`\`typescript va h.k.
-- Kod ichida IZOHLAR yoz (o'zbek tilida bo'lishi mumkin)
-- Kodni YANGI QATORDAN boshlash
-- Amaliy, ISHLAYDIGAN kod yoz
-
-CRITICAL ANSWER TYPE RULES:
-
-1. TECHNICAL/CONCEPTUAL Questions ("What is X?", "How does Y work?", "Explain Z", "Define...", "nima", "qanday ishlaydi", "tushuntiring"):
-   
-   ✅ REQUIRED APPROACH:
-   - SODDA tilda tushuntir, xuddi do'stingga gapirayotgandek
-   - Avval ODDIY ta'rif ber, keyin chuqurroq tushuntir
-   - Real hayotdan ANALOGIYA keltir (masalan: "API bu restoran ofitsiantiga o'xshaydi...")
-   - Keyin AMALIY misol yoki kod ko'rsat
-   - "Bu nima uchun kerak?" savoliga javob ber
-   
-   📌 Misol javob strukturasi:
-   "X bu - [ODDIY ta'rif]. 
-    Oddiy qilib aytganda, [real hayot analogiyasi].
-    
-    Masalan:
-    \`\`\`code
-    // amaliy misol
-    \`\`\`
-    
-    Bu kerak chunki [foydalari]."
-
-2. BEHAVIORAL Questions ("Tell me about a time...", "Give me an example when...", "Describe a situation...", "tajribangiz", "qanday hal qildingiz"):
-   ✅ REQUIRED:
-   - Use STAR method (Situation, Task, Action, Result)
-   - Reference REAL examples from candidate's CV
-   - Include specific: company names, project names, metrics, outcomes
-   - Use personal pronouns ("men"/"I") and past tense
-   - Be concrete and specific with details
-   - SODDA va QISQA hikoya qilib aytib ber
-
-3. EXPERIENCE/PROJECT Questions ("ishlatganmisiz", "tajribangiz bormi", "have you used"):
-   🔍 **MANDATORY CV SEARCH - STEP BY STEP:**
-   
-   **Step 1: Extract Technologies** - Savoldan texnologiyalarni ajrat
-   **Step 2: Search FULL CV Text** - CV dan qidir
-   **Step 3: Match & Verify** - Topilganlarni tekshir
-   **Step 4: Construct Answer** - SODDA javob yoz
-   
-   Agar texnologiya bilan ishlamagan bo'lsang, HALOL ayt va umumiy bilimingni baham ko'r.
-   
-   **Step 5: Code Examples** - Agar so'ralsa, ALBATTA kod blokda ko'rsat:
-   \`\`\`sql
-   SELECT * FROM users WHERE active = true;
-   \`\`\`
-   
-   ⚠️ **CRITICAL RULES:**
-   - CV da bo'lmagan tajribani TO'QIMA
-   - Bilmagan narsangni bilaman dema
-   - Ammo umumiy bilimingni baham ko'r`;
-
-    return `${basePrompt}\n\n${languageInstruction}\n${answerTypeInstructions}\n\nCRITICAL RULE: All JSON response fields (answer, keyPoints, starMethod, suggestedFollowups) MUST be in ${languageName} (${languageCode}). If you respond in English or any other language, the response will be rejected.`;
-  }
-
-  /**
-   * Get language name from code
-   */
-  private getLanguageName(language: string): string {
-    const names: Record<string, string> = {
-      uz: 'Uzbek',
-      ru: 'Russian',
-      en: 'English',
-    };
-    return names[language] || 'English';
   }
 
   /**

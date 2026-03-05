@@ -17,8 +17,19 @@ export interface PlanLimits {
 
   // Mock Interview Limits
   mockInterviews: {
-    perMonth: number; // -1 = unlimited
+    perMonth: number; // -1 = unlimited (total across all types)
     questionsPerInterview: number;
+  };
+
+  // Mock Interview Type Limits (Phase 3: Enhanced Mock Interview)
+  // These limits are WITHIN the total mockInterviews.perMonth cap
+  mockInterviewTypes: {
+    quickTechnical: number; // 15 min, 3 questions. -1 = unlimited
+    fullTechnical: number; // 45 min, 5-6 questions. -1 = unlimited
+    behavioral: number; // 30 min, 4 STAR questions. -1 = unlimited
+    systemDesign: number; // 45 min, 2 SD problems. -1 = unlimited
+    companySpecific: number; // 45 min, company format. -1 = unlimited
+    fullStack: number; // 60 min, mixed. -1 = unlimited
   };
 
   // CV Analysis Limits
@@ -57,13 +68,38 @@ export interface PlanLimits {
     taskCompletionCheck: 'basic' | 'advanced' | 'ai-powered';
     personalizedHints?: boolean;
     progressTracking?: 'basic' | 'advanced';
-    monthlyAIReport?: boolean; // 🆕 Monthly AI analysis (Starter+)
-    weeklyAIRecommendations?: boolean; // 🆕 Weekly tips (Pro+)
-    weeklyRoadmap?: boolean; // 🆕 Career roadmap (Elite only)
-    careerGrowthInsights?: boolean; // 🆕 Career analysis (Elite only)
+    monthlyAIReport?: boolean; // Monthly AI analysis (Starter+)
+    weeklyAIRecommendations?: boolean; // Weekly tips (Pro+)
+    weeklyRoadmap?: boolean; // Career roadmap (Elite only)
+    careerGrowthInsights?: boolean; // Career analysis (Elite only)
     oneOnOneCoaching?: boolean; // Elite only
     prioritySupport?: boolean; // Elite only
     customInterviews?: boolean; // Elite only
+  };
+
+  // --- Growth & Engagement Features ---
+
+  // Interview Readiness Score (IRS) — free viral test
+  irs: {
+    enabled: boolean;
+    maxTestsPerDay: number; // -1 = unlimited
+  };
+
+  // Streak System — daily activity tracking
+  streakFreeze: {
+    enabled: boolean;
+    perMonth: number; // Freeze uses per month
+  };
+
+  // Leaderboard — competitive ranking
+  leaderboard: {
+    canView: boolean;
+    canParticipate: boolean;
+  };
+
+  // Badges & Gamification
+  badges: {
+    level: 'basic' | 'full' | 'full_exclusive';
   };
 }
 
@@ -79,6 +115,9 @@ export const COMPLETE_PLAN_LIMITS: Record<string, PlanLimits> = {
    * - 1 CV analysis
    * - 0 voice minutes (mock & real)
    * - NO daily tasks
+   * - IRS: 3 tests/day (viral acquisition tool)
+   * - Streak: basic (IRS-based only, no freeze)
+   * - Leaderboard: view only
    * - AI model: z-ai/glm-4-32b (internal, not shown to users)
    */
   free_trial: {
@@ -90,6 +129,15 @@ export const COMPLETE_PLAN_LIMITS: Record<string, PlanLimits> = {
     mockInterviews: {
       perMonth: 1, // 1 mock interview (text only)
       questionsPerInterview: 10,
+    },
+
+    mockInterviewTypes: {
+      quickTechnical: 1,
+      fullTechnical: 0,
+      behavioral: 0,
+      systemDesign: 0,
+      companySpecific: 0,
+      fullStack: 0,
     },
 
     cvAnalysis: {
@@ -121,17 +169,38 @@ export const COMPLETE_PLAN_LIMITS: Record<string, PlanLimits> = {
       voiceExplanations: false,
       taskCompletionCheck: 'basic', // Simple keyword check
     },
+
+    // --- Growth Features ---
+    irs: {
+      enabled: true, // IRS is FREE for everyone (viral acquisition)
+      maxTestsPerDay: 3,
+    },
+
+    streakFreeze: {
+      enabled: false,
+      perMonth: 0,
+    },
+
+    leaderboard: {
+      canView: true,
+      canParticipate: false, // View only for free users
+    },
+
+    badges: {
+      level: 'basic' as const,
+    },
   },
 
   /**
-   * STARTER PLAN ($10/month)
+   * STARTER PLAN ($5/month)
    * Entry-level paid plan
    *
    * - 1 daily task (cost optimization)
    * - Monthly AI report
-   * - 10 mock interviews, 5 CV analyses
+   * - 2 mock interviews (quick only), 5 CV analyses
    * - 10 min mockVoice, 15 min realVoice
    * - Basic progress tracking
+   * - Full streak (no freeze), leaderboard participation
    */
   starter: {
     voice: {
@@ -140,8 +209,17 @@ export const COMPLETE_PLAN_LIMITS: Record<string, PlanLimits> = {
     },
 
     mockInterviews: {
-      perMonth: 10, // 10 interviews
+      perMonth: 2, // 2 interviews total (price $10→$5, limits adjusted)
       questionsPerInterview: 15,
+    },
+
+    mockInterviewTypes: {
+      quickTechnical: 2, // Only quick technical interviews
+      fullTechnical: 0,
+      behavioral: 0,
+      systemDesign: 0,
+      companySpecific: 0,
+      fullStack: 0,
     },
 
     cvAnalysis: {
@@ -152,15 +230,15 @@ export const COMPLETE_PLAN_LIMITS: Record<string, PlanLimits> = {
 
     dailyTasks: {
       enabled: true,
-      questionsPerDay: 1, // 🔥 NEW: 3 → 1 (cost optimization!)
-      voiceAnswer: true, // ✅ Can answer with voice!
-      imageAnswer: true, // ✅ Can answer with image!
-      videoAnswer: false, // ❌ Video only in PRO+
+      questionsPerDay: 1, // 1 task/day (cost optimization)
+      voiceAnswer: true,
+      imageAnswer: true,
+      videoAnswer: false,
       textAnswer: true,
     },
 
     fileUploads: {
-      maxSize: 10, // 5 → 10 MB
+      maxSize: 10, // 10 MB
       allowedTypes: ['text', 'pdf', 'docx', 'png', 'jpg', 'jpeg'],
       imagesAllowed: true,
       audioAllowed: false,
@@ -169,22 +247,43 @@ export const COMPLETE_PLAN_LIMITS: Record<string, PlanLimits> = {
 
     aiFeatures: {
       basicFeedback: true,
-      detailedAnalysis: true, // ✅ Detailed analysis enabled
-      voiceExplanations: true, // ✅ Voice explanations enabled
-      taskCompletionCheck: 'advanced', // Better AI checking
-      progressTracking: 'basic', // Basic progress only
-      monthlyAIReport: true, // 🔥 NEW: Monthly AI analysis report
+      detailedAnalysis: true,
+      voiceExplanations: true,
+      taskCompletionCheck: 'advanced',
+      progressTracking: 'basic',
+      monthlyAIReport: true,
+    },
+
+    // --- Growth Features ---
+    irs: {
+      enabled: true,
+      maxTestsPerDay: 3,
+    },
+
+    streakFreeze: {
+      enabled: false, // No freeze for Starter
+      perMonth: 0,
+    },
+
+    leaderboard: {
+      canView: true,
+      canParticipate: true, // Can compete in leaderboard
+    },
+
+    badges: {
+      level: 'full' as const,
     },
   },
 
   /**
-   * PRO PLAN ($20/month)
+   * PRO PLAN ($15/month)
    * Professional plan with advanced features
    *
    * - 1 daily task (with daily progress tracking)
    * - Weekly AI recommendations
-   * - 30 mock interviews, 15 CV analyses
+   * - 8 mock interviews (5 quick + 3 full), 15 CV analyses
    * - 30 min mockVoice, 45 min realVoice
+   * - Streak freeze (2/month), full leaderboard
    */
   pro: {
     voice: {
@@ -193,8 +292,17 @@ export const COMPLETE_PLAN_LIMITS: Record<string, PlanLimits> = {
     },
 
     mockInterviews: {
-      perMonth: 30, // 30 interviews
+      perMonth: 8, // 8 interviews total (price $20→$15, limits adjusted)
       questionsPerInterview: 20,
+    },
+
+    mockInterviewTypes: {
+      quickTechnical: 5, // 5 quick technical
+      fullTechnical: 3, // 3 full technical
+      behavioral: 3, // 3 behavioral (shares with fullTechnical cap)
+      systemDesign: 0,
+      companySpecific: 0,
+      fullStack: 0,
     },
 
     cvAnalysis: {
@@ -205,15 +313,15 @@ export const COMPLETE_PLAN_LIMITS: Record<string, PlanLimits> = {
 
     dailyTasks: {
       enabled: true,
-      questionsPerDay: 1, // 🔥 NEW: 5 → 1 (cost optimization!)
+      questionsPerDay: 1, // 1 task/day (cost optimization)
       voiceAnswer: true,
       imageAnswer: true,
-      videoAnswer: false, // ❌ NO VIDEO - Too expensive for AI processing
+      videoAnswer: false,
       textAnswer: true,
     },
 
     fileUploads: {
-      maxSize: 20, // 10 → 20 MB
+      maxSize: 20, // 20 MB
       allowedTypes: [
         'text',
         'pdf',
@@ -225,22 +333,42 @@ export const COMPLETE_PLAN_LIMITS: Record<string, PlanLimits> = {
         'webp',
         'mp3',
         'wav',
-        'ogg', // ❌ NO mp4 - video disabled
+        'ogg',
       ],
       imagesAllowed: true,
-      audioAllowed: true, // ✅ Audio files enabled
-      videoAllowed: false, // ❌ NO VIDEO - Token cost too high
+      audioAllowed: true,
+      videoAllowed: false,
     },
 
     aiFeatures: {
       basicFeedback: true,
       detailedAnalysis: true,
       voiceExplanations: true,
-      taskCompletionCheck: 'ai-powered', // Full AI analysis
-      personalizedHints: true, // Custom hints
-      progressTracking: 'advanced', // 🔥 Daily progress tracking
-      weeklyAIRecommendations: true, // 🔥 NEW: Weekly AI tips
-      monthlyAIReport: true, // Monthly summary
+      taskCompletionCheck: 'ai-powered',
+      personalizedHints: true,
+      progressTracking: 'advanced',
+      weeklyAIRecommendations: true,
+      monthlyAIReport: true,
+    },
+
+    // --- Growth Features ---
+    irs: {
+      enabled: true,
+      maxTestsPerDay: 3,
+    },
+
+    streakFreeze: {
+      enabled: true, // Pro gets streak freeze
+      perMonth: 2,
+    },
+
+    leaderboard: {
+      canView: true,
+      canParticipate: true,
+    },
+
+    badges: {
+      level: 'full' as const,
     },
   },
 
@@ -250,8 +378,9 @@ export const COMPLETE_PLAN_LIMITS: Record<string, PlanLimits> = {
    *
    * - 2 daily tasks
    * - Weekly AI roadmap, career growth insights
-   * - Unlimited mock interviews, unlimited CV analyses
+   * - Unlimited mock interviews (all types), unlimited CV analyses
    * - 60 min mockVoice, 120 min realVoice
+   * - Streak freeze (3/month), full leaderboard, exclusive badges
    */
   elite: {
     voice: {
@@ -264,6 +393,15 @@ export const COMPLETE_PLAN_LIMITS: Record<string, PlanLimits> = {
       questionsPerInterview: 30,
     },
 
+    mockInterviewTypes: {
+      quickTechnical: -1, // Unlimited
+      fullTechnical: -1,
+      behavioral: -1,
+      systemDesign: -1,
+      companySpecific: -1, // Elite-exclusive
+      fullStack: -1,
+    },
+
     cvAnalysis: {
       perMonth: -1, // UNLIMITED!
       maxFileSize: 50, // 50 MB
@@ -272,20 +410,20 @@ export const COMPLETE_PLAN_LIMITS: Record<string, PlanLimits> = {
 
     dailyTasks: {
       enabled: true,
-      questionsPerDay: 2, // 🔥 NEW: 10 → 2 (cost optimization + better than Starter/Pro)
+      questionsPerDay: 2, // 2 tasks/day (better than Starter/Pro)
       voiceAnswer: true,
       imageAnswer: true,
-      videoAnswer: false, // ❌ NO VIDEO - Too expensive for AI processing
+      videoAnswer: false,
       textAnswer: true,
-      customQuestions: true, // ✅ Can request custom questions
+      customQuestions: true,
     },
 
     fileUploads: {
-      maxSize: 50, // 20 → 50 MB
+      maxSize: 50, // 50 MB
       allowedTypes: '*', // ALL file types (except video)
       imagesAllowed: true,
       audioAllowed: true,
-      videoAllowed: false, // ❌ NO VIDEO - Token cost too high
+      videoAllowed: false,
       documentsAllowed: true,
     },
 
@@ -295,14 +433,34 @@ export const COMPLETE_PLAN_LIMITS: Record<string, PlanLimits> = {
       voiceExplanations: true,
       taskCompletionCheck: 'ai-powered',
       personalizedHints: true,
-      progressTracking: 'advanced', // 🔥 Daily progress tracking
-      weeklyAIRecommendations: true, // 🔥 Weekly AI tips
-      weeklyRoadmap: true, // 🔥 NEW: Career roadmap recommendations
-      monthlyAIReport: true, // 🔥 Detailed monthly report
-      careerGrowthInsights: true, // 🔥 NEW: Career growth analysis
-      oneOnOneCoaching: true, // ✅ Personal coaching
-      prioritySupport: true, // ✅ Priority support
-      customInterviews: true, // ✅ Custom interview creation
+      progressTracking: 'advanced',
+      weeklyAIRecommendations: true,
+      weeklyRoadmap: true,
+      monthlyAIReport: true,
+      careerGrowthInsights: true,
+      oneOnOneCoaching: true,
+      prioritySupport: true,
+      customInterviews: true,
+    },
+
+    // --- Growth Features ---
+    irs: {
+      enabled: true,
+      maxTestsPerDay: -1, // Unlimited for Elite
+    },
+
+    streakFreeze: {
+      enabled: true, // Elite gets streak freeze
+      perMonth: 3, // 3 freezes per month
+    },
+
+    leaderboard: {
+      canView: true,
+      canParticipate: true,
+    },
+
+    badges: {
+      level: 'full_exclusive' as const, // Exclusive badges for Elite
     },
   },
 };
@@ -349,8 +507,61 @@ export function getCvAnalysisMonthlyLimit(plan: string): number {
 }
 
 /**
+ * Helper: Get mock interview type limit
+ */
+export function getMockInterviewTypeLimit(
+  plan: string,
+  type: keyof PlanLimits['mockInterviewTypes'],
+): number {
+  const limits = getPlanLimits(plan);
+  return limits.mockInterviewTypes[type];
+}
+
+/**
+ * Helper: Check if plan has streak freeze enabled
+ */
+export function canUseStreakFreeze(plan: string): boolean {
+  const limits = getPlanLimits(plan);
+  return limits.streakFreeze.enabled && limits.streakFreeze.perMonth > 0;
+}
+
+/**
+ * Helper: Get streak freeze count per month
+ */
+export function getStreakFreezeLimit(plan: string): number {
+  const limits = getPlanLimits(plan);
+  return limits.streakFreeze.perMonth;
+}
+
+/**
+ * Helper: Check if plan can participate in leaderboard
+ */
+export function canParticipateInLeaderboard(plan: string): boolean {
+  const limits = getPlanLimits(plan);
+  return limits.leaderboard.canParticipate;
+}
+
+/**
+ * Helper: Get IRS daily test limit
+ */
+export function getIrsMaxTestsPerDay(plan: string): number {
+  const limits = getPlanLimits(plan);
+  return limits.irs.maxTestsPerDay;
+}
+
+/**
+ * Helper: Get badge level for plan
+ */
+export function getBadgeLevel(plan: string): PlanLimits['badges']['level'] {
+  const limits = getPlanLimits(plan);
+  return limits.badges.level;
+}
+
+/**
  * Type exports for type safety
  */
 export type SubscriptionPlan = keyof typeof COMPLETE_PLAN_LIMITS;
 export type AICheckLevel = 'basic' | 'advanced' | 'ai-powered';
 export type ProgressTrackingLevel = 'basic' | 'advanced';
+export type BadgeLevel = 'basic' | 'full' | 'full_exclusive';
+export type MockInterviewType = keyof PlanLimits['mockInterviewTypes'];

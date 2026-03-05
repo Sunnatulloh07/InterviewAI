@@ -50,7 +50,7 @@ export class AuthTelegramService {
       // User not registered - redirect to Telegram bot
       const botUsername = this.configService.get<string>(
         'TELEGRAM_BOT_USERNAME',
-        'InterviewAIProBot',
+        'jobi_it_bot',
       );
       const telegramBotUrl = `https://t.me/${botUsername}?start=register_${Buffer.from(formattedPhone).toString('base64')}`;
 
@@ -65,7 +65,7 @@ export class AuthTelegramService {
     if (!user.telegramId) {
       const botUsername = this.configService.get<string>(
         'TELEGRAM_BOT_USERNAME',
-        'InterviewAIProBot',
+        'jobi_it_bot',
       );
       const telegramBotUrl = `https://t.me/${botUsername}?start=link_${Buffer.from(formattedPhone).toString('base64')}`;
 

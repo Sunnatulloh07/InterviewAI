@@ -565,94 +565,23 @@ export class TaskReminderService {
       return `${i + 1}. ${escaped}`;
     }).join('\n');
 
-    // Professional PM/TechLead messaging based on reminder type
+    // Professional messaging based on reminder type
+    // Each reminder has a clear purpose: morning = inform, afternoon = nudge, evening = urgency
     const messages: Record<string, Record<string, string>> = {
       uz: {
-        first: `👋 <b>Eslatma</b>
-
-Sizda tugallanmagan topshiriqlar mavjud:
-
-${taskTitles}
-
-⏰ ${tasks.length} ta topshiriq kutilmoqda
-
-💡 Vaqtingizni samarali o'tkazing!`,
-        second: `⏰ <b>Kunning o'rtasi</b>
-
-Hali topshirilmagan vazifalar:
-
-${taskTitles}
-
-📊 ${tasks.length} ta topshiriq qoldi
-
-⚡ Tezroq bajaring va kunning qolgan qismini rejalashtiring!`,
-        third: `🌆 <b>Kun yakunlanmoqda</b>
-
-Oxirgi eslatma - topshirilmagan vazifalar:
-
-${taskTitles}
-
-🚨 ${tasks.length} ta topshiriq - kechga qoldirmang!
-
-🎯 Bugun oxirgi imkoniyat!`,
+        first: `<b>Kunlik topshiriqlar</b>\n\nBugun bajarilishi kerak:\n\n${taskTitles}\n\nJami: ${tasks.length} ta topshiriq\n\nBoshlash: /tasks`,
+        second: `<b>Eslatma</b>\n\nHali bajarilmagan topshiriqlar:\n\n${taskTitles}\n\n${tasks.length} ta topshiriq kutmoqda.\n\nDavom etish: /tasks`,
+        third: `<b>Kunlik topshiriqlar</b>\n\nBugun yakunlanmagan:\n\n${taskTitles}\n\nStreak saqlab qolish uchun bugun bajaring.\n\nOchish: /tasks`,
       },
       ru: {
-        first: `👋 <b>Напоминание</b>
-
-У вас есть невыполненные задания:
-
-${taskTitles}
-
-⏰ ${tasks.length} заданий ожидает
-
-💡 Используйте время эффективно!`,
-        second: `⏰ <b>Середина дня</b>
-
-Еще не выполненные задачи:
-
-${taskTitles}
-
-📊 ${tasks.length} заданий осталось
-
-⚡ Выполните быстрее и спланируйте оставшуюся часть дня!`,
-        third: `🌆 <b>День подходит к концу</b>
-
-Последнее напоминание - невыполненные задачи:
-
-${taskTitles}
-
-🚨 ${tasks.length} заданий - не откладывайте на вечер!
-
-🎯 Последний шанс сегодня!`,
+        first: `<b>Ежедневные задания</b>\n\nНа сегодня:\n\n${taskTitles}\n\nВсего: ${tasks.length} заданий\n\nНачать: /tasks`,
+        second: `<b>Напоминание</b>\n\nЕщё не выполнены:\n\n${taskTitles}\n\n${tasks.length} заданий ожидают.\n\nПродолжить: /tasks`,
+        third: `<b>Ежедневные задания</b>\n\nНе завершены сегодня:\n\n${taskTitles}\n\nВыполните сегодня чтобы сохранить streak.\n\nОткрыть: /tasks`,
       },
       en: {
-        first: `👋 <b>Reminder</b>
-
-You have pending tasks:
-
-${taskTitles}
-
-⏰ ${tasks.length} tasks waiting
-
-💡 Use your time effectively!`,
-        second: `⏰ <b>Mid-day check</b>
-
-Tasks still pending:
-
-${taskTitles}
-
-📊 ${tasks.length} tasks remaining
-
-⚡ Complete them quickly and plan the rest of your day!`,
-        third: `🌆 <b>Day is ending</b>
-
-Final reminder - pending tasks:
-
-${taskTitles}
-
-🚨 ${tasks.length} tasks - don't leave them for tonight!
-
-🎯 Last chance today!`,
+        first: `<b>Daily tasks</b>\n\nFor today:\n\n${taskTitles}\n\nTotal: ${tasks.length} tasks\n\nStart: /tasks`,
+        second: `<b>Reminder</b>\n\nStill pending:\n\n${taskTitles}\n\n${tasks.length} tasks waiting.\n\nContinue: /tasks`,
+        third: `<b>Daily tasks</b>\n\nNot completed today:\n\n${taskTitles}\n\nComplete today to keep your streak.\n\nOpen: /tasks`,
       },
     };
 

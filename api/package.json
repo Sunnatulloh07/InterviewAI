@@ -1,8 +1,8 @@
 {
-  "name": "interviewai-pro-api",
+  "name": "jobi-api",
   "version": "1.0.0",
-  "description": "InterviewAI Pro - Backend API",
-  "author": "InterviewAI Team",
+  "description": "Jobi - Backend API",
+  "author": "Jobi Team",
   "private": true,
   "license": "UNLICENSED",
   "engines": {

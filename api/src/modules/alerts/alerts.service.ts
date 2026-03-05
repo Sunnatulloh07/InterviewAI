@@ -158,7 +158,7 @@ export class AlertsService {
             severity: alert.severity,
             metadata: alert.metadata,
             timestamp: alert.timestamp,
-            service: 'InterviewAI Pro',
+            service: 'Jobi',
             environment: process.env.NODE_ENV,
           }),
         );
@@ -205,7 +205,7 @@ export class AlertsService {
                 }))
               : []),
           ],
-          footer: 'InterviewAI Pro',
+          footer: 'Jobi',
           ts: Math.floor((alert.timestamp || new Date()).getTime() / 1000),
         },
       ],
@@ -255,7 +255,7 @@ export class AlertsService {
               : []),
           ],
           footer: {
-            text: 'InterviewAI Pro',
+            text: 'Jobi',
           },
           timestamp: alert.timestamp?.toISOString() || new Date().toISOString(),
         },

@@ -302,7 +302,7 @@ export class FailedNotificationRetryService {
               }
             default:
               message =
-                notification.metadata?.messageContent || 'New notification from InterviewAI Pro';
+                notification.metadata?.messageContent || 'New notification from Jobi';
           }
 
           await bot.api.sendMessage(notification.telegramChatId, message, {

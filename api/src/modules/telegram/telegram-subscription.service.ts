@@ -75,14 +75,14 @@ export class TelegramSubscriptionService {
 Sizning 7 kunlik bepul sinov muddatingiz tugadi. 
 Davom etish uchun tarifni tanlang:
 
-💼 <b>STARTER</b> - $10/oy
-• 10 ta mock intervyu/oy
+💼 <b>STARTER</b> - $5/oy
+• 2 ta mock intervyu/oy
 • 10 daq mock + 15 daq live ovoz
 • 5 ta CV tahlili/oy
 • 1 ta kunlik topshiriq
 
-🚀 <b>PRO</b> - $20/oy
-• 30 ta mock intervyu/oy
+🚀 <b>PRO</b> - $15/oy
+• 8 ta mock intervyu/oy
 • 30 daq mock + 45 daq live ovoz
 • 15 ta CV tahlili/oy
 • Haftalik AI tavsiyalar
@@ -100,14 +100,14 @@ Davom etish uchun tarifni tanlang:
 Ваш 7-дневный бесплатный период закончился.
 Выберите тариф для продолжения:
 
-💼 <b>STARTER</b> - $10/мес
-• 10 mock-интервью/мес
+💼 <b>STARTER</b> - $5/мес
+• 2 mock-интервью/мес
 • 10 мин mock + 15 мин live голос
 • 5 анализов CV/мес
 • 1 ежедневное задание
 
-🚀 <b>PRO</b> - $20/мес
-• 30 mock-интервью/мес
+🚀 <b>PRO</b> - $15/мес
+• 8 mock-интервью/мес
 • 30 мин mock + 45 мин live голос
 • 15 анализов CV/мес
 • Еженедельные AI рекомендации
@@ -125,14 +125,14 @@ Davom etish uchun tarifni tanlang:
 Your 7-day free trial has ended.
 Choose a plan to continue:
 
-💼 <b>STARTER</b> - $10/mo
-• 10 mock interviews/mo
+💼 <b>STARTER</b> - $5/mo
+• 2 mock interviews/mo
 • 10 min mock + 15 min live voice
 • 5 CV analyses/mo
 • 1 daily task
 
-🚀 <b>PRO</b> - $20/mo
-• 30 mock interviews/mo
+🚀 <b>PRO</b> - $15/mo
+• 8 mock interviews/mo
 • 30 min mock + 45 min live voice
 • 15 CV analyses/mo
 • Weekly AI recommendations
@@ -387,9 +387,9 @@ Remaining: ${remaining}
       const trialEnd = new Date(user.subscription.trialEndsAt);
       if (now > trialEnd) {
         const expiredMessages: Record<string, string> = {
-          uz: `⏰ <b>Bepul sinov muddatingiz tugagan</b>\n\nMock intervyu o'tkazish uchun tarifga o'ting.\n\n💎 STARTER — $10/oy (10 ta mock intervyu)\n🚀 PRO — $20/oy (30 ta mock intervyu)\n👑 ELITE — $30/oy (cheksiz)`,
-          ru: `⏰ <b>Ваш пробный период истёк</b>\n\nДля проведения mock-интервью перейдите на платный тариф.\n\n💎 STARTER — $10/мес (10 mock-интервью)\n🚀 PRO — $20/мес (30 mock-интервью)\n👑 ELITE — $30/мес (безлимитно)`,
-          en: `⏰ <b>Your free trial has expired</b>\n\nUpgrade to continue mock interviews.\n\n💎 STARTER — $10/mo (10 mock interviews)\n🚀 PRO — $20/mo (30 mock interviews)\n👑 ELITE — $30/mo (unlimited)`,
+          uz: `⏰ <b>Bepul sinov muddatingiz tugagan</b>\n\nMock intervyu o'tkazish uchun tarifga o'ting.\n\n💎 STARTER — $5/oy (2 ta mock intervyu)\n🚀 PRO — $15/oy (8 ta mock intervyu)\n👑 ELITE — $30/oy (cheksiz)`,
+          ru: `⏰ <b>Ваш пробный период истёк</b>\n\nДля проведения mock-интервью перейдите на платный тариф.\n\n💎 STARTER — $5/мес (2 mock-интервью)\n🚀 PRO — $15/мес (8 mock-интервью)\n👑 ELITE — $30/мес (безлимитно)`,
+          en: `⏰ <b>Your free trial has expired</b>\n\nUpgrade to continue mock interviews.\n\n💎 STARTER — $5/mo (2 mock interviews)\n🚀 PRO — $15/mo (8 mock interviews)\n👑 ELITE — $30/mo (unlimited)`,
         };
 
         const keyboard = new InlineKeyboard().text(
@@ -502,18 +502,18 @@ Remaining: ${remaining}
     const messages: Record<string, string> = {
       uz: `📋 <b>Tariflar</b>
 
-💼 <b>STARTER</b> - $10/oy
+💼 <b>STARTER</b> - $5/oy
 ───────────────────────
-✅ 10 ta mock intervyu/oy
+✅ 2 ta mock intervyu/oy
 ✅ 10 daqiqa ovozli mashq
 ✅ 15 daqiqa live intervyu
 ✅ 5 ta CV tahlili
 ✅ 1 ta kunlik topshiriq
 ✅ Oylik AI hisobot
 
-🚀 <b>PRO</b> - $20/oy
+🚀 <b>PRO</b> - $15/oy
 ───────────────────────
-✅ 30 ta mock intervyu/oy
+✅ 8 ta mock intervyu/oy
 ✅ 30 daqiqa ovozli mashq
 ✅ 45 daqiqa live intervyu
 ✅ 15 ta CV tahlili
@@ -533,18 +533,18 @@ Remaining: ${remaining}
 📞 @interviewai_support_bot`,
       ru: `📋 <b>Тарифы</b>
 
-💼 <b>STARTER</b> - $10/мес
+💼 <b>STARTER</b> - $5/мес
 ───────────────────────
-✅ 10 mock интервью/мес
+✅ 2 mock интервью/мес
 ✅ 10 минут голосовой практики
 ✅ 15 минут live интервью
 ✅ 5 анализов CV
 ✅ 1 ежедневное задание
 ✅ Месячный AI отчёт
 
-🚀 <b>PRO</b> - $20/мес
+🚀 <b>PRO</b> - $15/мес
 ───────────────────────
-✅ 30 mock интервью/мес
+✅ 8 mock интервью/мес
 ✅ 30 минут голосовой практики
 ✅ 45 минут live интервью
 ✅ 15 анализов CV
@@ -564,18 +564,18 @@ Remaining: ${remaining}
 📞 @interviewai_support_bot`,
       en: `📋 <b>Plans</b>
 
-💼 <b>STARTER</b> - $10/mo
+💼 <b>STARTER</b> - $5/mo
 ───────────────────────
-✅ 10 mock interviews/mo
+✅ 2 mock interviews/mo
 ✅ 10 min voice practice
 ✅ 15 min live interview
 ✅ 5 CV analyses
 ✅ 1 daily task
 ✅ Monthly AI report
 
-🚀 <b>PRO</b> - $20/mo
+🚀 <b>PRO</b> - $15/mo
 ───────────────────────
-✅ 30 mock interviews/mo
+✅ 8 mock interviews/mo
 ✅ 30 min voice practice
 ✅ 45 min live interview
 ✅ 15 CV analyses
@@ -761,7 +761,7 @@ Remaining: ${remaining}
         starter: {
           emoji: '💼',
           name: 'STARTER',
-          price: '$10/oy',
+          price: '$5/oy',
           features: [
             `✓ ${planLimits.mockInterviews.perMonth} ta mock intervyu/oy`,
             `✓ ${planLimits.voice.mockVoice} daq mock + ${planLimits.voice.realVoice} daq live ovoz`,
@@ -773,7 +773,7 @@ Remaining: ${remaining}
         pro: {
           emoji: '🚀',
           name: 'PRO',
-          price: '$20/oy',
+          price: '$15/oy',
           features: [
             `✓ ${COMPLETE_PLAN_LIMITS.pro.mockInterviews.perMonth} ta mock intervyu/oy`,
             `✓ ${COMPLETE_PLAN_LIMITS.pro.voice.mockVoice} daq mock + ${COMPLETE_PLAN_LIMITS.pro.voice.realVoice} daq live ovoz`,
@@ -801,7 +801,7 @@ Remaining: ${remaining}
         starter: {
           emoji: '💼',
           name: 'STARTER',
-          price: '$10/мес',
+          price: '$5/мес',
           features: [
             `✓ ${planLimits.mockInterviews.perMonth} mock-интервью/мес`,
             `✓ ${planLimits.voice.mockVoice} мин mock + ${planLimits.voice.realVoice} мин live голос`,
@@ -813,7 +813,7 @@ Remaining: ${remaining}
         pro: {
           emoji: '🚀',
           name: 'PRO',
-          price: '$20/мес',
+          price: '$15/мес',
           features: [
             `✓ ${COMPLETE_PLAN_LIMITS.pro.mockInterviews.perMonth} mock-интервью/мес`,
             `✓ ${COMPLETE_PLAN_LIMITS.pro.voice.mockVoice} мин mock + ${COMPLETE_PLAN_LIMITS.pro.voice.realVoice} мин live голос`,
@@ -841,7 +841,7 @@ Remaining: ${remaining}
         starter: {
           emoji: '💼',
           name: 'STARTER',
-          price: '$10/mo',
+          price: '$5/mo',
           features: [
             `✓ ${planLimits.mockInterviews.perMonth} mock interviews/mo`,
             `✓ ${planLimits.voice.mockVoice} min mock + ${planLimits.voice.realVoice} min live voice`,
@@ -853,7 +853,7 @@ Remaining: ${remaining}
         pro: {
           emoji: '🚀',
           name: 'PRO',
-          price: '$20/mo',
+          price: '$15/mo',
           features: [
             `✓ ${COMPLETE_PLAN_LIMITS.pro.mockInterviews.perMonth} mock interviews/mo`,
             `✓ ${COMPLETE_PLAN_LIMITS.pro.voice.mockVoice} min mock + ${COMPLETE_PLAN_LIMITS.pro.voice.realVoice} min live voice`,

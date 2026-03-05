@@ -111,7 +111,7 @@ async function bootstrap() {
   // Swagger documentation (only in development)
   if (env !== 'production') {
     const config = new DocumentBuilder()
-      .setTitle('InterviewAI Pro API')
+      .setTitle('Jobi API')
       .setDescription('AI-powered interview preparation platform API')
       .setVersion('1.0')
       .addBearerAuth(
@@ -154,7 +154,7 @@ async function bootstrap() {
   console.log(`
       ╔══════════════════════════════════════════════════════════╗
       ║                                                          ║
-      ║   🚀 InterviewAI Pro API Server Started!                ║
+      ║   🚀 Jobi API Server Started!                ║
       ║                                                          ║
       ║   🌍 Environment: ${env.padEnd(30)}         ║
       ║   🔗 API URL: http://localhost:${port}/api/v1            ║

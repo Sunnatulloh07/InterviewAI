@@ -3,6 +3,11 @@ import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { NormalizedProfileDto } from './dto/normalized-profile.dto';
 import { detectDomain } from '@common/utils/detect-domain';
+import {
+  buildProfileNormalizationSystemPrompt,
+  buildProfileNormalizationUserPrompt,
+  AI_SERVICE_CONFIG,
+} from '@common/constants/ai-prompts.constant';
 
 @Injectable()
 export class ProfileNormalizationService {
@@ -21,54 +26,23 @@ export class ProfileNormalizationService {
     const startTime = Date.now();
     this.logger.debug(`Normalizing profile text: "${text}"`);
 
-    const prompt = `
-    You are an informational extraction AI. Analyze the user's description and map it to the following strict enums.
-    
-    TAXONOMY:
-    1. Position: 'junior', 'middle', 'senior', 'lead'
-    2. Goal: 'job_search', 'career_growth', 'learning'
-    3. Domain: 'frontend', 'backend', 'mobile', 'fullstack', 'devops', 'ai_ml', 'data', 'qa', 'general'
-    4. Tech Stack: Array of standard technology names (e.g. "React", "Node.js", "Python"). Normalize synonyms (e.g. "Reaction.js" -> "React").
-
-    INPUT TEXT:
-    "${text}"
-
-    INSTRUCTIONS:
-    - Infer 'Position' based on years of experience or explicit titles. Default to 'junior' if unclear.
-    - Infer 'Goal' based on context (e.g., "looking for work" -> "job_search"). Default to 'career_growth'.
-    - Infer 'Domain' based on mentioned technologies and role description. Use 'general' if unclear.
-    - Extract 'Tech Stack' mentioned or implied.
-    - Return a 'confidence' score (0.0 to 1.0) indicating certainty.
-
-    OUTPUT JSON ONLY:
-    {
-      "position": "enum_value",
-      "techStack": ["Tech1", "Tech2"],
-      "goal": "enum_value",
-      "domain": "enum_value",
-      "confidence": 0.95
-    }
-    `;
+    // Enterprise-grade prompts from centralized constants
+    const systemPrompt = buildProfileNormalizationSystemPrompt();
+    const userPrompt = buildProfileNormalizationUserPrompt(text);
 
     try {
       const response = await axios.post(
         this.configService.get('OPENROUTER_BASE_URL') ||
           'https://openrouter.ai/api/v1/chat/completions',
         {
-          model: this.configService.get('OPENROUTER_MODEL') || 'z-ai/glm-4-32b',
+          model: this.configService.get('OPENROUTER_MODEL') || AI_SERVICE_CONFIG.profileNormalization.defaultModel,
           messages: [
-            {
-              role: 'system',
-              content: 'You are a precise data normalization assistant. Output valid JSON only.',
-            },
-            {
-              role: 'user',
-              content: prompt,
-            },
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
           ],
-          temperature: 0.1, // Low temperature for deterministic results
-          max_tokens: 300,
-          response_format: { type: 'json_object' },
+          temperature: AI_SERVICE_CONFIG.profileNormalization.temperature,
+          max_tokens: AI_SERVICE_CONFIG.profileNormalization.maxTokens,
+          response_format: AI_SERVICE_CONFIG.profileNormalization.responseFormat,
         },
         {
           headers: {
@@ -76,7 +50,7 @@ export class ProfileNormalizationService {
             'HTTP-Referer': this.configService.get('OPENROUTER_HTTP_REFERER'),
             'X-Title': this.configService.get('OPENROUTER_X_TITLE'),
           },
-          timeout: 10000, // 10s timeout
+          timeout: AI_SERVICE_CONFIG.profileNormalization.timeoutMs,
         },
       );
 

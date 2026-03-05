@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
 import { GeneratedQuestion, GeneratedQuestionDocument } from './schemas/generated-question.schema';
 import { OPENROUTER_MODELS } from '../../common/utils/openai-client.factory';
+import { buildMultilingualQuestionGenerationPrompt } from '@common/constants/ai-prompts.constant';
 
 /**
  * 🛡️ SAFE QUESTION PROVIDER SERVICE (MULTILINGUAL VERSION)
@@ -42,8 +43,8 @@ export class SafeQuestionProviderService {
         baseURL: 'https://openrouter.ai/api/v1',
         apiKey: apiKey,
         defaultHeaders: {
-          'HTTP-Referer': this.configService.get<string>('OPENROUTER_HTTP_REFERER') || 'https://interviewai.pro',
-          'X-Title': this.configService.get<string>('OPENROUTER_X_TITLE') || 'InterviewAI Pro',
+          'HTTP-Referer': this.configService.get<string>('OPENROUTER_HTTP_REFERER') || 'https://getjobi.app',
+          'X-Title': this.configService.get<string>('OPENROUTER_X_TITLE') || 'Jobi',
         },
         timeout: this.TIMEOUT_MS,
       });
@@ -260,19 +261,11 @@ export class SafeQuestionProviderService {
 
     const techStackStr = techStack.length > 0 ? techStack.join(', ') : domain;
 
-    const prompt = `Generate a ${type} interview question for ${position} developer specializing in ${techStackStr}.
-
-Generate in 3 languages with title:
-
-Output ONLY valid JSON:
-{
-  "title_uz": "Qisqa sarlavha",
-  "title_ru": "Краткое название",
-  "title_en": "Short title",
-  "question_uz": "To'liq savol o'zbek tilida",
-  "question_ru": "Полный вопрос на русском",
-  "question_en": "Full question in English"
-}`;
+    const prompt = buildMultilingualQuestionGenerationPrompt({
+      type,
+      position,
+      techStackStr,
+    });
 
     const completion = await this.openai.chat.completions.create({
       model: OPENROUTER_MODELS['glm-4-32b'],

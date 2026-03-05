@@ -8,6 +8,10 @@ import { GeneratedQuestion, GeneratedQuestionDocument } from './schemas/generate
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
 import { OPENROUTER_MODELS } from '../../common/utils/openai-client.factory';
+import {
+  buildQuestionPoolSystemPrompt,
+  buildQuestionPoolUserPrompt,
+} from '@common/constants/ai-prompts.constant';
 
 /**
  * 🏭 QUESTION POOL MANAGER SERVICE
@@ -79,8 +83,8 @@ export class QuestionPoolManagerService {
         baseURL: 'https://openrouter.ai/api/v1',
         apiKey: apiKey,
         defaultHeaders: {
-          'HTTP-Referer': this.configService.get<string>('OPENROUTER_HTTP_REFERER') || 'https://interviewai.pro',
-          'X-Title': this.configService.get<string>('OPENROUTER_X_TITLE') || 'InterviewAI Pro',
+          'HTTP-Referer': this.configService.get<string>('OPENROUTER_HTTP_REFERER') || 'https://getjobi.app',
+          'X-Title': this.configService.get<string>('OPENROUTER_X_TITLE') || 'Jobi',
         },
       });
       this.logger.log('✅ OpenAI/OpenRouter client initialized successfully');
@@ -267,7 +271,7 @@ export class QuestionPoolManagerService {
     domain: string,
     language: string, // 🌍 Language parameter
   ): Promise<string | null> {
-    const prompt = this.buildPrompt(position, type, domain, language);
+    const prompt = buildQuestionPoolUserPrompt({ position, type, domain, language });
 
     try {
       const response = await this.openai.chat.completions.create({
@@ -275,7 +279,7 @@ export class QuestionPoolManagerService {
         messages: [
           {
             role: 'system',
-            content: this.getSystemPrompt(language), // 🌍 Language-specific system prompt
+            content: buildQuestionPoolSystemPrompt(language), // Centralized prompt
           },
           {
             role: 'user',
@@ -301,86 +305,8 @@ export class QuestionPoolManagerService {
     }
   }
 
-  /**
-   * 🌍 Get language-specific system prompt
-   */
-  private getSystemPrompt(language: string): string {
-    const prompts = {
-      uz: "Siz professional intervyu mutaxassisısız. Realistik va amaliy intervyu savollarini yarating. " +
-          "FAQAT savol matnini qaytaring, boshqa hech narsa yo'q.",
-      ru: "Вы эксперт по техническим интервью. Создайте реалистичные, практические вопросы для интервью. " +
-          "Верните ТОЛЬКО текст вопроса, без дополнительного форматирования или объяснений.",
-      en: "You are an expert technical interviewer. Generate realistic, practical interview questions. " +
-          "Return ONLY the question text, no additional formatting or explanation.",
-    };
-    return prompts[language] || prompts.en;
-  }
-
-  /**
-   * 🌍 Build prompt for question generation (multilingual)
-   */
-  private buildPrompt(position: string, type: string, domain: string, language: string): string {
-    const positionContext = {
-      uz: {
-        junior: '1-2 yillik tajriba, boshlang\'ich daraja',
-        middle: '3-5 yillik tajriba, o\'rta daraja',
-        senior: '5+ yillik tajriba, yuqori daraja',
-        lead: '7+ yillik tajriba, leadership',
-      },
-      ru: {
-        junior: '1-2 года опыта, начальный уровень',
-        middle: '3-5 лет опыта, средний уровень',
-        senior: '5+ лет опыта, продвинутый уровень',
-        lead: '7+ лет опыта, лидерство',
-      },
-      en: {
-        junior: '1-2 years experience, entry-level',
-        middle: '3-5 years experience, intermediate',
-        senior: '5+ years experience, advanced',
-        lead: '7+ years experience, leadership',
-      },
-    };
-
-    const levelText = positionContext[language]?.[position] || positionContext.en[position];
-
-    const prompts = {
-      uz: {
-        technical: `${domain} dasturchisi uchun texnik intervyu savolini yarating (daraja: ${levelText}). 
-Savol amaliy dasturlash bilimini, muammo yechish yoki tizim tushunishni tekshirishi kerak. 
-Zamonaviy ${domain} dasturlashga mos va realistik bo'lsin.`,
-        behavioral: `Dasturchi uchun xulq-atvor (behavioral) intervyu savolini yarating (daraja: ${levelText}). 
-Jamoa ishlashi, muloqot, nizolarni hal qilish yoki kasbiy o'sishga e'tibor bering. 
-Vaziyatga asoslangan (STAR metodiga mos) bo'lsin.`,
-        system_design: `Muhandis uchun tizim dizayni (system design) savolini yarating (daraja: ${levelText}). 
-Kengaytiriladigan tizim dizayn qilishni so'rang, arxitektura, ma'lumotlar bazasi, API va kengaytirilishni hisobga oling. 
-${position} darajasiga mos va realistik bo'lsin.`,
-      },
-      ru: {
-        technical: `Создайте технический вопрос для интервью ${domain} разработчика (уровень: ${levelText}). 
-Вопрос должен проверять практические знания программирования, решение задач или понимание системы. 
-Сделайте его реалистичным и актуальным для современной ${domain} разработки.`,
-        behavioral: `Создайте поведенческий (behavioral) вопрос для интервью программиста (уровень: ${levelText}). 
-Сосредоточьтесь на командной работе, коммуникации, разрешении конфликтов или профессиональном росте. 
-Сделайте его основанным на ситуации (совместимым с методом STAR).`,
-        system_design: `Создайте вопрос по проектированию систем для инженера (уровень: ${levelText}). 
-Попросите спроектировать масштабируемую систему, учитывая архитектуру, базы данных, API и масштабируемость. 
-Сделайте его реалистичным и подходящим для уровня ${position}.`,
-      },
-      en: {
-        technical: `Generate a technical interview question for a ${domain} developer (level: ${levelText}). 
-The question should test practical coding knowledge, problem-solving, or system understanding. 
-Make it realistic and relevant to modern ${domain} development.`,
-        behavioral: `Generate a behavioral interview question for a software engineer (level: ${levelText}). 
-Focus on teamwork, communication, conflict resolution, or professional growth. 
-Make it situation-based (STAR method compatible).`,
-        system_design: `Generate a system design question for an engineer (level: ${levelText}). 
-Ask them to design a scalable system, considering architecture, databases, APIs, and scalability. 
-Make it realistic and suitable for ${position} level.`,
-      },
-    };
-
-    return prompts[language]?.[type] || prompts.en[type] || `Generate an interview question for ${position} ${type} developer.`;
-  }
+  // getSystemPrompt() and buildPrompt() moved to centralized ai-prompts.constant.ts
+  // → buildQuestionPoolSystemPrompt(language) and buildQuestionPoolUserPrompt(params)
 
   /**
    * Helper: delay execution

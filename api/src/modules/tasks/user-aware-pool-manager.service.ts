@@ -10,6 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
 import { OPENROUTER_MODELS } from '../../common/utils/openai-client.factory';
 import { detectDomain } from '@common/utils/detect-domain';
+import { buildMultilingualQuestionGenerationPrompt } from '@common/constants/ai-prompts.constant';
 
 /**
  * 🎯 USER-AWARE POOL MANAGER (OPTIMIZED VERSION)
@@ -59,8 +60,8 @@ export class UserAwarePoolManagerService {
         baseURL: 'https://openrouter.ai/api/v1',
         apiKey: apiKey,
         defaultHeaders: {
-          'HTTP-Referer': this.configService.get<string>('OPENROUTER_HTTP_REFERER') || 'https://interviewai.pro',
-          'X-Title': this.configService.get<string>('OPENROUTER_X_TITLE') || 'InterviewAI Pro',
+          'HTTP-Referer': this.configService.get<string>('OPENROUTER_HTTP_REFERER') || 'https://getjobi.app',
+          'X-Title': this.configService.get<string>('OPENROUTER_X_TITLE') || 'Jobi',
         },
       });
       this.logger.log('✅ User-aware pool manager initialized');
@@ -305,32 +306,11 @@ export class UserAwarePoolManagerService {
         ? techStack.join(', ') 
         : domain;
       
-      const typeMap = {
-        technical: 'technical interview',
-        behavioral: 'behavioral interview',
-        system_design: 'system design interview',
-      };
-      
-      const prompt = `Generate a ${typeMap[type]} question for a ${position} developer specializing in ${techStackStr}.
-
-Generate in 3 languages (Uzbek, Russian, English):
-
-Requirements:
-- Professional and challenging
-- Real-world scenario specific to ${techStackStr}
-- Clear and concise
-- Include a short title (2-5 words)
-- Each language should be culturally appropriate
-
-Output ONLY valid JSON:
-{
-  "title_uz": "Qisqa sarlavha o'zbek tilida",
-  "title_ru": "Краткое название на русском",
-  "title_en": "Short title in English",
-  "question_uz": "To'liq savol o'zbek tilida",
-  "question_ru": "Полный вопрос на русском языке",
-  "question_en": "Full question in English"
-}`;
+      const prompt = buildMultilingualQuestionGenerationPrompt({
+        type,
+        position,
+        techStackStr,
+      });
       
       const response = await this.openai!.chat.completions.create({
         model: OPENROUTER_MODELS['glm-4-32b'],

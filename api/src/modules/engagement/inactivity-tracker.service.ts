@@ -457,12 +457,27 @@ export class InactivityTrackerService {
 
   /**
    * Get never active message
+   *
+   * NOTE: Commands are plan-aware:
+   * - free_trial: /interview, /analyze_cv, /profile (NO /tasks — not available)
+   * - paid (starter/pro/elite): /tasks, /interview, /analyze_cv, /profile
    */
   private getNeverActiveMessage(language: string, plan: string): string {
+    const isPaid = ['starter', 'pro', 'elite'].includes(plan);
+
+    if (isPaid) {
+      const messages = {
+        uz: `Siz hali botdan foydalanmadingiz.\n\nSizda obuna mavjud — imkoniyatlardan foydalaning:\n\nKunlik topshiriqlar: /tasks\nMock intervyu: /interview\nCV tahlili: /analyze_cv`,
+        ru: `Вы ещё не пользовались ботом.\n\nУ вас есть подписка — используйте возможности:\n\nЕжедневные задания: /tasks\nMock-интервью: /interview\nАнализ CV: /analyze_cv`,
+        en: `You haven't used the bot yet.\n\nYou have an active subscription — use your features:\n\nDaily tasks: /tasks\nMock interview: /interview\nCV analysis: /analyze_cv`,
+      };
+      return messages[language] || messages.uz;
+    }
+
     const messages = {
-      uz: `👋 Botni hali foydalanmadingiz!\n\nBoshlash uchun /start buyrug'ini yuboring.\n\n✅ Bugungi kunlik vazifalar: /tasks\n✅ Intervyu: /interview\n✅ Profil: /profile`,
-      ru: `👋 Вы еще не использовали бота!\n\nЧтобы начать, отправьте /start.\n\n✅ Ежедневные задания: /tasks\n✅ Интервью: /interview\n✅ Профиль: /profile`,
-      en: `👋 You haven't used the bot yet!\n\nTo get started, send /start.\n\n✅ Daily tasks: /tasks\n✅ Interview: /interview\n✅ Profile: /profile`,
+      uz: `Siz hali botdan foydalanmadingiz.\n\nBepul sinov davomida 1 ta mock intervyu va 1 ta CV tahlili mavjud.\n\nMock intervyu: /interview\nCV tahlili: /analyze_cv\nProfil: /profile`,
+      ru: `Вы ещё не пользовались ботом.\n\nВ пробном периоде доступны 1 mock-интервью и 1 анализ CV.\n\nMock-интервью: /interview\nАнализ CV: /analyze_cv\nПрофиль: /profile`,
+      en: `You haven't used the bot yet.\n\nYour free trial includes 1 mock interview and 1 CV analysis.\n\nMock interview: /interview\nCV analysis: /analyze_cv\nProfile: /profile`,
     };
 
     return messages[language] || messages.uz;
@@ -470,12 +485,25 @@ export class InactivityTrackerService {
 
   /**
    * Get 7 days inactive message
+   *
+   * NOTE: Commands are plan-aware — /tasks only for paid users.
    */
   private getSevenDaysInactiveMessage(language: string, plan: string): string {
+    const isPaid = ['starter', 'pro', 'elite'].includes(plan);
+
+    if (isPaid) {
+      const messages = {
+        uz: `7 kun davomida botga kirmadingiz.\n\nDoimiy mashq natijani yaxshilaydi. Bugungi topshiriqlaringiz tayyor.\n\nTopshiriqlar: /tasks\nMock intervyu: /interview`,
+        ru: `Вы не заходили в бот 7 дней.\n\nРегулярная практика улучшает результат. Сегодняшние задания готовы.\n\nЗадания: /tasks\nMock-интервью: /interview`,
+        en: `You haven't used the bot for 7 days.\n\nRegular practice improves results. Today's tasks are ready.\n\nTasks: /tasks\nMock interview: /interview`,
+      };
+      return messages[language] || messages.uz;
+    }
+
     const messages = {
-      uz: `⏰ 7 kun davomida botni foydalanmadingiz.\n\nHar kun 30 daqiqa amaliyot bo'lish uchun muhim.\n\n📌 Bugungi vazifalar: /tasks\n💡 Kichik amaliyotlar katta o'zgarishga olib keladi!`,
-      ru: `⏰ Вы не использовали бота в течение 7 дней.\n\nПрактика каждый день для достижения успеха.\n\n📌 Задания сегодня: /tasks\n💡 Маленькие действия приводят к большим результатам!`,
-      en: `⏰ You haven't used the bot for 7 days.\n\nPractice daily to achieve your goals.\n\n📌 Today's tasks: /tasks\n💡 Small actions lead to big results!`,
+      uz: `7 kun davomida botga kirmadingiz.\n\nDoimiy mashq natijani yaxshilaydi. Intervyu mashqi qilib ko'ring.\n\nMock intervyu: /interview\nCV tahlili: /analyze_cv`,
+      ru: `Вы не заходили в бот 7 дней.\n\nРегулярная практика улучшает результат. Попробуйте пройти интервью.\n\nMock-интервью: /interview\nАнализ CV: /analyze_cv`,
+      en: `You haven't used the bot for 7 days.\n\nRegular practice improves results. Try a mock interview.\n\nMock interview: /interview\nCV analysis: /analyze_cv`,
     };
 
     return messages[language] || messages.uz;
@@ -483,12 +511,25 @@ export class InactivityTrackerService {
 
   /**
    * Get 30 days inactive message
+   *
+   * NOTE: Commands are plan-aware — /tasks only for paid users.
    */
   private getThirtyDaysInactiveMessage(language: string, plan: string): string {
+    const isPaid = ['starter', 'pro', 'elite'].includes(plan);
+
+    if (isPaid) {
+      const messages = {
+        uz: `30 kun davomida botga kirmadingiz.\n\nObunangiz hali faol — topshiriqlar va intervyular sizni kutmoqda.\n\nTopshiriqlar: /tasks\nMock intervyu: /interview\nStatistika: /stats`,
+        ru: `Вы не заходили в бот 30 дней.\n\nВаша подписка ещё активна — задания и интервью ждут вас.\n\nЗадания: /tasks\nMock-интервью: /interview\nСтатистика: /stats`,
+        en: `You haven't used the bot for 30 days.\n\nYour subscription is still active — tasks and interviews are waiting.\n\nTasks: /tasks\nMock interview: /interview\nStatistics: /stats`,
+      };
+      return messages[language] || messages.uz;
+    }
+
     const messages = {
-      uz: `⚠️ 30 kun davomida botni foydalanmadingiz.\n\nUzoqlikka qaytish vaqti! Har kun 30 daqiqa amaliyot bo'lishingiz oshadi.\n\n🎯 Hozir boshlang: /tasks\n🏆 Kuchli bo'ling!`,
-      ru: `⚠️ Вы не использовали бота в течение 30 дней.\n\nВернитесь! Ежедневная практика приведет к успеху.\n\n🎯 Начните сейчас: /tasks\n🏆 Будьте сильными!`,
-      en: `⚠️ You haven't used the bot for 30 days.\n\nCome back! Daily practice leads to success.\n\n🎯 Start now: /tasks\n🏆 Be strong!`,
+      uz: `30 kun davomida botga kirmadingiz.\n\nIntervyuga tayyorgarlikni davom ettiring — AI sizga yordam beradi.\n\nMock intervyu: /interview\nRejalar: /upgrade`,
+      ru: `Вы не заходили в бот 30 дней.\n\nПродолжите подготовку к собеседованию — AI поможет вам.\n\nMock-интервью: /interview\nПланы: /upgrade`,
+      en: `You haven't used the bot for 30 days.\n\nContinue your interview preparation — AI is here to help.\n\nMock interview: /interview\nPlans: /upgrade`,
     };
 
     return messages[language] || messages.uz;
@@ -502,9 +543,9 @@ export class InactivityTrackerService {
    */
   private getNinetyDaysInactiveMessage(language: string): string {
     const messages = {
-      uz: `💔 90 kun davomida botni foydalanmadingiz.\n\nBiz sizni sog'indik! Agar qaytmoqchi bo'lsangiz, har doim kutamiz.\n\n🎯 Qaytish: /start\n💡 Sizning muvaffaqiyatingiz biz uchun muhim!`,
-      ru: `💔 Вы не использовали бота в течение 90 дней.\n\nМы скучаем! Если захотите вернуться, мы всегда здесь.\n\n🎯 Вернуться: /start\n💡 Ваш успех важен для нас!`,
-      en: `💔 You haven't used the bot for 90 days.\n\nWe miss you! If you ever want to come back, we're always here.\n\n🎯 Come back: /start\n💡 Your success matters to us!`,
+      uz: `90 kun davomida botga kirmadingiz.\n\nAgar qaytmoqchi bo'lsangiz, istalgan payt boshlashingiz mumkin.\n\nQayta boshlash: /start`,
+      ru: `Вы не заходили в бот 90 дней.\n\nЕсли захотите вернуться, вы можете начать в любой момент.\n\nНачать заново: /start`,
+      en: `You haven't used the bot for 90 days.\n\nIf you want to come back, you can start anytime.\n\nRestart: /start`,
     };
 
     return messages[language] || messages.uz;

@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { InterviewSession, InterviewSessionDocument } from './schemas/interview-session.schema';
 import { InterviewQuestion, InterviewQuestionDocument } from './schemas/interview-question.schema';
 import { InterviewAnswer, InterviewAnswerDocument } from './schemas/interview-answer.schema';
@@ -275,16 +275,65 @@ export class InterviewsRepository {
     }
   }
 
+  // FIX P3-L5: Use ObjectId for userId in aggregation pipeline (string doesn't match ObjectId)
   async getAverageScore(userId: string): Promise<number> {
     try {
       const result = await this.sessionModel.aggregate([
-        { $match: { userId, overallScore: { $exists: true } } },
+        { $match: { userId: new Types.ObjectId(userId), overallScore: { $exists: true } } },
         { $group: { _id: null, avgScore: { $avg: '$overallScore' } } },
       ]);
       return result.length > 0 ? result[0].avgScore : 0;
     } catch (error) {
       this.logger.error(
         `Failed to get average score for user ${userId}: ${error.message}`,
+        error.stack,
+      );
+      throw new Error(`Database operation failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Find active sessions that have been idle since before the cutoff date.
+   * Used by the idle timeout cron to auto-cancel abandoned interviews.
+   */
+  async findIdleSessions(cutoff: Date): Promise<InterviewSessionDocument[]> {
+    try {
+      return (await this.sessionModel
+        .find({
+          status: 'active',
+          lastActivityAt: { $lt: cutoff },
+        })
+        .limit(50)
+        .exec()) as any;
+    } catch (error) {
+      this.logger.error(`Failed to find idle sessions: ${error.message}`, error.stack);
+      throw new Error(`Database operation failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Count completed sessions of a specific mockType for a user in the current month.
+   * Used for per-type usage limit enforcement.
+   * FIX P3-H5: Only count 'completed' sessions — counting 'active' sessions penalizes
+   * users who have abandoned/idle sessions they never finished.
+   */
+  async countSessionsByMockType(
+    userId: string,
+    mockType: string,
+    since: Date,
+  ): Promise<number> {
+    try {
+      return await this.sessionModel
+        .countDocuments({
+          userId,
+          mockType,
+          status: 'completed',
+          createdAt: { $gte: since },
+        })
+        .exec();
+    } catch (error) {
+      this.logger.error(
+        `Failed to count sessions by mock type for user ${userId}: ${error.message}`,
         error.stack,
       );
       throw new Error(`Database operation failed: ${error.message}`);

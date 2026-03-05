@@ -8,6 +8,12 @@ export * from './metadata-keys';
 // Re-export complete plan limits (SINGLE SOURCE OF TRUTH)
 export * from './plan-limits.constant';
 
+// Re-export application events
+export * from './events.constants';
+
+// Re-export AI prompts (enterprise-grade centralized prompts)
+export * from './ai-prompts.constant';
+
 // API Versioning
 export const API_VERSION = 'v1';
 export const API_PREFIX = `api/${API_VERSION}`;
@@ -63,7 +69,7 @@ export const USAGE_LIMITS = {
     trialDays: 7,
   },
   starter: {
-    mockInterviews: 10, // ALIGNED with COMPLETE_PLAN_LIMITS
+    mockInterviews: 2, // ALIGNED with COMPLETE_PLAN_LIMITS ($5/mo plan)
     liveInterviewMinutes: 15, // ALIGNED: realVoice = 15 min
     cvAnalyses: 5,
     chromeQuestions: 0,
@@ -72,8 +78,8 @@ export const USAGE_LIMITS = {
     voiceInLiveEnabled: true,
   },
   pro: {
-    mockInterviews: 30, // ALIGNED with COMPLETE_PLAN_LIMITS
-    liveInterviewMinutes: 45, // FIX #55: ALIGNED with realVoice = 45 min (was 120)
+    mockInterviews: 8, // ALIGNED with COMPLETE_PLAN_LIMITS ($15/mo plan)
+    liveInterviewMinutes: 45, // ALIGNED with realVoice = 45 min
     cvAnalyses: 15,
     chromeQuestions: 1000,
     aiTokensPerMonth: 500000,
@@ -115,13 +121,20 @@ export const PLAN_FEATURES = {
     mockInterviews: true,
     cvAnalysis: true,
     cvOptimization: false,
-    voiceMessages: false, // FIX #54: FREE TRIAL = TEXT ONLY, no voice (mockVoice=0)
+    voiceMessages: false, // FREE TRIAL = TEXT ONLY, no voice (mockVoice=0)
     voiceInLive: false,
     stealthMode: false,
     contextAwareness: false,
     advancedAI: false, // AI model: z-ai/glm-4-32b (internal)
     prioritySupport: false,
     dailyTasks: false, // No daily tasks in free trial
+    // Growth features
+    irsTest: true, // IRS is free for everyone (viral acquisition)
+    streakTracking: true, // Basic streak (IRS-based only)
+    streakFreeze: false,
+    leaderboardView: true,
+    leaderboardParticipate: false,
+    badges: true, // Basic badges only
   },
   starter: {
     telegramBot: true,
@@ -130,13 +143,20 @@ export const PLAN_FEATURES = {
     mockInterviews: true,
     cvAnalysis: true,
     cvOptimization: false,
-    voiceMessages: true, // ✅ ENABLED: Mock voice for practice (10 min quota)
-    voiceInLive: true, // Enabled for all paid plans in Live
+    voiceMessages: true, // Mock voice for practice (10 min quota)
+    voiceInLive: true,
     stealthMode: false,
     contextAwareness: true,
     advancedAI: false, // GPT-4o-mini
     prioritySupport: false,
-    dailyTasks: true, // ✅ ENABLED: Daily tasks with AI-powered reminders
+    dailyTasks: true, // Daily tasks with AI-powered reminders
+    // Growth features
+    irsTest: true,
+    streakTracking: true, // Full streak (daily task-based)
+    streakFreeze: false,
+    leaderboardView: true,
+    leaderboardParticipate: true,
+    badges: true, // Full badges
   },
   pro: {
     telegramBot: true,
@@ -145,13 +165,20 @@ export const PLAN_FEATURES = {
     mockInterviews: true,
     cvAnalysis: true,
     cvOptimization: true,
-    voiceMessages: true, // ✅ ENABLED: Mock voice for practice (30 min quota)
+    voiceMessages: true, // Mock voice for practice (30 min quota)
     voiceInLive: true,
     stealthMode: true,
     contextAwareness: true,
     advancedAI: true, // GPT-4o
     prioritySupport: false,
-    dailyTasks: true, // ✅ ENABLED: Daily tasks with AI-powered reminders
+    dailyTasks: true, // Daily tasks with AI-powered reminders
+    // Growth features
+    irsTest: true,
+    streakTracking: true,
+    streakFreeze: true, // 2 freezes/month
+    leaderboardView: true,
+    leaderboardParticipate: true,
+    badges: true,
   },
   elite: {
     telegramBot: true,
@@ -160,13 +187,21 @@ export const PLAN_FEATURES = {
     mockInterviews: true,
     cvAnalysis: true,
     cvOptimization: true,
-    voiceMessages: true, // ✅ ENABLED: Mock voice for practice (60 min quota)
+    voiceMessages: true, // Mock voice for practice (60 min quota)
     voiceInLive: true,
     stealthMode: true,
     contextAwareness: true,
     advancedAI: true, // GPT-4o / Claude
     prioritySupport: true,
-    dailyTasks: true, // ✅ ENABLED: Daily tasks with AI-powered reminders
+    dailyTasks: true, // Daily tasks with AI-powered reminders
+    // Growth features
+    irsTest: true,
+    streakTracking: true,
+    streakFreeze: true, // 3 freezes/month
+    leaderboardView: true,
+    leaderboardParticipate: true,
+    badges: true, // Full + exclusive badges
+    companyMockInterview: true, // Elite-only feature
   },
 } as const;
 

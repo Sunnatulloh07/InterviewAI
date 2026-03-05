@@ -191,71 +191,11 @@ export class TrialExpiredUserService {
 
   private getJustExpiredMessage(lang: string): string {
     const messages: Record<string, string> = {
-      uz: `⏰ Sizning 7 kunlik bepul sinov muddatingiz tugadi!
+      uz: `Bepul sinov muddatingiz tugadi.\n\nDavom etish uchun rejalardan birini tanlang:\n\n<b>STARTER</b> — $5/oy\n• Kunlik topshiriqlar\n• 2 ta mock intervyu\n• 10 daqiqa ovozli javob\n• 5 ta CV tahlili\n\n<b>PRO</b> — $15/oy\n• 8 ta mock intervyu\n• 30 daqiqa ovozli javob\n• Haftalik AI tavsiyalar\n\n<b>ELITE</b> — $30/oy\n• Cheksiz mock intervyu\n• 2 ta kunlik topshiriq\n• Shaxsiy karyera rejasi\n\nBatafsil: /upgrade`,
 
-🎯 Premium bilan nimalar olasiz:
+      ru: `Пробный период закончился.\n\nВыберите план для продолжения:\n\n<b>STARTER</b> — $5/мес\n• Ежедневные задания\n• 2 mock-интервью\n• 10 мин голосовых ответов\n• 5 анализов CV\n\n<b>PRO</b> — $15/мес\n• 8 mock-интервью\n• 30 мин голосовых ответов\n• Еженедельные AI рекомендации\n\n<b>ELITE</b> — $30/мес\n• Безлимитные mock-интервью\n• 2 ежедневных задания\n• Персональный план карьеры\n\nПодробнее: /upgrade`,
 
-💼 <b>STARTER</b> - $10/oy
-• Kunlik savol va topshiriqlar
-• 10 ta mock interview/oy
-• 10 daqiqa ovozli javoblar
-• 5 ta CV tahlili
-
-🚀 <b>PRO</b> - $20/oy
-• 30 ta mock interview/oy
-• 30 daqiqa ovozli javoblar
-• Haftalik AI tavsiyalar
-
-👑 <b>ELITE</b> - $30/oy
-• Cheksiz mock interview
-• 2 ta kunlik topshiriq
-• Shaxsiy karyera rejasi
-
-Rejalarni ko'rish: /upgrade`,
-
-      ru: `⏰ Ваш 7-дневный пробный период закончился!
-
-🎯 Что вы получите с Premium:
-
-💼 <b>STARTER</b> - $10/мес
-• Ежедневные вопросы и задания
-• 10 mock интервью/мес
-• 10 минут голосовых ответов
-• 5 анализов CV
-
-🚀 <b>PRO</b> - $20/мес
-• 30 mock интервью/мес
-• 30 минут голосовых ответов
-• Еженедельные AI рекомендации
-
-👑 <b>ELITE</b> - $30/мес
-• Безлимит mock интервью
-• 2 ежедневных задания
-• Персональный план карьеры
-
-Смотреть планы: /upgrade`,
-
-      en: `⏰ Your 7-day free trial has expired!
-
-🎯 What you get with Premium:
-
-💼 <b>STARTER</b> - $10/mo
-• Daily questions and tasks
-• 10 mock interviews/mo
-• 10 minutes voice responses
-• 5 CV analyses
-
-🚀 <b>PRO</b> - $20/mo
-• 30 mock interviews/mo
-• 30 minutes voice responses
-• Weekly AI recommendations
-
-👑 <b>ELITE</b> - $30/mo
-• Unlimited mock interviews
-• 2 daily tasks
-• Personal career roadmap
-
-View plans: /upgrade`,
+      en: `Your free trial has ended.\n\nChoose a plan to continue:\n\n<b>STARTER</b> — $5/mo\n• Daily tasks\n• 2 mock interviews\n• 10 min voice responses\n• 5 CV analyses\n\n<b>PRO</b> — $15/mo\n• 8 mock interviews\n• 30 min voice responses\n• Weekly AI recommendations\n\n<b>ELITE</b> — $30/mo\n• Unlimited mock interviews\n• 2 daily tasks\n• Personal career roadmap\n\nDetails: /upgrade`,
     };
 
     return messages[lang] || messages.uz;
@@ -263,47 +203,11 @@ View plans: /upgrade`,
 
   private getWeekExpiredMessage(lang: string): string {
     const messages: Record<string, string> = {
-      uz: `📉 Sinov muddatingiz tugaganiga 1 hafta bo'ldi
+      uz: `Sinov muddati tugaganiga bir hafta bo'ldi.\n\nStarter plan bilan nimalar qilasiz:\n• Har kuni AI savollar olasiz\n• 2 ta mock intervyu o'tkazasiz\n• Ovozli javoblaringiz tahlil qilinadi\n• CV ni 5 marta professional tahlil\n\n$5/oy dan boshlanadi.\n\nBatafsil: /upgrade`,
 
-Intervyu tayyorgarligini to'xtatmang!
+      ru: `Пробный период закончился неделю назад.\n\nЧто входит в Starter план:\n• Ежедневные AI вопросы\n• 2 mock-интервью в месяц\n• AI анализ голосовых ответов\n• 5 профессиональных анализов CV\n\nОт $5/мес.\n\nПодробнее: /upgrade`,
 
-🎯 Starter plan bilan nimalar qilasiz:
-• Har kuni AI tomonidan savollar olasiz
-• 10 ta mock interview o'tkazasiz
-• Ovozli javoblaringizni AI tahlil qiladi
-• CV ingizni 5 marta professional tahlil
-
-💼 Faqat $10/oy dan boshlanadi
-
-Rejalarni ko'rish: /upgrade`,
-
-      ru: `📉 Пробный период закончился неделю назад
-
-Не останавливайте подготовку!
-
-🎯 Что вы получите со Starter планом:
-• Ежедневные AI вопросы
-• 10 mock интервью в месяц
-• AI анализ голосовых ответов
-• 5 профессиональных анализов CV
-
-💼 Всего от $10/мес
-
-Смотреть планы: /upgrade`,
-
-      en: `📉 Your trial expired a week ago
-
-Don't stop your preparation!
-
-🎯 What you get with Starter plan:
-• Daily AI questions
-• 10 mock interviews per month
-• AI voice answer analysis
-• 5 professional CV analyses
-
-💼 Starting from just $10/mo
-
-View plans: /upgrade`,
+      en: `Your trial expired a week ago.\n\nWhat Starter plan includes:\n• Daily AI questions\n• 2 mock interviews per month\n• AI voice answer analysis\n• 5 professional CV analyses\n\nStarting from $5/mo.\n\nDetails: /upgrade`,
     };
 
     return messages[lang] || messages.uz;
@@ -311,44 +215,11 @@ View plans: /upgrade`,
 
   private getTwoWeeksExpiredMessage(lang: string): string {
     const messages: Record<string, string> = {
-      uz: `🎯 Intervyu tayyorgarligini davom ettiring!
+      uz: `Pro plan imkoniyatlari:\n\n• 8 ta mock intervyu/oy\n• 30 daqiqa ovozli mashq\n• Haftalik AI tavsiyalar\n• 15 ta CV tahlili\n\n$15/oy.\n\nBatafsil: /upgrade`,
 
-💡 Pro plan imkoniyatlari:
-• 30 ta mock interview/oy
-• 30 daqiqa ovozli mashq
-• Haftalik AI tavsiyalar
-• Kunlik progress tracking
-• 15 ta CV tahlili
+      ru: `Возможности Pro плана:\n\n• 8 mock-интервью/мес\n• 30 мин голосовой практики\n• Еженедельные AI рекомендации\n• 15 анализов CV\n\n$15/мес.\n\nПодробнее: /upgrade`,
 
-🚀 Faqat $20/oy - kuniga 700 so'mdan kam!
-
-Rejalarni ko'rish: /upgrade`,
-
-      ru: `🎯 Продолжайте подготовку к собеседованию!
-
-💡 Возможности Pro плана:
-• 30 mock интервью/мес
-• 30 минут голосовой практики
-• Еженедельные AI рекомендации
-• Ежедневный прогресс
-• 15 анализов CV
-
-🚀 Всего $20/мес - меньше 700 сум в день!
-
-Смотреть планы: /upgrade`,
-
-      en: `🎯 Continue your interview preparation!
-
-💡 Pro plan features:
-• 30 mock interviews/mo
-• 30 min voice practice
-• Weekly AI recommendations
-• Daily progress tracking
-• 15 CV analyses
-
-🚀 Just $20/mo - less than $0.67/day!
-
-View plans: /upgrade`,
+      en: `Pro plan features:\n\n• 8 mock interviews/mo\n• 30 min voice practice\n• Weekly AI recommendations\n• 15 CV analyses\n\n$15/mo.\n\nDetails: /upgrade`,
     };
 
     return messages[lang] || messages.uz;
@@ -356,47 +227,11 @@ View plans: /upgrade`,
 
   private getMonthExpiredMessage(lang: string): string {
     const messages: Record<string, string> = {
-      uz: `👋 Biz hali ham shu yerdamiz!
+      uz: `Istalgan payt qaytishingiz mumkin.\n\nElite plan — to'liq tayyorgarlik:\n• Cheksiz mock intervyu\n• 2 ta kunlik topshiriq\n• 60 daqiqa ovozli mashq\n• Haftalik karyera rejasi\n• Shaxsiy AI coaching\n\n$30/oy.\n\nBatafsil: /upgrade`,
 
-🎯 Elite plan - professional daraja:
-• Cheksiz mock interview
-• 2 ta kunlik topshiriq
-• 60 daqiqa ovozli mashq
-• Haftalik karyera rejasi
-• Shaxsiy AI coaching
-• Cheksiz CV tahlili
+      ru: `Вы можете вернуться в любой момент.\n\nElite план — полная подготовка:\n• Безлимитные mock-интервью\n• 2 ежедневных задания\n• 60 мин голосовой практики\n• Еженедельный план карьеры\n• Персональный AI коучинг\n\n$30/мес.\n\nПодробнее: /upgrade`,
 
-👑 $30/oy - intervyuga to'liq tayyorgarlik
-
-Rejalarni ko'rish: /upgrade`,
-
-      ru: `👋 Мы все ещё здесь!
-
-🎯 Elite план - профессиональный уровень:
-• Безлимит mock интервью
-• 2 ежедневных задания
-• 60 минут голосовой практики
-• Еженедельный план карьеры
-• Персональный AI коучинг
-• Безлимит анализ CV
-
-👑 $30/мес - полная подготовка к интервью
-
-Смотреть планы: /upgrade`,
-
-      en: `👋 We're still here!
-
-🎯 Elite plan - professional level:
-• Unlimited mock interviews
-• 2 daily tasks
-• 60 minutes voice practice
-• Weekly career roadmap
-• Personal AI coaching
-• Unlimited CV analyses
-
-👑 $30/mo - complete interview preparation
-
-View plans: /upgrade`,
+      en: `You can come back anytime.\n\nElite plan — complete preparation:\n• Unlimited mock interviews\n• 2 daily tasks\n• 60 min voice practice\n• Weekly career roadmap\n• Personal AI coaching\n\n$30/mo.\n\nDetails: /upgrade`,
     };
 
     return messages[lang] || messages.uz;

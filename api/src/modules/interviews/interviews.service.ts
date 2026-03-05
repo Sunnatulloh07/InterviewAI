@@ -8,6 +8,8 @@ import {
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
 import { ConfigService } from '@nestjs/config';
+import { Cron } from '@nestjs/schedule';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { OpenAI } from 'openai';
 import { InterviewsRepository } from './interviews.repository';
 import { AiContextService } from '../ai/ai-context.service';
@@ -26,12 +28,31 @@ import {
   INTERVIEW_QUESTION_COUNTS,
   COMPLETE_PLAN_LIMITS,
   getMockInterviewMonthlyLimit,
+  getMockInterviewTypeLimit,
+  buildQuestionGenerationSystemPrompt,
+  buildQuestionGenerationUserPrompt,
+  AI_SERVICE_CONFIG,
+  type QuestionGenerationParams,
 } from '@common/constants';
 import {
   createOpenAIClient,
   getModelName,
   OPENROUTER_MODELS,
 } from '@common/utils/openai-client.factory';
+import { APP_EVENTS } from '@common/constants/events.constants';
+import {
+  buildFollowUpSystemPrompt,
+  buildFollowUpUserPrompt,
+} from '@common/constants/ai-prompts.constant';
+import {
+  MOCK_TYPE_CONFIG,
+  COMPANY_TEMPLATES,
+  FOLLOW_UP_CONFIG,
+  getVerdictFromScore,
+  type MockInterviewType,
+  type FollowUpType,
+  type CompanyTemplate,
+} from './constants/mock-interview.constants';
 
 @Injectable()
 export class InterviewsService {
@@ -47,6 +68,7 @@ export class InterviewsService {
     private readonly configService: ConfigService,
     @InjectQueue(QUEUE_INTERVIEW_FEEDBACK)
     private readonly feedbackQueue: Queue,
+    private readonly eventEmitter: EventEmitter2,
   ) {
     // Initialize OpenAI client for question generation
     // Supports both OpenAI and OpenRouter (auto-detects OpenRouter by API key prefix)
@@ -105,6 +127,17 @@ export class InterviewsService {
       // Create AI session for context
       const aiSession = await this.contextService.createSession(userId, 'interview');
 
+      // Resolve mockType configuration (Phase 3)
+      const mockType = (dto as any).mockType as MockInterviewType | undefined;
+      const mockTypeConfig = mockType ? MOCK_TYPE_CONFIG[mockType] : undefined;
+      const companyTemplateId = (dto as any).companyTemplateId as string | undefined;
+      const companyName = (dto as any).company as string | undefined;
+
+      // Calculate total time limit from mockType config or position-based
+      const totalTimeLimit = mockTypeConfig
+        ? mockTypeConfig.duration
+        : (dto.timeLimit || questionTimeLimit || 3) * numQuestions;
+
       // Create interview session
       const session = await this.repository.createSession({
         userId: userId as any,
@@ -115,14 +148,23 @@ export class InterviewsService {
         numQuestions,
         interviewDuration: dto.interviewDuration || 'standard',
         mode: dto.mode,
-        timeLimit: dto.timeLimit || questionTimeLimit, // Use position-based time limit if not provided
+        timeLimit: dto.timeLimit || questionTimeLimit,
+        totalTimeLimit,
         status: 'active',
+        mockState: 'questioning',
+        mockType: mockType || 'quick_technical',
+        company: companyName,
+        companyTemplateId,
         currentQuestionIndex: 0,
+        currentFollowUpCount: 0,
         questions: questions.map((q) => q._id) as any,
         answers: [],
+        followUps: [],
         startedAt: new Date(),
+        lastActivityAt: new Date(),
         aiSessionId: aiSession.id,
-      });
+        language: dto.language || 'uz',
+      } as any);
 
       // Usage counter already incremented by caller (telegram-commands.service.ts:3298)
       // No need to increment again here to avoid double counting
@@ -240,9 +282,13 @@ export class InterviewsService {
       // Add answer to session
       await this.repository.addAnswerToSession(sessionId, answer.id);
 
-      // Update current question index
+      // Update current question index + lastActivityAt + reset follow-up counter
+      // FIX MOCK-2: Update lastActivityAt so idle timeout cron won't cancel active sessions
+      // FIX MOCK-5: Reset currentFollowUpCount so follow-ups work for each new question
       await this.repository.updateSession(sessionId, {
         currentQuestionIndex: session.currentQuestionIndex + 1,
+        lastActivityAt: new Date(),
+        currentFollowUpCount: 0,
       });
 
       // Feedback generation is now deferred to the end of the session (Batch Processing)
@@ -274,14 +320,23 @@ export class InterviewsService {
     try {
       const session = await this.getSession(userId, sessionId);
 
-      if (session.status === 'completed') {
-        throw new BadRequestException('Interview already completed');
+      // FIX MOCK-3: Guard against completing cancelled/abandoned sessions too
+      if (session.status !== 'active' && session.status !== 'paused') {
+        throw new BadRequestException(
+          `Cannot complete interview with status '${session.status}'. Only active or paused sessions can be completed.`,
+        );
       }
+
+      // Calculate actual duration in minutes
+      const startTime = session.startedAt ? new Date(session.startedAt).getTime() : Date.now();
+      const actualDuration = Math.round((Date.now() - startTime) / 60000);
 
       // Update session status
       await this.repository.updateSession(sessionId, {
         status: 'completed',
+        mockState: 'scoring',
         completedAt: new Date(),
+        actualDuration,
       });
 
       // Queue overall feedback generation
@@ -305,7 +360,16 @@ export class InterviewsService {
         await this.contextService.archiveSession(session.aiSessionId);
       }
 
-      this.logger.log(`Interview completed: ${sessionId}`);
+      // Emit MOCK_COMPLETED event for leaderboard, badges, etc.
+      this.eventEmitter.emit(APP_EVENTS.MOCK_COMPLETED, {
+        userId,
+        sessionId,
+        score: 0, // Will be updated after feedback generation
+        type: (session as any).mockType || session.type,
+        duration: actualDuration,
+      });
+
+      this.logger.log(`Interview completed: ${sessionId}, duration: ${actualDuration}min`);
       return await this.getSession(userId, sessionId);
     } catch (error) {
       if (
@@ -407,8 +471,8 @@ export class InterviewsService {
   async findPausedSessionForUser(userId: string): Promise<InterviewSessionDocument | null> {
     try {
       const sessions = await this.repository.findSessionsByUserId(userId, 5, 0);
-      // Find the most recent paused or in_progress session
-      return sessions.find((s) => s.status === 'paused' || s.status === 'in_progress') || null;
+      // FIX MOCK-7: Schema uses 'active', not 'in_progress'
+      return sessions.find((s) => s.status === 'paused' || s.status === 'active') || null;
     } catch (error) {
       this.logger.error(`Failed to find paused session for user ${userId}: ${error.message}`);
       return null;
@@ -513,7 +577,6 @@ export class InterviewsService {
 
     // OPTIMIZATION: Language now set in startInterview, no need to fetch user again
     const language = dto.language || 'en';
-    const languageName = this.getLanguageName(language);
     const difficultyName = this.getDifficultyName(dto.difficulty);
     const categoryName = this.getCategoryName(dto.type);
 
@@ -521,147 +584,37 @@ export class InterviewsService {
     const historyContext = await this.getUserInterviewContext(userId);
     const { incorrectQuestions, allQuestions } = historyContext;
 
-    // Build prompt for question generation
-    // CRITICAL: Language instruction MUST be at the beginning for maximum enforcement
-    let prompt = `You are a REAL senior tech interviewer (not a question generator). You are sitting across from a candidate in a live interview. Generate ${count} interview questions the way a REAL human interviewer would naturally ask them — conversational, contextual, and engaging.\n\n`;
+    // Build company template context if applicable
+    const companyTemplateId = (dto as any).companyTemplateId as string | undefined;
+    let companyTemplate: QuestionGenerationParams['companyTemplate'];
+    if (companyTemplateId) {
+      const template = COMPANY_TEMPLATES.find((t) => t.id === companyTemplateId);
+      if (template?.questionStyle) {
+        companyTemplate = {
+          name: template.name,
+          questionStyle: template.questionStyle,
+          focus: template.focus,
+        };
+      }
+    }
 
-    // CRITICAL LANGUAGE REQUIREMENT - Must be at the beginning
-    prompt += `## CRITICAL LANGUAGE REQUIREMENT - READ THIS FIRST\n`;
-    prompt += `**MANDATORY:** You MUST generate ALL questions EXCLUSIVELY in ${languageName} (${language.toUpperCase()}).\n`;
-    prompt += `**DO NOT** use English or any other language for the questions.\n`;
-
-    // Language-specific examples
-    const languageExamples: Record<string, string> = {
-      uz: `Masalan: "Node.js da event loop qanday ishlaydi?" (to'g'ri), "How does event loop work in Node.js?" (noto'g'ri)`,
-      ru: `Например: "Как работает event loop в Node.js?" (правильно), "How does event loop work in Node.js?" (неправильно)`,
-      en: `Example: "How does event loop work in Node.js?" (correct)`,
+    // Build centralized prompt parameters
+    const promptParams: QuestionGenerationParams = {
+      count,
+      language,
+      categoryName,
+      difficultyName,
+      domain: dto.domain,
+      technologies: dto.technology,
+      averageScore: historyContext.averageScore,
+      companyTemplate,
+      cvContext: dto.cvContext,
+      historyContext: { allQuestions, incorrectQuestions },
     };
-    prompt += `${languageExamples[language] || languageExamples['en']}\n\n`;
-    prompt += `**ALL** questions in the "questions" array MUST be in ${languageName}.\n`;
-    prompt += `**If you generate any question in English or another language, the response will be rejected.**\n\n`;
 
-    // Interview Context
-    prompt += `## INTERVIEW CONTEXT\n`;
-    prompt += `- **Interview Type:** ${categoryName}\n`;
-    prompt += `- **Difficulty Level:** ${difficultyName}\n`;
-
-    if (dto.domain) {
-      prompt += `- **Domain:** ${dto.domain}\n`;
-    }
-
-    if (dto.technology && dto.technology.length > 0) {
-      prompt += `- **Technologies:** ${dto.technology.join(', ')}\n`;
-    }
-
-    // ADAPTIVE DIFFICULTY LOGIC
-    // Use average score to determine if we should ramp up difficulty or focus on basics
-    // 0-50: Foundational/Remedial
-    // 50-80: Progressive/Standard
-    // 80-100: Advanced/Challenging
-    const averageScore = historyContext.averageScore; // Already 0-100 scale
-
-    prompt += `\n## ADAPTIVE DIFFICULTY INSTRUCTIONS (USER LEVEL: ${averageScore}%)\n`;
-
-    if (averageScore >= 80) {
-      // High performer - Tough, pressure-style like FAANG interviews
-      prompt += `\n🔥 **STRATEGY: ADVANCED CHALLENGE (Tough interviewer)**\n`;
-      prompt += `Candidate is strong (${averageScore}% avg). Be a TOUGH senior interviewer.\n`;
-      prompt += `- Ask system design, architecture, edge cases, and real production scenarios.\n`;
-      prompt += `- Use scenario-based questions: "Aytaylik sizda... bo'lsa, qanday hal qilasiz?"\n`;
-      prompt += `- Push for depth: "Nima uchun aynan shu yechim? Boshqa alternativalar-chi?"\n`;
-      prompt += `- Sound like a demanding but fair tech lead, not a textbook.\n`;
-    } else if (averageScore >= 50) {
-      // Average performer - Professional but warm
-      prompt += `\n📈 **STRATEGY: PROGRESSIVE GROWTH (Professional interviewer)**\n`;
-      prompt += `Candidate is growing (${averageScore}% avg). Be professional but encouraging.\n`;
-      prompt += `- Mix practical questions with "why" and "when" questions.\n`;
-      prompt += `- Reference real-world scenarios: "Loyihangizda... holatga duch kelganmisiz?"\n`;
-      prompt += `- 70% standard depth, 30% push beyond comfort zone.\n`;
-      prompt += `- Sound like a senior colleague evaluating for promotion.\n`;
-    } else {
-      // Struggling or New - Friendly, supportive
-      prompt += `\n🌱 **STRATEGY: FOUNDATIONAL (Friendly interviewer)**\n`;
-      prompt += `Candidate is building basics (${averageScore}% avg). Be warm and supportive.\n`;
-      prompt += `- Focus on core concepts, fundamentals, and essential knowledge.\n`;
-      prompt += `- Use conversational phrasing: "Aytingchi...", "...haqida nima bilasiz?"\n`;
-      prompt += `- Make questions approachable, not intimidating.\n`;
-      prompt += `- Sound like a mentor, not an examiner.\n`;
-    }
-
-    // Add CV Context if available (personalized questions based on candidate's CV)
-    if (dto.cvContext) {
-      prompt += `\n## CANDIDATE CV CONTEXT (CRITICAL - Personalize questions based on this)\n`;
-      if (dto.cvContext.skills && dto.cvContext.skills.length > 0) {
-        prompt += `- **Candidate Technologies:** ${dto.cvContext.skills.slice(0, 15).join(', ')}\n`;
-      }
-      if (dto.cvContext.experience) {
-        prompt += `- **Work Experience:** ${dto.cvContext.experience.substring(0, 500)}\n`;
-      }
-      if (dto.cvContext.strengths && dto.cvContext.strengths.length > 0) {
-        prompt += `- **Key Strengths:** ${dto.cvContext.strengths.slice(0, 5).join(', ')}\n`;
-      }
-      if (dto.cvContext.summary) {
-        prompt += `- **Areas to Improve:** ${dto.cvContext.summary}\n`;
-      }
-      prompt += `\n**PERSONALIZATION RULES:**\n`;
-      prompt += `1. At least 60% of questions MUST test the candidate's listed technologies directly\n`;
-      prompt += `2. If weak areas are listed, generate 1-2 questions targeting those weaknesses\n`;
-      prompt += `3. Reference specific technologies from the CV — do NOT ask generic questions\n`;
-      prompt += `4. For experienced candidates, ask about architecture decisions and trade-offs in their tech stack\n`;
-    }
-    prompt += `\n`;
-
-    // Add History Context - Intelligent Question Generation
-    if (allQuestions.length > 0) {
-      prompt += `\n## PREVIOUS INTERVIEW HISTORY (INTELLIGENT GENERATION)\n`;
-
-      // 1. Avoid repetition - STRICT
-      prompt += `### ⛔ DO NOT REPEAT THESE QUESTIONS:\n`;
-      prompt += `The candidate has recently answered these. You MUST generate COMPLETELY NEW questions:\n`;
-      // Limit to last 30 questions to save tokens, but enough to avoid recents
-      const recentQuestions = allQuestions.slice(0, 30);
-      prompt += recentQuestions.map((q, i) => `${i + 1}. "${q}"`).join('\n') + '\n\n';
-
-      // 2. Focus on weak areas - TARGETED IMPROVEMENT
-      if (incorrectQuestions.length > 0) {
-        prompt += `### 🎯 TARGET AREAS FOR IMPROVEMENT:\n`;
-        prompt += `The candidate struggled with these specific questions/topics in the past:\n`;
-        const recentWeaknesses = incorrectQuestions.slice(0, 8);
-        prompt += recentWeaknesses.map((q, i) => `- Failed: "${q}"`).join('\n') + '\n';
-        prompt += `\n**INSTRUCTION:** Generate at least 2 questions that test the SAME underlying concepts as the failed questions above, but use **DIFFERENT wording, scenarios, or angles**. Do not simply repeat the failed question.\n\n`;
-      }
-    }
-    prompt += `\n`;
-
-    // Requirements
-    prompt += `## REQUIREMENTS\n`;
-    prompt += `- Generate exactly ${count} unique, non-repetitive questions\n`;
-    prompt += `- Questions must be appropriate for ${difficultyName} level candidates\n`;
-    prompt += `- Questions must be ${categoryName} type (technical, behavioral, case study, or mixed)\n`;
-    prompt += `- **CRITICAL TONE:** Every question must sound like a REAL person is asking it face-to-face.\n`;
-    prompt += `  - BAD (robotic): "MongoDB va PostgreSQL o'rtasida qanday farqlar mavjud?"\n`;
-    prompt += `  - GOOD (human): "Aytingchi, MongoDB bilan PostgreSQL orasida tanlashga to'g'ri kelganmi? Qaysi holatlarda qaysi birini tanlardingiz?"\n`;
-    prompt += `  - BAD (robotic): "Docker konteynerlarini qanday optimallashtirasiz?"\n`;
-    prompt += `  - GOOD (human): "Docker image hajmi kattalashib ketgan holatga duch kelganmisiz? Qanday yechim topdingiz?"\n`;
-    prompt += `- Use scenario-based, experience-based, and conversational phrasing\n`;
-    prompt += `- Include variety: some "Aytingchi...", some "Aytaylik sizda...", some "...haqida gapiring"\n`;
-    prompt += `- Mix question types: 40% scenario-based, 30% experience-based, 30% knowledge-check\n`;
-    prompt += `- Avoid generic textbook questions - make them feel like a real conversation\n\n`;
-
-    prompt += `## CRITICAL OUTPUT FORMAT\n`;
-    prompt += `You MUST return a valid JSON object with this EXACT structure:\n`;
-    prompt += `{\n`;
-    prompt += `  "questions": ["question 1 in ${languageName}", "question 2 in ${languageName}", "question 3 in ${languageName}", ...]\n`;
-    prompt += `}\n\n`;
-    prompt += `## IMPORTANT RULES\n`;
-    prompt += `- Return ONLY valid JSON, no markdown code blocks (\`\`\`json), no explanations, no text before or after\n`;
-    prompt += `- The "questions" array MUST contain exactly ${count} question strings\n`;
-    prompt += `- Each question must be a string with at least 10 characters\n`;
-    prompt += `- Each question MUST be in ${languageName} (${language.toUpperCase()})\n`;
-    prompt += `- Do NOT include \`\`\`json or \`\`\` code blocks\n`;
-    prompt += `- Do NOT add any explanatory text\n`;
-    prompt += `- The response must be parseable as JSON\n`;
-    prompt += `- **FINAL CHECK:** Before returning, verify ALL questions are in ${languageName}. If any question is in English or another language, translate it to ${languageName}.\n\n`;
+    // Generate prompts from centralized constants
+    const systemPromptContent = buildQuestionGenerationSystemPrompt(language);
+    const prompt = buildQuestionGenerationUserPrompt(promptParams);
 
     try {
       // Determine model based on OpenRouter or OpenAI
@@ -700,41 +653,22 @@ export class InterviewsService {
         messages: [
           {
             role: 'system',
-            content: `You are a professional interview question generator with expertise in technical recruitment. Your task is to generate interview questions and return them in valid JSON format.
-
-CRITICAL RULES:
-1. ALWAYS return a valid JSON object with a "questions" array
-2. NEVER include markdown code blocks (\`\`\`json)
-3. NEVER add explanatory text before or after the JSON
-4. The JSON must be directly parseable
-5. Each question must be a string in the "questions" array
-6. ALL questions MUST be in the language specified in the user prompt (${languageName})
-7. DO NOT use English or any other language unless explicitly requested
-
-Example of correct response:
-{"questions": ["Question 1?", "Question 2?", "Question 3?"]}
-
-Example of INCORRECT response (DO NOT DO THIS):
-\`\`\`json
-{"questions": ["Question 1?"]}
-\`\`\`
-
-Your response must be valid JSON that can be parsed directly. All questions must be in ${languageName}.`,
+            content: systemPromptContent,
           },
           {
             role: 'user',
             content: prompt,
           },
         ],
-        max_tokens: 4000, // Increased for reasoning models and longer responses
-        temperature: 0.8, // Higher temperature for more variety
+        max_tokens: AI_SERVICE_CONFIG.questionGeneration.maxTokens,
+        temperature: AI_SERVICE_CONFIG.questionGeneration.temperature,
       };
 
       // For reasoning models (like gpt-5-nano), we need to handle them differently
       // Reasoning models use tokens for "thinking" which can exhaust the limit before generating content
       if (isOpenRouter && model.includes('gpt-5')) {
         // Increase max_tokens significantly for reasoning models
-        requestConfig.max_tokens = 8000; // Much higher for reasoning models
+        requestConfig.max_tokens = AI_SERVICE_CONFIG.questionGeneration.reasoningModelMaxTokens;
         // Note: Reasoning models may still have issues, so we prefer gpt-4o-mini
         this.logger.warn(
           `Using reasoning model ${model} - this may cause token limit issues. Consider using gpt-4o-mini instead.`,
@@ -969,17 +903,7 @@ Your response must be valid JSON that can be parsed directly. All questions must
     }
   }
 
-  /**
-   * Get language name from code
-   */
-  private getLanguageName(language: string): string {
-    const names: Record<string, string> = {
-      uz: 'Uzbek',
-      ru: 'Russian',
-      en: 'English',
-    };
-    return names[language] || 'English';
-  }
+  // getLanguageName() removed — use getLanguageNameSafe() from ai-prompts.constant.ts
 
   /**
    * Get difficulty name
@@ -1085,6 +1009,52 @@ Your response must be valid JSON that can be parsed directly. All questions must
     this.logger.debug(
       `Mock interview usage check passed: ${user.usage.mockInterviewsThisMonth}/${monthlyLimit === -1 ? 'unlimited' : monthlyLimit} for ${plan} plan`,
     );
+  }
+
+  /**
+   * Check per-type mock interview limit (Phase 3).
+   * Maps mockType (snake_case) to plan limit key (camelCase).
+   * Returns true if allowed, throws ForbiddenException if limit reached.
+   */
+  async checkPerTypeLimit(
+    userId: string,
+    mockType: MockInterviewType,
+  ): Promise<boolean> {
+    const user = await this.usersService.findById(userId);
+    const plan = user.subscription?.plan || 'free_trial';
+
+    // Map snake_case mockType to camelCase limit key
+    const typeToLimitKey: Record<string, string> = {
+      quick_technical: 'quickTechnical',
+      full_technical: 'fullTechnical',
+      behavioral: 'behavioral',
+      system_design: 'systemDesign',
+      company_specific: 'companySpecific',
+      full_stack: 'fullStack',
+    };
+
+    const limitKey = typeToLimitKey[mockType];
+    if (!limitKey) return true; // Unknown type → allow
+
+    const typeLimit = getMockInterviewTypeLimit(plan, limitKey as any);
+    if (typeLimit === -1) return true; // Unlimited
+
+    // Count this month's sessions of this type
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const count = await this.repository.countSessionsByMockType(
+      userId,
+      mockType,
+      monthStart,
+    );
+
+    if (count >= typeLimit) {
+      throw new ForbiddenException(
+        `You have reached the monthly limit for ${MOCK_TYPE_CONFIG[mockType]?.label || mockType} interviews (${count}/${typeLimit}). Upgrade your plan for more.`,
+      );
+    }
+
+    return true;
   }
 
   /**
@@ -1209,5 +1179,294 @@ Your response must be valid JSON that can be parsed directly. All questions must
       .reverse();
 
     return completed;
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // PHASE 3: Follow-Up Logic
+  // ═══════════════════════════════════════════════════════════════
+
+  /**
+   * Decide whether to ask a follow-up question after an answer.
+   *
+   * Rules (TZ section 6.2.2):
+   *   1. Answer too short (< minWords) → expand
+   *   2. Score correctness < 5 → redirect
+   *   3. Score >= 7 → deep_dive (probe deeper)
+   *   4. Max 2 follow-ups per question
+   *   5. Default: no follow-up for medium answers
+   *
+   * Returns null if no follow-up needed, otherwise { type, question }.
+   */
+  async shouldFollowUp(
+    session: InterviewSessionDocument,
+    questionText: string,
+    answerText: string,
+    answerScore: number | undefined,
+  ): Promise<{ type: FollowUpType; question: string } | null> {
+    const isEnabled = this.configService.get<boolean>('features.mockEnhancedEnabled');
+    if (!isEnabled) return null;
+
+    // Rule 4: Max follow-ups per question reached
+    const currentFUCount = (session as any).currentFollowUpCount || 0;
+    if (currentFUCount >= FOLLOW_UP_CONFIG.maxPerQuestion) {
+      return null;
+    }
+
+    // Determine follow-up type
+    const wordCount = answerText.trim().split(/\s+/).length;
+    const category = (session as any).mockType?.includes('behavioral')
+      ? 'behavioral'
+      : 'technical';
+    const minWords = category === 'behavioral'
+      ? FOLLOW_UP_CONFIG.minWordsForBehavioral
+      : FOLLOW_UP_CONFIG.minWordsForTechnical;
+
+    // FIX P3-H6: When score is undefined (batch scoring mode), use word count heuristics
+    // and a probability-based deep_dive trigger. Previously defaulting to 5 caused
+    // score-based follow-ups to NEVER trigger since 5 falls in the dead zone (5-6).
+    let followUpType: FollowUpType;
+
+    if (wordCount < minWords) {
+      followUpType = 'expand';
+    } else if (answerScore !== undefined) {
+      // Score available — use score-based thresholds
+      const score10 = answerScore <= 10 ? answerScore : answerScore / 10;
+      if (score10 < FOLLOW_UP_CONFIG.lowScoreThreshold) {
+        followUpType = 'redirect';
+      } else if (score10 >= FOLLOW_UP_CONFIG.highScoreThreshold) {
+        followUpType = 'deep_dive';
+      } else {
+        // Medium score → no follow-up
+        return null;
+      }
+    } else {
+      // Score unknown (batch scoring) — use heuristic:
+      // Long, detailed answers (>= 2x minWords) get a 40% chance of deep_dive
+      // This ensures the follow-up feature actually activates during live interviews
+      if (wordCount >= minWords * 2 && Math.random() < 0.4) {
+        followUpType = 'deep_dive';
+      } else if (wordCount >= minWords && wordCount < minWords * 1.3 && Math.random() < 0.3) {
+        // Borderline answers get a 30% chance of expand
+        followUpType = 'expand';
+      } else {
+        return null;
+      }
+    }
+
+    // Generate the follow-up question using AI
+    const followUpQuestion = await this.generateFollowUpQuestion(
+      session,
+      questionText,
+      answerText,
+      followUpType,
+    );
+
+    if (!followUpQuestion) return null;
+
+    return { type: followUpType, question: followUpQuestion };
+  }
+
+  /**
+   * Generate a follow-up question using AI.
+   */
+  private async generateFollowUpQuestion(
+    session: InterviewSessionDocument,
+    questionText: string,
+    answerText: string,
+    type: FollowUpType,
+  ): Promise<string | null> {
+    if (!this.openai) return null;
+
+    const lang = (session as any).language || 'uz';
+
+    // Enterprise-grade prompts from centralized constants
+    const systemPrompt = buildFollowUpSystemPrompt(type, lang);
+    const userPrompt = buildFollowUpUserPrompt({ questionText, answerText, type });
+
+    try {
+      const response = await this.openai.chat.completions.create({
+        model: getModelName(this.configService, AI_MODELS.GPT35, 'openai/gpt-4o-mini'),
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        max_tokens: 150,
+        temperature: 0.7,
+      });
+
+      return response.choices[0]?.message?.content?.trim() || null;
+    } catch (error: any) {
+      this.logger.warn(`Follow-up generation failed: ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Submit a follow-up answer and store it in the session.
+   * Returns the updated session.
+   *
+   * FIX P3-C1: Use currentQuestionIndex - 1 because submitAnswer already
+   * incremented the index before the follow-up was recorded.
+   * FIX P3-H2: Do NOT reset currentFollowUpCount to 0 here — let the caller
+   * decide whether to ask another follow-up or advance to next question.
+   */
+  async submitFollowUpAnswer(
+    userId: string,
+    sessionId: string,
+    answerText: string,
+    answerTime: number,
+  ): Promise<InterviewSessionDocument> {
+    const session = await this.getSession(userId, sessionId);
+
+    if (session.status !== 'active') {
+      throw new BadRequestException('Interview session is not active');
+    }
+
+    // FIX P3-C1: The follow-up was recorded at (currentQuestionIndex - 1)
+    // because submitAnswer incremented the index before follow-up was created.
+    const questionIndex = session.currentQuestionIndex - 1;
+
+    // Find the latest unanswered follow-up for this question
+    const followUps = JSON.parse(JSON.stringify((session as any).followUps || [])); // FIX P3-M3: deep copy
+    const currentFU = followUps.find(
+      (fu: any) => fu.questionIndex === questionIndex && !fu.answer,
+    );
+
+    if (!currentFU) {
+      throw new BadRequestException('No pending follow-up question');
+    }
+
+    // Update the follow-up answer
+    currentFU.answer = answerText;
+    currentFU.answerTime = answerTime;
+    currentFU.answeredAt = new Date();
+
+    // Save — keep mockState as 'follow_up' and preserve currentFollowUpCount
+    // so the caller can check if another follow-up is needed (FIX P3-H2)
+    await this.repository.updateSession(sessionId, {
+      followUps,
+      lastActivityAt: new Date(),
+    } as any);
+
+    return await this.getSession(userId, sessionId);
+  }
+
+  /**
+   * Record a pending follow-up question on the session.
+   */
+  async recordFollowUp(
+    sessionId: string,
+    questionIndex: number,
+    type: FollowUpType,
+    question: string,
+  ): Promise<void> {
+    const session = await this.repository.findSessionById(sessionId);
+    if (!session) return;
+
+    const followUps = (session as any).followUps || [];
+    followUps.push({
+      questionIndex,
+      type,
+      question,
+    });
+
+    const currentFUCount = ((session as any).currentFollowUpCount || 0) + 1;
+
+    await this.repository.updateSession(sessionId, {
+      followUps,
+      mockState: 'follow_up',
+      currentFollowUpCount: currentFUCount,
+      lastActivityAt: new Date(),
+    } as any);
+  }
+
+  /**
+   * Update lastActivityAt on the session (called on each user interaction).
+   */
+  async touchSession(sessionId: string): Promise<void> {
+    await this.repository.updateSession(sessionId, {
+      lastActivityAt: new Date(),
+    } as any);
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // PHASE 3: Company Template Helpers
+  // ═══════════════════════════════════════════════════════════════
+
+  /**
+   * Get available company templates.
+   */
+  getCompanyTemplates(): CompanyTemplate[] {
+    return COMPANY_TEMPLATES;
+  }
+
+  /**
+   * Get company template by ID.
+   */
+  getCompanyTemplate(templateId: string): CompanyTemplate | undefined {
+    return COMPANY_TEMPLATES.find((t) => t.id === templateId);
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // PHASE 3: Idle Timeout Cron
+  // ═══════════════════════════════════════════════════════════════
+
+  /**
+   * Cancel idle interviews (no activity for 15 min).
+   * Runs every 5 minutes.
+   */
+  @Cron('*/5 * * * *', {
+    name: 'mock_idle_timeout_check',
+    timeZone: 'Asia/Tashkent',
+  })
+  async checkIdleInterviews(): Promise<void> {
+    const isEnabled = this.configService.get<boolean>('features.mockEnhancedEnabled');
+    if (!isEnabled) return;
+
+    const timeoutSeconds = this.configService.get<number>(
+      'features.mock.idleTimeoutSeconds',
+      900,
+    );
+    const cutoff = new Date(Date.now() - timeoutSeconds * 1000);
+
+    try {
+      // Find active sessions with no recent activity
+      const idleSessions = await this.repository.findIdleSessions(cutoff);
+
+      for (const session of idleSessions) {
+        try {
+          await this.repository.updateSession(session.id || (session as any)._id.toString(), {
+            status: 'abandoned',
+            mockState: 'cancelled',
+            completedAt: new Date(),
+          } as any);
+
+          this.logger.log(
+            `Auto-cancelled idle interview: ${session.id || (session as any)._id}`,
+          );
+
+          // Queue partial report generation
+          await this.feedbackQueue.add(
+            'generate-session-feedback',
+            {
+              sessionId: session.id || (session as any)._id.toString(),
+              userId: session.userId.toString(),
+              isPartial: true,
+            },
+            { attempts: 2 },
+          );
+        } catch (err: any) {
+          this.logger.warn(
+            `Failed to cancel idle session ${session.id}: ${err.message}`,
+          );
+        }
+      }
+
+      if (idleSessions.length > 0) {
+        this.logger.log(`Cancelled ${idleSessions.length} idle interview sessions`);
+      }
+    } catch (error: any) {
+      this.logger.error(`Idle timeout check failed: ${error.message}`);
+    }
   }
 }

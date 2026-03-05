@@ -5,6 +5,7 @@ import { Model } from 'mongoose';
 import { QuestionPattern, QuestionPatternDocument } from './schemas/question-pattern.schema';
 import { GeneratedQuestion, GeneratedQuestionDocument } from './schemas/generated-question.schema';
 import axios from 'axios';
+import { buildPatternQuestionGenerationPrompt } from '@common/constants/ai-prompts.constant';
 
 /**
  * AI Question Generator Service
@@ -154,25 +155,12 @@ export class AIQuestionGeneratorService {
   }> {
     const startTime = Date.now();
 
-    const prompt = `You are an expert technical interviewer. Generate a unique interview question based on this pattern:
-
-Pattern: ${pattern.patternName}
-Template: ${pattern.coreTemplate}
-Position Level: ${position}
-Learning Objectives: ${pattern.learningObjectives.join(', ')}
-
-Requirements:
-1. Create a NEW real-world scenario (not the template example)
-2. Adjust difficulty for ${position} level
-3. Make it engaging and practical
-4. Provide 3 progressive hints (conceptual → approach → optimization)
-
-Output ONLY valid JSON:
-{
-  "question": "the interview question",
-  "context": "optional story context",
-  "hints": ["hint1", "hint2", "hint3"]
-}`;
+    const prompt = buildPatternQuestionGenerationPrompt({
+      patternName: pattern.patternName,
+      coreTemplate: pattern.coreTemplate,
+      position,
+      learningObjectives: pattern.learningObjectives,
+    });
 
     try {
       const response = await axios.post(

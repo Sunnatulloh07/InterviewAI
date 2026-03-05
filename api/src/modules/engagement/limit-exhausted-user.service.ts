@@ -169,56 +169,11 @@ export class LimitExhaustedUserService {
 
   private getMockExhaustedMessage(lang: string, usedCount: number): string {
     const messages: Record<string, string> = {
-      uz: `🎯 Siz bepul mock interview limitingizni tugatdingiz!
+      uz: `Bepul mock intervyu limitingiz tugadi.\n\nDavom etish uchun reja tanlang:\n\n<b>STARTER</b> — $5/oy\n• 2 ta mock intervyu\n• Kunlik topshiriqlar\n• 10 daqiqa ovozli javob\n• 5 ta CV tahlili\n\n<b>PRO</b> — $15/oy\n• 8 ta mock intervyu\n• 30 daqiqa ovozli javob\n• Haftalik AI tavsiyalar\n\nBatafsil: /upgrade`,
 
-💪 Davom etish uchun Premium rejani tanlang:
+      ru: `Лимит бесплатных mock-интервью исчерпан.\n\nВыберите план для продолжения:\n\n<b>STARTER</b> — $5/мес\n• 2 mock-интервью\n• Ежедневные задания\n• 10 мин голосовых ответов\n• 5 анализов CV\n\n<b>PRO</b> — $15/мес\n• 8 mock-интервью\n• 30 мин голосовых ответов\n• Еженедельные AI рекомендации\n\nПодробнее: /upgrade`,
 
-💼 <b>STARTER</b> - $10/oy:
-• 10 ta mock interview/oy
-• Kunlik savol va topshiriqlar
-• 10 daqiqa ovozli javoblar
-• 5 ta CV tahlili
-
-🚀 <b>PRO</b> - $20/oy:
-• 30 ta mock interview/oy
-• 30 daqiqa ovozli javoblar
-• Haftalik AI tavsiyalar
-
-Rejalarni ko'rish: /upgrade`,
-
-      ru: `🎯 Вы исчерпали лимит бесплатных mock интервью!
-
-💪 Для продолжения выберите Premium план:
-
-💼 <b>STARTER</b> - $10/мес:
-• 10 mock интервью/мес
-• Ежедневные вопросы и задания
-• 10 минут голосовых ответов
-• 5 анализов CV
-
-🚀 <b>PRO</b> - $20/мес:
-• 30 mock интервью/мес
-• 30 минут голосовых ответов
-• Еженедельные AI рекомендации
-
-Смотреть планы: /upgrade`,
-
-      en: `🎯 You've used your free mock interview limit!
-
-💪 Choose a Premium plan to continue:
-
-💼 <b>STARTER</b> - $10/mo:
-• 10 mock interviews/mo
-• Daily questions and tasks
-• 10 minutes voice responses
-• 5 CV analyses
-
-🚀 <b>PRO</b> - $20/mo:
-• 30 mock interviews/mo
-• 30 minutes voice responses
-• Weekly AI recommendations
-
-View plans: /upgrade`,
+      en: `Your free mock interview limit is reached.\n\nChoose a plan to continue:\n\n<b>STARTER</b> — $5/mo\n• 2 mock interviews\n• Daily tasks\n• 10 min voice responses\n• 5 CV analyses\n\n<b>PRO</b> — $15/mo\n• 8 mock interviews\n• 30 min voice responses\n• Weekly AI recommendations\n\nDetails: /upgrade`,
     };
 
     return messages[lang] || messages.uz;
@@ -226,53 +181,11 @@ View plans: /upgrade`,
 
   private getVoiceExhaustedMessage(lang: string): string {
     const messages: Record<string, string> = {
-      uz: `🎙️ Bepul sinov davri faqat matn javoblarini qo'llab-quvvatlaydi!
+      uz: `Bepul sinov davrida faqat matn javoblari mavjud.\n\nOvozli mashq qilish uchun reja tanlang:\n\n<b>STARTER</b> — $5/oy\n• 10 daqiqa ovozli javob\n• Avtomatik transkripsiya\n• 2 ta mock intervyu\n\n<b>PRO</b> — $15/oy\n• 30 daqiqa ovozli javob\n• AI ovozli tahlil\n• 8 ta mock intervyu\n\nBatafsil: /upgrade`,
 
-🚀 Premium bilan ovozli mashq boshlang:
+      ru: `В пробном периоде доступны только текстовые ответы.\n\nДля голосовой практики выберите план:\n\n<b>STARTER</b> — $5/мес\n• 10 мин голосовых ответов\n• Автоматическая транскрипция\n• 2 mock-интервью\n\n<b>PRO</b> — $15/мес\n• 30 мин голосовых ответов\n• AI голосовой анализ\n• 8 mock-интервью\n\nПодробнее: /upgrade`,
 
-💼 <b>STARTER</b> - $10/oy:
-• 10 daqiqa ovozli javoblar
-• Avtomatik transkripsiya
-• 10 ta mock interview
-
-🚀 <b>PRO</b> - $20/oy:
-• 30 daqiqa ovozli javoblar
-• AI ovozli tahlil va feedback
-• 30 ta mock interview
-
-Rejalarni ko'rish: /upgrade`,
-
-      ru: `🎙️ В бесплатном пробном периоде доступны только текстовые ответы!
-
-🚀 Получите голосовую практику с Premium:
-
-💼 <b>STARTER</b> - $10/мес:
-• 10 минут голосовых ответов
-• Автоматическая транскрипция
-• 10 mock интервью
-
-🚀 <b>PRO</b> - $20/мес:
-• 30 минут голосовых ответов
-• AI голосовой анализ и feedback
-• 30 mock интервью
-
-Смотреть планы: /upgrade`,
-
-      en: `🎙️ Voice answers are not available in the free trial (text only)!
-
-🚀 Get voice practice with Premium:
-
-💼 <b>STARTER</b> - $10/mo:
-• 10 minutes voice responses
-• Automatic transcription
-• 10 mock interviews
-
-🚀 <b>PRO</b> - $20/mo:
-• 30 minutes voice responses
-• AI voice analysis and feedback
-• 30 mock interviews
-
-View plans: /upgrade`,
+      en: `Voice responses are not available in the free trial.\n\nChoose a plan for voice practice:\n\n<b>STARTER</b> — $5/mo\n• 10 min voice responses\n• Automatic transcription\n• 2 mock interviews\n\n<b>PRO</b> — $15/mo\n• 30 min voice responses\n• AI voice analysis\n• 8 mock interviews\n\nDetails: /upgrade`,
     };
 
     return messages[lang] || messages.uz;
@@ -280,74 +193,11 @@ View plans: /upgrade`,
 
   private getBothExhaustedMessage(lang: string, usedCount: number): string {
     const messages: Record<string, string> = {
-      uz: `🚀 Barcha bepul imkoniyatlardan foydalandingiz!
+      uz: `Barcha bepul imkoniyatlardan foydalandingiz (${usedCount} ta intervyu).\n\nDavom etish uchun reja tanlang:\n\n<b>STARTER</b> — $5/oy\n• 2 ta mock intervyu + 10 min voice\n• Kunlik topshiriqlar\n• 5 ta CV tahlili\n\n<b>PRO</b> — $15/oy\n• 8 ta mock intervyu + 30 min voice\n• Haftalik AI tavsiyalar\n• 15 ta CV tahlili\n\n<b>ELITE</b> — $30/oy\n• Cheksiz mock intervyu\n• 2 ta kunlik topshiriq\n• Shaxsiy karyera rejasi\n\nBatafsil: /upgrade`,
 
-✅ ${usedCount} ta mock interview (matn javoblari)
+      ru: `Все бесплатные возможности использованы (${usedCount} интервью).\n\nВыберите план для продолжения:\n\n<b>STARTER</b> — $5/мес\n• 2 mock-интервью + 10 мин voice\n• Ежедневные задания\n• 5 анализов CV\n\n<b>PRO</b> — $15/мес\n• 8 mock-интервью + 30 мин voice\n• Еженедельные AI рекомендации\n• 15 анализов CV\n\n<b>ELITE</b> — $30/мес\n• Безлимитные mock-интервью\n• 2 ежедневных задания\n• Персональный план карьеры\n\nПодробнее: /upgrade`,
 
-💎 Premium bilan karyerangizni oshiring:
-
-💼 <b>STARTER</b> - $10/oy:
-• 10 ta mock interview + 10 min voice
-• Kunlik AI savollari
-• 5 ta CV tahlili
-
-🚀 <b>PRO</b> - $20/oy:
-• 30 ta mock interview + 30 min voice
-• Haftalik AI tavsiyalar
-• 15 ta CV tahlili
-
-👑 <b>ELITE</b> - $30/oy:
-• Cheksiz mock interview
-• 2 ta kunlik topshiriq
-• Shaxsiy karyera rejasi
-
-Rejalarni ko'rish: /upgrade`,
-
-      ru: `🚀 Вы использовали все бесплатные возможности!
-
-✅ ${usedCount} mock интервью (текстовые ответы)
-
-💎 Поднимите карьеру с Premium:
-
-💼 <b>STARTER</b> - $10/мес:
-• 10 mock интервью + 10 мин voice
-• Ежедневные AI вопросы
-• 5 анализов CV
-
-🚀 <b>PRO</b> - $20/мес:
-• 30 mock интервью + 30 мин voice
-• Еженедельные AI рекомендации
-• 15 анализов CV
-
-👑 <b>ELITE</b> - $30/мес:
-• Безлимит mock интервью
-• 2 ежедневных задания
-• Персональный план карьеры
-
-Смотреть планы: /upgrade`,
-
-      en: `🚀 You've used all free features!
-
-✅ ${usedCount} mock interviews (text answers only)
-
-💎 Level up your career with Premium:
-
-💼 <b>STARTER</b> - $10/mo:
-• 10 mock interviews + 10 min voice
-• Daily AI questions
-• 5 CV analyses
-
-🚀 <b>PRO</b> - $20/mo:
-• 30 mock interviews + 30 min voice
-• Weekly AI recommendations
-• 15 CV analyses
-
-👑 <b>ELITE</b> - $30/mo:
-• Unlimited mock interviews
-• 2 daily tasks
-• Personal career roadmap
-
-View plans: /upgrade`,
+      en: `All free features used (${usedCount} interviews).\n\nChoose a plan to continue:\n\n<b>STARTER</b> — $5/mo\n• 2 mock interviews + 10 min voice\n• Daily tasks\n• 5 CV analyses\n\n<b>PRO</b> — $15/mo\n• 8 mock interviews + 30 min voice\n• Weekly AI recommendations\n• 15 CV analyses\n\n<b>ELITE</b> — $30/mo\n• Unlimited mock interviews\n• 2 daily tasks\n• Personal career roadmap\n\nDetails: /upgrade`,
     };
 
     return messages[lang] || messages.uz;

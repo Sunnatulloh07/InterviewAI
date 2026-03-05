@@ -3,7 +3,15 @@
  *
  * ALIGNED with COMPLETE_PLAN_LIMITS (single source of truth)
  * Free Trial: 7 days, 1 mock interview, 0 min voice (text only), 1 CV analysis, NO daily tasks
- * Starter: $10/mo | Pro: $20/mo | Elite: $30/mo
+ * Starter: $5/mo | Pro: $15/mo | Elite: $30/mo
+ *
+ * VALID BOT COMMANDS:
+ * /start, /interview, /tasks, /analyze_cv, /profile, /stats, /voice,
+ * /upgrade, /settings, /help, /start_live, /end_live, /set_position, /progress
+ *
+ * NOTE: /register does NOT exist. Use /start for onboarding.
+ * NOTE: /cv does NOT exist. Use /analyze_cv for CV analysis.
+ * NOTE: /tasks is ONLY for paid users (starter/pro/elite). Do NOT suggest to free_trial users.
  *
  * 3 segments:
  * 1. Non-registered users (started bot but didn't register)
@@ -14,48 +22,33 @@
 /**
  * SEGMENT 1: Non-registered users
  * These users pressed /start but haven't completed registration
- * Goal: Convert them to registered users
+ * Goal: Convert them to registered users via /start
  */
 export const NON_REGISTERED_USER_MESSAGES = [
   {
-    uz: `👋 Salom! InterviewAI Pro botiga xush kelibsiz!\n\n🎯 Biz sizga quyidagicha yordam beramiz:\n✅ Mock interview o'tkazish\n✅ Real vaqtda intervyu yordami\n✅ CV tahlili va tavsiyalar\n✅ Kunlik amaliy topshiriqlar\n\nRo'yxatdan o'tish uchun /register bosing!`,
-    ru: `👋 Привет! Добро пожаловать в InterviewAI Pro!\n\n🎯 Мы поможем вам:\n✅ Проводить mock интервью\n✅ Получить помощь во время реального интервью\n✅ Анализ CV и рекомендации\n✅ Ежедневные практические задания\n\nДля регистрации нажмите /register!`,
-    en: `👋 Hello! Welcome to InterviewAI Pro!\n\n🎯 We will help you:\n✅ Conduct mock interviews\n✅ Get real-time interview assistance\n✅ CV analysis and recommendations\n✅ Daily practical tasks\n\nPress /register to sign up!`,
+    uz: `Salom! Siz hali ro'yxatdan o'tmagansiz.\n\nJobi orqali intervyuga tayyorlanish juda oson:\n\n• AI bilan mock intervyu o'ting\n• CV ingizni professional tahlil qiling\n• Natijalaringizni kuzatib boring\n\nBoshlash uchun /start ni bosing.`,
+    ru: `Здравствуйте! Вы ещё не зарегистрированы.\n\nС Jobi подготовка к собеседованию станет проще:\n\n• Пройдите mock-интервью с AI\n• Получите профессиональный анализ CV\n• Отслеживайте свой прогресс\n\nНажмите /start чтобы начать.`,
+    en: `Hi! You haven't registered yet.\n\nWith Jobi, interview preparation is easy:\n\n• Take mock interviews with AI\n• Get professional CV analysis\n• Track your progress\n\nPress /start to begin.`,
   },
   {
-    uz: `🚀 InterviewAI Pro bilan intervyuga tayyor bo'ling!\n\n📊 Biz nima qila olamiz:\n• AI bilan real intervyu mashqi\n• CV ni professional tahlil qilish\n• Kunlik savol va topshiriqlar\n• Ovozli javoblaringizni tahlil qilish\n\n💡 Bugun boshlang: /register`,
-    ru: `🚀 Будьте готовы к собеседованию с InterviewAI Pro!\n\n📊 Что мы умеем:\n• Реальная практика интервью с AI\n• Профессиональный анализ CV\n• Ежедневные вопросы и задания\n• Анализ голосовых ответов\n\n💡 Начните сегодня: /register`,
-    en: `🚀 Be ready for interviews with InterviewAI Pro!\n\n📊 What we can do:\n• Real interview practice with AI\n• Professional CV analysis\n• Daily questions and tasks\n• Voice answer analysis\n\n💡 Start today: /register`,
+    uz: `Intervyuga tayyormisiz?\n\nRo'yxatdan o'tsangiz 7 kunlik bepul sinov olasiz:\n\n• 1 ta mock intervyu\n• 1 ta CV tahlili\n• AI yordamchi\n\nBoshlash: /start`,
+    ru: `Готовы к собеседованию?\n\nПри регистрации вы получите 7 дней бесплатно:\n\n• 1 mock-интервью\n• 1 анализ CV\n• AI помощник\n\nНачать: /start`,
+    en: `Ready for your interview?\n\nRegister and get a 7-day free trial:\n\n• 1 mock interview\n• 1 CV analysis\n• AI assistant\n\nStart: /start`,
   },
   {
-    uz: `🎁 7 KUNLIK BEPUL SINOV!\n\n✨ Hozir ro'yxatdan o'tsangiz quyidagilarni TEKIN olasiz:\n• 1 ta mock interview\n• 1 ta CV tahlili\n• AI yordamchisi\n• Faqat matn javoblari\n\n⏰ Sinab ko'ring: /register`,
-    ru: `🎁 7 ДНЕЙ БЕСПЛАТНОГО ПРОБНОГО ПЕРИОДА!\n\n✨ Зарегистрируйтесь и получите БЕСПЛАТНО:\n• 1 mock интервью\n• 1 анализ CV\n• AI помощник\n• Только текстовые ответы\n\n⏰ Попробуйте: /register`,
-    en: `🎁 7 DAYS FREE TRIAL!\n\n✨ Register now and get FREE:\n• 1 mock interview\n• 1 CV analysis\n• AI assistant\n• Text answers only\n\n⏰ Try it out: /register`,
+    uz: `Intervyuda eng ko'p uchraydigan xatolar:\n\n• Tayyorgarliksiz borish\n• Tajribani aniq tushuntirib berolmaslik\n• STAR metodini bilmaslik\n\nJobi bu xatolarni oldini olishga yordam beradi.\n\nSinab ko'ring: /start`,
+    ru: `Самые частые ошибки на собеседовании:\n\n• Идти без подготовки\n• Не уметь чётко описать опыт\n• Не знать STAR-метод\n\nJobi поможет избежать этих ошибок.\n\nПопробуйте: /start`,
+    en: `Most common interview mistakes:\n\n• Going unprepared\n• Unable to clearly describe experience\n• Not knowing the STAR method\n\nJobi helps you avoid these mistakes.\n\nTry it: /start`,
   },
   {
-    uz: `💼 Intervyuda tez-tez qiladigan xatolarni bilasizmi?\n\n❌ Tayyorgarliksiz ketish\n❌ STAR metodini bilmaslik\n❌ O'z tajribangizni aniq bayon qilolmaslik\n\n✅ InterviewAI Pro sizga bularni bartaraf etishda yordam beradi!\n\nBoshlaymizmi? /register`,
-    ru: `💼 Знаете ли вы частые ошибки на собеседовании?\n\n❌ Идти неподготовленным\n❌ Не знать STAR метод\n❌ Не уметь четко описывать свой опыт\n\n✅ InterviewAI Pro поможет вам избежать этих ошибок!\n\nНачнем? /register`,
-    en: `💼 Do you know common interview mistakes?\n\n❌ Going unprepared\n❌ Not knowing the STAR method\n❌ Unable to clearly describe your experience\n\n✅ InterviewAI Pro will help you avoid these!\n\nShall we start? /register`,
+    uz: `AI bilan intervyuga tayyorlanish nima beradi?\n\n• Real savollarga javob berish mashqi\n• Har bir javobga batafsil tahlil\n• Kuchli va zaif tomonlaringizni bilish\n\nHech narsa yo'qotmaysiz — 7 kun bepul.\n\nBoshlash: /start`,
+    ru: `Что даёт подготовка с AI?\n\n• Практика ответов на реальные вопросы\n• Подробный анализ каждого ответа\n• Понимание сильных и слабых сторон\n\nВы ничего не теряете — 7 дней бесплатно.\n\nНачать: /start`,
+    en: `What does AI interview prep give you?\n\n• Practice answering real questions\n• Detailed feedback on each answer\n• Know your strengths and weaknesses\n\nYou lose nothing — 7 days free.\n\nStart: /start`,
   },
   {
-    uz: `🎯 Nega InterviewAI Pro?\n\n1️⃣ Real intervyu savollari\n2️⃣ AI tomonidan darhol feedback\n3️⃣ Ovozli javoblarni tahlil qilish\n4️⃣ Shaxsiy o'sish rejasi\n5️⃣ 24/7 AI yordamchisi\n\n🚀 Karyerangizni bugun boshlang: /register`,
-    ru: `🎯 Почему InterviewAI Pro?\n\n1️⃣ Реальные вопросы интервью\n2️⃣ Мгновенная обратная связь от AI\n3️⃣ Анализ голосовых ответов\n4️⃣ Личный план развития\n5️⃣ AI помощник 24/7\n\n🚀 Начните карьеру сегодня: /register`,
-    en: `🎯 Why InterviewAI Pro?\n\n1️⃣ Real interview questions\n2️⃣ Instant AI feedback\n3️⃣ Voice answer analysis\n4️⃣ Personal growth plan\n5️⃣ 24/7 AI assistant\n\n🚀 Start your career today: /register`,
-  },
-  {
-    uz: `🔥 TOP 3 sabab nima uchun hozir boshlash kerak:\n\n1️⃣ Intervyu sezoni boshlandi\n2️⃣ 7 kunlik BEPUL sinov - hech narsa yo'qotmaysiz\n3️⃣ Qanchalik erta boshlasangiz, shunchalik tayyor bo'lasiz\n\n⚡ Kech qolmang: /register`,
-    ru: `🔥 ТОП 3 причины начать сейчас:\n\n1️⃣ Начался сезон интервью\n2️⃣ 7 дней БЕСПЛАТНО - вы ничего не теряете\n3️⃣ Чем раньше начнете, тем лучше подготовитесь\n\n⚡ Не опаздывайте: /register`,
-    en: `🔥 TOP 3 reasons to start now:\n\n1️⃣ Interview season started\n2️⃣ 7 days FREE trial - you lose nothing\n3️⃣ The earlier you start, the better prepared you'll be\n\n⚡ Don't be late: /register`,
-  },
-  {
-    uz: `🎓 Nima o'rganasiz?\n\n📚 Texnik savollarga javob berish\n📚 Behavioral intervyular\n📚 System design asoslari\n📚 STAR metodi\n📚 Ish beruvchini qanday hayratda qoldirish\n\n🎯 Hammasi bir joyda!\n\nQo'shiling: /register`,
-    ru: `🎓 Чему вы научитесь?\n\n📚 Отвечать на технические вопросы\n📚 Поведенческие интервью\n📚 Основы System Design\n📚 STAR метод\n📚 Как впечатлить работодателя\n\n🎯 Все в одном месте!\n\nПрисоединяйтесь: /register`,
-    en: `🎓 What will you learn?\n\n📚 Answer technical questions\n📚 Behavioral interviews\n📚 System Design basics\n📚 STAR method\n📚 How to impress employers\n\n🎯 All in one place!\n\nJoin: /register`,
-  },
-  {
-    uz: `💡 Intervyuga tayyorlanish - bu investitsiya.\n\n⏰ 1 soat/kun = 30 kun ichida professional daraja\n\n🎯 InterviewAI Pro sizning shaxsiy mentor va coachingiz.\n\n✅ Tayyor bo'lasizmi?\n\nBoshlang: /register`,
-    ru: `💡 Подготовка к интервью - это инвестиция.\n\n⏰ 1 час/день = за 30 дней до профессионального уровня\n\n🎯 InterviewAI Pro - ваш личный ментор и коуч.\n\n✅ Готовы?\n\nНачните: /register`,
-    en: `💡 Interview preparation is an investment.\n\n⏰ 1 hour/day = professional level in 30 days\n\n🎯 InterviewAI Pro is your personal mentor and coach.\n\n✅ Ready?\n\nStart: /register`,
+    uz: `Qanchalik erta boshlasangiz, shunchalik tayyor bo'lasiz.\n\nRo'yxatdan o'tish 1 daqiqa vaqtingizni oladi, lekin intervyuda o'zingizni ishonchli his qilasiz.\n\nBoshlash: /start`,
+    ru: `Чем раньше начнёте, тем лучше подготовитесь.\n\nРегистрация займёт 1 минуту, но на собеседовании вы будете чувствовать себя уверенно.\n\nНачать: /start`,
+    en: `The earlier you start, the better prepared you'll be.\n\nRegistration takes 1 minute, but you'll feel confident in your interview.\n\nStart: /start`,
   },
 ];
 
@@ -79,7 +72,7 @@ export function getRandomNonRegisteredMessage(language: string = 'uz'): string {
  * - 1 mock interview
  * - 0 min voice (text only)
  * - 1 CV analysis
- * - NO daily tasks
+ * - NO daily tasks (do NOT suggest /tasks!)
  */
 export function getTrialReminderMessage(
   daysRemaining: number,
@@ -87,12 +80,14 @@ export function getTrialReminderMessage(
   totalInterviews: number,
   language: string = 'uz',
 ): string {
+  const remaining = totalInterviews - usedInterviews;
+
   const messages = {
-    uz: `⏰ BEPUL SINOV: ${daysRemaining} kun qoldi!\n\n📊 Sizning statistikangiz:\n• Mock interviews: ${usedInterviews}/${totalInterviews} ishlatildi\n• Qolgan: ${totalInterviews - usedInterviews} ta\n\n🎁 Bepul sinov davridagi imkoniyatlar:\n✅ 1 ta mock interview\n✅ 1 ta CV tahlili\n✅ AI yordamchisi 24/7\n✅ Faqat matn javoblari\n\n💡 Imkoniyatdan to'liq foydalaning!\n\nIntervyu boshlash: /interview\nCV yuklash: /cv`,
+    uz: `Bepul sinov: ${daysRemaining} kun qoldi\n\nSizning holatizgiz:\n• Mock intervyu: ${usedInterviews}/${totalInterviews} ishlatilgan\n${remaining > 0 ? `• Yana ${remaining} ta intervyu qoldi\n` : '• Barcha intervyularni ishlatdingiz\n'}\nBepul sinov imkoniyatlari:\n• 1 ta mock intervyu\n• 1 ta CV tahlili\n• AI feedback\n\n${remaining > 0 ? 'Intervyu boshlash: /interview\nCV tahlil qilish: /analyze_cv' : 'CV tahlil qilish: /analyze_cv\nRejalarni ko\'rish: /upgrade'}`,
 
-    ru: `⏰ ПРОБНЫЙ ПЕРИОД: осталось ${daysRemaining} дней!\n\n📊 Ваша статистика:\n• Mock интервью: ${usedInterviews}/${totalInterviews} использовано\n• Осталось: ${totalInterviews - usedInterviews}\n\n🎁 Возможности пробного периода:\n✅ 1 mock интервью\n✅ 1 анализ CV\n✅ AI помощник 24/7\n✅ Только текстовые ответы\n\n💡 Используйте все возможности!\n\nНачать интервью: /interview\nЗагрузить CV: /cv`,
+    ru: `Пробный период: осталось ${daysRemaining} дней\n\nВаш статус:\n• Mock-интервью: ${usedInterviews}/${totalInterviews} использовано\n${remaining > 0 ? `• Осталось ${remaining} интервью\n` : '• Все интервью использованы\n'}\nВозможности пробного периода:\n• 1 mock-интервью\n• 1 анализ CV\n• AI обратная связь\n\n${remaining > 0 ? 'Начать интервью: /interview\nАнализ CV: /analyze_cv' : 'Анализ CV: /analyze_cv\nСмотреть планы: /upgrade'}`,
 
-    en: `⏰ FREE TRIAL: ${daysRemaining} days left!\n\n📊 Your statistics:\n• Mock interviews: ${usedInterviews}/${totalInterviews} used\n• Remaining: ${totalInterviews - usedInterviews}\n\n🎁 Trial period features:\n✅ 1 mock interview\n✅ 1 CV analysis\n✅ AI assistant 24/7\n✅ Text answers only\n\n💡 Use all opportunities!\n\nStart interview: /interview\nUpload CV: /cv`,
+    en: `Free trial: ${daysRemaining} days left\n\nYour status:\n• Mock interviews: ${usedInterviews}/${totalInterviews} used\n${remaining > 0 ? `• ${remaining} interview remaining\n` : '• All interviews used\n'}\nTrial features:\n• 1 mock interview\n• 1 CV analysis\n• AI feedback\n\n${remaining > 0 ? 'Start interview: /interview\nAnalyze CV: /analyze_cv' : 'Analyze CV: /analyze_cv\nView plans: /upgrade'}`,
   };
 
   return messages[language as keyof typeof messages] || messages.uz;
@@ -104,11 +99,11 @@ export function getTrialReminderMessage(
  */
 export function getTrialEndingSoonMessage(language: string = 'uz'): string {
   const messages = {
-    uz: `⚠️ DIQQAT: Bepul sinov ERTAGA tugaydi!\n\n🎯 Premium bilan nimalar olasiz:\n\n💼 STARTER - $10/oy:\n• Kunlik savol va topshiriqlar\n• 10 ta mock interview\n• 10 daqiqa ovozli javoblar\n• 5 ta CV tahlili\n\n🚀 PRO - $20/oy:\n• Kunlik savol + AI progress tracking\n• 30 ta mock interview\n• 30 daqiqa ovozli javoblar\n• Haftalik AI tavsiyalar\n\nRejalarni ko'rish: /upgrade`,
+    uz: `Bepul sinov ertaga tugaydi\n\nDavom etish uchun rejalardan birini tanlang:\n\n<b>STARTER</b> — $5/oy\n• Kunlik topshiriqlar\n• 2 ta mock intervyu\n• 10 daqiqa ovozli javob\n• 5 ta CV tahlili\n\n<b>PRO</b> — $15/oy\n• 8 ta mock intervyu\n• 30 daqiqa ovozli javob\n• Haftalik AI tavsiyalar\n\nBatafsil: /upgrade`,
 
-    ru: `⚠️ ВНИМАНИЕ: Пробный период заканчивается ЗАВТРА!\n\n🎯 Что вы получите с Premium:\n\n💼 STARTER - $10/мес:\n• Ежедневные вопросы и задания\n• 10 mock интервью\n• 10 минут голосовых ответов\n• 5 анализов CV\n\n🚀 PRO - $20/мес:\n• Ежедневные задания + AI прогресс\n• 30 mock интервью\n• 30 минут голосовых ответов\n• Еженедельные AI рекомендации\n\nСмотреть планы: /upgrade`,
+    ru: `Пробный период заканчивается завтра\n\nВыберите план для продолжения:\n\n<b>STARTER</b> — $5/мес\n• Ежедневные задания\n• 2 mock-интервью\n• 10 минут голосовых ответов\n• 5 анализов CV\n\n<b>PRO</b> — $15/мес\n• 8 mock-интервью\n• 30 минут голосовых ответов\n• Еженедельные AI рекомендации\n\nПодробнее: /upgrade`,
 
-    en: `⚠️ ATTENTION: Free trial ends TOMORROW!\n\n🎯 What you get with Premium:\n\n💼 STARTER - $10/mo:\n• Daily questions and tasks\n• 10 mock interviews\n• 10 minutes voice responses\n• 5 CV analyses\n\n🚀 PRO - $20/mo:\n• Daily tasks + AI progress tracking\n• 30 mock interviews\n• 30 minutes voice responses\n• Weekly AI recommendations\n\nView plans: /upgrade`,
+    en: `Free trial ends tomorrow\n\nChoose a plan to continue:\n\n<b>STARTER</b> — $5/mo\n• Daily tasks\n• 2 mock interviews\n• 10 min voice responses\n• 5 CV analyses\n\n<b>PRO</b> — $15/mo\n• 8 mock interviews\n• 30 min voice responses\n• Weekly AI recommendations\n\nDetails: /upgrade`,
   };
 
   return messages[language as keyof typeof messages] || messages.uz;

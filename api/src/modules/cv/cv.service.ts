@@ -35,6 +35,11 @@ import {
   getModelName,
   getModelForPlan,
 } from '@common/utils/openai-client.factory';
+import {
+  buildCvAnalysisSystemPrompt,
+  buildCvOptimizationSystemPrompt,
+  getLanguageNameSafe,
+} from '@common/constants/ai-prompts.constant';
 
 @Injectable()
 export class CvService {
@@ -410,8 +415,7 @@ export class CvService {
           {
             role: 'system',
             // FIX #63: Minimal system message — main role/expertise defined in prompt itself
-            content:
-              'You are Dr. CV, an elite Career Document Strategist. Return ONLY valid JSON. No explanations, no markdown code blocks.',
+            content: buildCvAnalysisSystemPrompt(),
           },
           {
             role: 'user',
@@ -632,8 +636,7 @@ export class CvService {
       messages: [
         {
           role: 'system',
-          content:
-            'You are an expert CV writer and career coach. Optimize CVs to maximize ATS compatibility and impact.',
+          content: buildCvOptimizationSystemPrompt(),
         },
         {
           role: 'user',
@@ -701,7 +704,7 @@ export class CvService {
     jobDescription?: string,
     language: string = 'en',
   ): string {
-    const languageName = this.getLanguageName(language);
+    const languageName = getLanguageNameSafe(language);
 
     const parts: string[] = [];
 
@@ -951,7 +954,7 @@ Extract these fields accurately — they power our interview question generation
     dto: OptimizeCvDto,
     language: string = 'en',
   ): string {
-    const languageName = this.getLanguageName(language);
+    const languageName = getLanguageNameSafe(language);
     let prompt = `You are an expert CV writer and career coach specializing in ATS optimization and industry-specific CV enhancement. Optimize the following CV to maximize ATS compatibility, impact, and alignment with the target role.\n\n`;
 
     // CRITICAL: Language instruction must be at the beginning
@@ -1074,17 +1077,7 @@ Extract these fields accurately — they power our interview question generation
     return descriptions[level] || descriptions['moderate'];
   }
 
-  /**
-   * Get language name from code
-   */
-  private getLanguageName(language: string): string {
-    const names: Record<string, string> = {
-      uz: 'Uzbek',
-      ru: 'Russian',
-      en: 'English',
-    };
-    return names[language] || 'English';
-  }
+  // getLanguageName() moved to centralized ai-prompts.constant.ts → getLanguageNameSafe(language)
 
   /**
    * Validate file

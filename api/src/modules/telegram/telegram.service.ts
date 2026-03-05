@@ -8,6 +8,10 @@ import { TelegramCommandsService } from './telegram-commands.service';
 import { TelegramVoiceService } from './telegram-voice.service';
 import { TelegramLiveService } from './telegram-live.service';
 import { TelegramDailyTaskService } from './telegram-daily-task.service';
+import { TelegramReadinessService } from '../readiness-test/telegram-readiness.service';
+import { StreakService } from '../streak/streak.service';
+import { TelegramLeaderboardService } from '../leaderboard/telegram-leaderboard.service';
+import { BadgeService } from '../gamification/badge.service';
 
 export interface BotContext extends Context {
   session: {
@@ -34,6 +38,9 @@ export interface BotContext extends Context {
       | 'cv'
       | 'ready'
       | 'answering'
+      | 'answering_followup'   // Answering a follow-up question (Phase 3)
+      | 'mock_type'            // Selecting mock interview type (Phase 3)
+      | 'mock_company'         // Selecting company template (Phase 3, Elite)
       | 'waiting_cv'           // Waiting for user to upload CV (for CV-first interview flow)
       | 'waiting_cv_analysis'  // CV uploaded, waiting for queue processor to finish analysis
       | 'cv_confirmed';        // CV profile shown, user choosing duration
@@ -44,6 +51,12 @@ export interface BotContext extends Context {
     currentInterviewSessionId?: string;
     currentQuestionIndex?: number;
     pausedInterviewSessionId?: string; // Session ID when interview is paused
+    // Phase 3: Enhanced mock interview state
+    interviewMockType?: string;        // Selected mock interview type (quick_technical, behavioral, etc.)
+    interviewCompanyTemplate?: string;  // Selected company template ID (google, amazon, etc.)
+    pendingFollowUpQuestion?: string;   // Current follow-up question text awaiting answer
+    followUpQuestionStartedAt?: number; // Timestamp when follow-up was shown (for duration calc)
+    questionStartedAt?: number;         // FIX P3-M8: Timestamp when main question was shown (for actual duration calc)
     // Live session metadata
     liveSessionMetadata?: {
       domain?: string; // Frontend, Backend, Full Stack, etc.
@@ -53,6 +66,11 @@ export interface BotContext extends Context {
       jobRole?: string; // Legacy field
       interviewType?: string; // Legacy field
     };
+    // IRS (Interview Readiness Score) flow
+    irsTestId?: string;
+    irsStep?: 'awaiting_techstack' | 'answering_irs';
+    irsPosition?: string;
+    irsQuestionStartedAt?: number;
     // Profile update flow
     profileUpdateStep?: 'waiting_for_description';
     liveSessionStep?:
@@ -81,6 +99,11 @@ export class TelegramService implements OnModuleInit {
     private readonly liveService: TelegramLiveService,
     @Inject(forwardRef(() => TelegramDailyTaskService))
     private readonly dailyTaskService: TelegramDailyTaskService,
+    @Inject(forwardRef(() => TelegramReadinessService))
+    private readonly readinessService: TelegramReadinessService,
+    private readonly streakService: StreakService,
+    private readonly leaderboardUIService: TelegramLeaderboardService,
+    private readonly badgeService: BadgeService,
     @InjectRedis() private readonly redis: Redis,
   ) {
     this.botToken = this.configService.get<string>('TELEGRAM_BOT_TOKEN') as string;
@@ -114,6 +137,11 @@ export class TelegramService implements OnModuleInit {
             interviewCompany: undefined,
             interviewCvId: undefined,
             interviewStep: undefined,
+            // IRS flow state
+            irsTestId: undefined,
+            irsStep: undefined,
+            irsPosition: undefined,
+            irsQuestionStartedAt: undefined,
             // CV analysis flow state
             cvUploadStep: undefined,
             currentCvId: undefined,
@@ -121,6 +149,11 @@ export class TelegramService implements OnModuleInit {
             currentInterviewSessionId: undefined,
             currentQuestionIndex: undefined,
             pausedInterviewSessionId: undefined,
+            // Phase 3: Enhanced mock interview state
+            interviewMockType: undefined,
+            interviewCompanyTemplate: undefined,
+            pendingFollowUpQuestion: undefined,
+            followUpQuestionStartedAt: undefined,
             // Live session metadata
             liveSessionMetadata: undefined,
             profileUpdateStep: undefined,
@@ -193,6 +226,9 @@ export class TelegramService implements OnModuleInit {
       this.bot.command('tasks', (ctx) => this.commandsService.handleTasks(ctx));
       this.bot.command('voice', (ctx) => this.commandsService.handleVoice(ctx));
       this.bot.command('progress', (ctx) => this.commandsService.handleProgress(ctx));
+      this.bot.command('irs', (ctx) => this.readinessService.handleIRSStart(ctx));
+      this.bot.command('streak', (ctx) => this.handleStreakCommand(ctx));
+      this.bot.command('leaderboard', (ctx) => this.leaderboardUIService.handleLeaderboardCommand(ctx));
 
       // Voice message handler - check daily task mode first
       this.bot.on('message:voice', async (ctx) => {
@@ -225,11 +261,15 @@ export class TelegramService implements OnModuleInit {
         await ctx.reply(noPhotoText[lang] || noPhotoText.uz);
       });
 
-      // Text message handler - check daily task mode first
+      // Text message handler - check daily task mode first, then IRS
       this.bot.on('message:text', async (ctx) => {
         const isDailyTask = await this.dailyTaskService.isInDailyTaskMode(ctx);
         if (isDailyTask) {
           return this.dailyTaskService.handleTextAnswer(ctx, ctx.message.text);
+        }
+        // IRS: if user is answering an IRS question, route to readiness service
+        if (ctx.session?.irsStep === 'answering_irs') {
+          return this.readinessService.handleIRSAnswer(ctx, ctx.message.text);
         }
         return this.handleTextMessage(ctx);
       });
@@ -275,7 +315,10 @@ export class TelegramService implements OnModuleInit {
         // Main Features
         { command: 'start', description: '🏠 Main Menu' },
         { command: 'interview', description: '🎯 Start Interview' },
+        { command: 'irs', description: '🧪 Interview Readiness Test' },
         { command: 'tasks', description: '📋 Daily Tasks' },
+        { command: 'streak', description: '🔥 My Streak' },
+        { command: 'leaderboard', description: '🏆 Leaderboard' },
         { command: 'analyze_cv', description: '📄 CV Analysis' },
 
         // User Info
@@ -489,6 +532,37 @@ export class TelegramService implements OnModuleInit {
 
     try {
       this.logger.debug(`Handling callback query: ${data}`);
+
+      // Leaderboard callbacks — route to leaderboard UI service
+      if (data.startsWith('lb_')) {
+        await this.leaderboardUIService.handleLeaderboardCallback(ctx, data);
+        return;
+      }
+
+      // IRS callbacks — route to readiness service
+      // FIX TG-1: Removed duplicate answerCallbackQuery() — already answered at line 520
+      if (data.startsWith('irs_')) {
+        if (data.startsWith('irs_pos_')) {
+          const position = data.replace('irs_pos_', '');
+          await this.readinessService.handlePositionSelect(ctx, position);
+          return;
+        }
+        if (data.startsWith('irs_tech_')) {
+          const techStack = data.replace('irs_tech_', '');
+          await this.readinessService.handleTechStackSelect(ctx, techStack);
+          return;
+        }
+        if (data.startsWith('irs_share_')) {
+          const testId = data.replace('irs_share_', '');
+          await this.readinessService.handleIRSShare(ctx, testId);
+          return;
+        }
+        if (data === 'irs_start_from_deeplink') {
+          await this.readinessService.handleIRSStart(ctx);
+          return;
+        }
+      }
+
       // Process callback (this may take time, e.g., CV analysis)
       await this.commandsService.handleCallback(ctx, data);
     } catch (error: any) {
@@ -506,6 +580,93 @@ export class TelegramService implements OnModuleInit {
       } catch (replyError) {
         this.logger.error(`Failed to send error message: ${replyError.message}`);
       }
+    }
+  }
+
+  /**
+   * Handle /streak command — show user's streak info with badges
+   */
+  private async handleStreakCommand(ctx: BotContext) {
+    try {
+      const userId = ctx.session?.userId;
+      if (!userId) {
+        const lang = ctx.session?.language || 'uz';
+        const regText: Record<string, string> = {
+          uz: 'Streak ko\'rish uchun avval ro\'yxatdan o\'ting. /start',
+          ru: 'Для просмотра серии сначала зарегистрируйтесь. /start',
+          en: 'Register first to see your streak. /start',
+        };
+        await ctx.reply(regText[lang] || regText.uz);
+        return;
+      }
+
+      const info = await this.streakService.getStreakInfo(userId);
+      const badgeProgress = await this.badgeService.getBadgeProgress(userId);
+
+      const stateEmoji: Record<string, string> = {
+        inactive: '⚪',
+        active: '🟢',
+        at_risk: '🟡',
+        frozen: '🥶',
+        broken: '🔴',
+      };
+
+      // FIX TG-17: Make streak state labels language-aware
+      const lang = ctx.session?.language || 'uz';
+      const stateLabelsMap: Record<string, Record<string, string>> = {
+        inactive: { uz: 'Boshlanmagan', ru: 'Не начато', en: 'Not started' },
+        active: { uz: 'Faol', ru: 'Активно', en: 'Active' },
+        at_risk: { uz: 'Xavf ostida!', ru: 'Под угрозой!', en: 'At risk!' },
+        frozen: { uz: 'Muzlatilgan', ru: 'Заморожено', en: 'Frozen' },
+        broken: { uz: 'Uzilgan', ru: 'Прервано', en: 'Broken' },
+      };
+
+      const streakLabels: Record<string, Record<string, string>> = {
+        streak: { uz: 'Streak', ru: 'Серия', en: 'Streak' },
+        status: { uz: 'Holat', ru: 'Статус', en: 'Status' },
+        longest: { uz: 'Eng uzun streak', ru: 'Максимальная серия', en: 'Longest streak' },
+        activeDays: { uz: 'Faol kunlar', ru: 'Активных дней', en: 'Active days' },
+        freezeLeft: { uz: 'Freeze qoldi', ru: 'Заморозок осталось', en: 'Freezes left' },
+        day: { uz: 'kun', ru: 'дн', en: 'days' },
+        milestones: { uz: 'Milestonelar', ru: 'Достижения', en: 'Milestones' },
+        badges: { uz: 'Badgelar', ru: 'Значки', en: 'Badges' },
+        startBadge: { uz: 'Birinchi badge uchun streakni boshlang!', ru: 'Начните серию для первого значка!', en: 'Start a streak for your first badge!' },
+        todayTasks: { uz: 'Bugungi vazifalar', ru: 'Задания на сегодня', en: "Today's tasks" },
+      };
+
+      const sl = (key: string) => streakLabels[key]?.[lang] || streakLabels[key]?.uz || key;
+
+      let message =
+        `<b>🔥 ${sl('streak')}: ${info.currentStreak} ${sl('day')}</b>\n` +
+        `${stateEmoji[info.state] || '⚪'} ${sl('status')}: ${stateLabelsMap[info.state]?.[lang] || stateLabelsMap[info.state]?.uz || info.state}\n\n` +
+        `📈 ${sl('longest')}: ${info.longestStreak} ${sl('day')}\n` +
+        `📅 ${sl('activeDays')}: ${info.totalActiveDays}\n` +
+        `🧊 ${sl('freezeLeft')}: ${info.freezesRemaining}\n`;
+
+      // Milestones
+      if (info.milestones.length > 0) {
+        message += `\n<b>🏅 ${sl('milestones')}:</b>\n`;
+        for (const m of info.milestones) {
+          message += `  ✅ ${m.days} ${sl('day')}\n`;
+        }
+      }
+
+      // Badges
+      if (badgeProgress.earned > 0) {
+        message += `\n<b>🎖 ${sl('badges')}:</b> ${badgeProgress.earned}/${badgeProgress.total}\n`;
+        const earned = badgeProgress.badges.filter((b) => b.earned);
+        message += earned.map((b) => `${b.emoji} ${b.name}`).join(' | ') + '\n';
+      } else {
+        message += `\n<b>🎖 ${sl('badges')}:</b> 0/${badgeProgress.total}\n`;
+        message += `${sl('startBadge')}\n`;
+      }
+
+      message += `\n/tasks — ${sl('todayTasks')}`;
+
+      await ctx.reply(message, { parse_mode: 'HTML' });
+    } catch (error: any) {
+      this.logger.error(`Streak command failed: ${error.message}`);
+      await ctx.reply('Streak ma\'lumotlarini yuklashda xatolik. Qayta urinib ko\'ring.');
     }
   }
 

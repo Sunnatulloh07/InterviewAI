@@ -38,8 +38,8 @@ export class TwoFactorService {
 
     // Generate secret
     const secret = speakeasy.generateSecret({
-      name: `InterviewAI Pro (${userEmail})`,
-      issuer: 'InterviewAI Pro',
+      name: `Jobi (${userEmail})`,
+      issuer: 'Jobi',
       length: 32,
     });
 

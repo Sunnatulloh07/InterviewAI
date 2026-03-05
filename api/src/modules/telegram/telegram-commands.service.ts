@@ -23,6 +23,18 @@ import { OpenAI } from 'openai';
 import { createOpenAIClient, getModelName } from '@common/utils/openai-client.factory';
 import { COMPLETE_PLAN_LIMITS } from '../../common/constants/plan-limits.constant';
 import { ProfileNormalizationService } from '../engagement/profile-normalization.service';
+import { ReadinessTestService } from '../readiness-test/readiness-test.service';
+import { TelegramReadinessService } from '../readiness-test/telegram-readiness.service';
+import { StreakService } from '../streak/streak.service';
+import { TelegramLeaderboardService } from '../leaderboard/telegram-leaderboard.service';
+import { BadgeService } from '../gamification/badge.service';
+import {
+  MOCK_TYPE_CONFIG,
+  MOCK_INTERVIEW_TYPES,
+  COMPANY_TEMPLATES,
+  getVerdictLabel,
+  type MockInterviewType,
+} from '../interviews/constants/mock-interview.constants';
 
 @Injectable()
 export class TelegramCommandsService {
@@ -53,6 +65,13 @@ export class TelegramCommandsService {
     private readonly unregisteredUserService: UnregisteredUserService,
     @Inject(forwardRef(() => ProfileNormalizationService))
     private readonly profileNormalizationService: ProfileNormalizationService,
+    @Inject(forwardRef(() => ReadinessTestService))
+    private readonly readinessTestService: ReadinessTestService,
+    @Inject(forwardRef(() => TelegramReadinessService))
+    private readonly telegramReadinessService: TelegramReadinessService,
+    private readonly streakService: StreakService,
+    private readonly leaderboardUIService: TelegramLeaderboardService,
+    private readonly badgeService: BadgeService,
   ) {
     // Initialize OpenAI client with support for both OpenAI and OpenRouter
     this.openai = createOpenAIClient(this.configService);
@@ -98,6 +117,15 @@ export class TelegramCommandsService {
   async handleStart(ctx: BotContext) {
     try {
       const telegramId = ctx.from?.id as number;
+
+      // Check for deep link payload (e.g., /start irs_abc123)
+      const payload = (ctx.message as any)?.text?.split(' ')?.[1];
+      if (payload?.startsWith('irs_')) {
+        const shareToken = payload.replace('irs_', '');
+        await this.telegramReadinessService.handleIRSDeepLink(ctx, shareToken);
+        // Don't return — continue to show main menu / registration after deep link
+      }
+
       const user = await this.usersService.findByTelegramId(telegramId);
 
       if (user) {
@@ -221,7 +249,10 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
     // Button labels for inline keyboard
     const buttonLabels: Record<string, Record<string, string>> = {
       interview: { uz: '🎯 Intervyu', ru: '🎯 Интервью', en: '🎯 Interview' },
+      irs: { uz: '🧪 IRS Test', ru: '🧪 IRS Тест', en: '🧪 IRS Test' },
       tasks: { uz: '📋 Vazifalar', ru: '📋 Задания', en: '📋 Tasks' },
+      streak: { uz: '🔥 Streak', ru: '🔥 Серия', en: '🔥 Streak' },
+      leaderboard: { uz: '🏆 Reyting', ru: '🏆 Рейтинг', en: '🏆 Rank' },
       cv: { uz: '📄 CV Tahlil', ru: '📄 Анализ CV', en: '📄 CV Analysis' },
       profile: { uz: '👤 Profil', ru: '👤 Профиль', en: '👤 Profile' },
       upgrade: { uz: '💳 Tarif', ru: '💳 Тарифы', en: '💳 Plans' },
@@ -231,12 +262,15 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
     // Inline keyboard with main menu buttons
     const inlineKeyboard = new InlineKeyboard()
       .text(buttonLabels.interview[lang] || buttonLabels.interview.en, 'menu_interview')
+      .text(buttonLabels.irs[lang] || buttonLabels.irs.en, 'menu_irs')
       .text(buttonLabels.tasks[lang] || buttonLabels.tasks.en, 'menu_tasks')
+      .row()
+      .text(buttonLabels.streak[lang] || buttonLabels.streak.en, 'menu_streak')
+      .text(buttonLabels.leaderboard[lang] || buttonLabels.leaderboard.en, 'menu_leaderboard')
       .text(buttonLabels.cv[lang] || buttonLabels.cv.en, 'menu_cv')
       .row()
       .text(buttonLabels.profile[lang] || buttonLabels.profile.en, 'menu_profile')
       .text(buttonLabels.upgrade[lang] || buttonLabels.upgrade.en, 'menu_upgrade')
-      .row()
       .text(buttonLabels.help[lang] || buttonLabels.help.en, 'menu_help');
 
     // STEP 1: Remove persistent keyboard (ReplyKeyboard) first
@@ -571,11 +605,15 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
       }
 
       const lang = this.getUserLanguage(ctx, user);
+      // FIX TG-25/TG-18: Localize interview type and cancel buttons
+      const mockBtnLabel: Record<string, string> = { uz: '🎯 Mock Intervyu', ru: '🎯 Mock Интервью', en: '🎯 Mock Interview' };
+      const liveBtnLabel: Record<string, string> = { uz: '🔴 Live Intervyu', ru: '🔴 Live Интервью', en: '🔴 Live Interview' };
+      const cancelBtnLabel: Record<string, string> = { uz: '❌ Bekor qilish', ru: '❌ Отмена', en: '❌ Cancel' };
       const keyboard = new InlineKeyboard()
-        .text('🎯 Mock Intervyu', 'interview_mock')
-        .text('🔴 Live Intervyu', 'interview_live')
+        .text(mockBtnLabel[lang] || mockBtnLabel.en, 'interview_mock')
+        .text(liveBtnLabel[lang] || liveBtnLabel.en, 'interview_live')
         .row()
-        .text('❌ Bekor qilish', 'interview_cancel');
+        .text(cancelBtnLabel[lang] || cancelBtnLabel.en, 'interview_cancel');
 
       const interviewText: Record<string, string> = {
         uz: '🎯 <b>Intervyu turini tanlang:</b>',
@@ -620,12 +658,12 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
         `• ${freeLimits.voice.mockVoice} daqiqa mock ovoz\n` +
         `• ${freeLimits.cvAnalysis.perMonth} ta CV tahlili\n` +
         `• Faqat matn javoblari\n\n` +
-        `💎 <b>Starter</b> - $10/oy\n` +
+        `💎 <b>Starter</b> - $5/oy\n` +
         `• ${starterLimits.mockInterviews.perMonth} ta mock intervyu/oy\n` +
         `• ${starterLimits.voice.mockVoice} daq mock + ${starterLimits.voice.realVoice} daq live ovoz\n` +
         `• ${starterLimits.cvAnalysis.perMonth} ta CV tahlili\n` +
         `• 1 ta kunlik topshiriq\n\n` +
-        `🚀 <b>Pro</b> - $20/oy\n` +
+        `🚀 <b>Pro</b> - $15/oy\n` +
         `• ${proLimits.mockInterviews.perMonth} ta mock intervyu/oy\n` +
         `• ${proLimits.voice.mockVoice} daq mock + ${proLimits.voice.realVoice} daq live ovoz\n` +
         `• ${proLimits.cvAnalysis.perMonth} ta CV tahlili\n` +
@@ -646,12 +684,12 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
         `• ${freeLimits.voice.mockVoice} мин mock-голос\n` +
         `• ${freeLimits.cvAnalysis.perMonth} анализа CV\n` +
         `• Только текстовые ответы\n\n` +
-        `💎 <b>Starter</b> - $10/мес\n` +
+        `💎 <b>Starter</b> - $5/мес\n` +
         `• ${starterLimits.mockInterviews.perMonth} mock-интервью/мес\n` +
         `• ${starterLimits.voice.mockVoice} мин mock + ${starterLimits.voice.realVoice} мин live голос\n` +
         `• ${starterLimits.cvAnalysis.perMonth} анализов CV\n` +
         `• 1 ежедневное задание\n\n` +
-        `🚀 <b>Pro</b> - $20/мес\n` +
+        `🚀 <b>Pro</b> - $15/мес\n` +
         `• ${proLimits.mockInterviews.perMonth} mock-интервью/мес\n` +
         `• ${proLimits.voice.mockVoice} мин mock + ${proLimits.voice.realVoice} мин live голос\n` +
         `• ${proLimits.cvAnalysis.perMonth} анализов CV\n` +
@@ -672,12 +710,12 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
         `• ${freeLimits.voice.mockVoice} min mock voice\n` +
         `• ${freeLimits.cvAnalysis.perMonth} CV analyses\n` +
         `• Text answers only\n\n` +
-        `💎 <b>Starter</b> - $10/month\n` +
+        `💎 <b>Starter</b> - $5/month\n` +
         `• ${starterLimits.mockInterviews.perMonth} mock interviews/mo\n` +
         `• ${starterLimits.voice.mockVoice} min mock + ${starterLimits.voice.realVoice} min live voice\n` +
         `• ${starterLimits.cvAnalysis.perMonth} CV analyses\n` +
         `• 1 daily task\n\n` +
-        `🚀 <b>Pro</b> - $20/month\n` +
+        `🚀 <b>Pro</b> - $15/month\n` +
         `• ${proLimits.mockInterviews.perMonth} mock interviews/mo\n` +
         `• ${proLimits.voice.mockVoice} min mock + ${proLimits.voice.realVoice} min live voice\n` +
         `• ${proLimits.cvAnalysis.perMonth} CV analyses\n` +
@@ -780,7 +818,10 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
         `<b>Buyruqlar:</b>\n` +
         `▪️ /start - Botni ishga tushirish\n` +
         `▪️ /interview - Intervyu boshlash\n` +
+        `▪️ /irs - Intervyu tayorlik testi\n` +
         `▪️ /tasks - Kunlik vazifalar\n` +
+        `▪️ /streak - Streak holati\n` +
+        `▪️ /leaderboard - Reyting jadvali\n` +
         `▪️ /profile - Profilni ko'rish\n` +
         `▪️ /upgrade - Tarifni o'zgartirish\n` +
         `▪️ /voice - Ovozli xabar limiti\n` +
@@ -792,7 +833,10 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
         `<b>Команды:</b>\n` +
         `▪️ /start - Запуск бота\n` +
         `▪️ /interview - Начать интервью\n` +
+        `▪️ /irs - Тест готовности к интервью\n` +
         `▪️ /tasks - Ежедневные задания\n` +
+        `▪️ /streak - Серия активности\n` +
+        `▪️ /leaderboard - Рейтинг\n` +
         `▪️ /profile - Профиль\n` +
         `▪️ /upgrade - Изменить тариф\n` +
         `▪️ /voice - Лимит голосовых\n` +
@@ -804,7 +848,10 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
         `<b>Commands:</b>\n` +
         `▪️ /start - Start bot\n` +
         `▪️ /interview - Start interview\n` +
+        `▪️ /irs - Interview Readiness Test\n` +
         `▪️ /tasks - Daily tasks\n` +
+        `▪️ /streak - Activity streak\n` +
+        `▪️ /leaderboard - Leaderboard\n` +
         `▪️ /profile - View profile\n` +
         `▪️ /upgrade - Change plan\n` +
         `▪️ /voice - Voice quota status\n` +
@@ -823,6 +870,74 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
       parse_mode: 'HTML',
       reply_markup: keyboard,
     });
+  }
+
+  /**
+   * Handle streak display from main menu callback.
+   * Duplicates the /streak logic from TelegramService to avoid circular dependency.
+   */
+  private async handleStreakFromMenu(ctx: BotContext): Promise<void> {
+    try {
+      const userId = ctx.session?.userId;
+      if (!userId) {
+        const lang = ctx.session?.language || 'uz';
+        const regText: Record<string, string> = {
+          uz: 'Streak ko\'rish uchun avval ro\'yxatdan o\'ting. /start',
+          ru: 'Для просмотра серии сначала зарегистрируйтесь. /start',
+          en: 'Register first to see your streak. /start',
+        };
+        await ctx.reply(regText[lang] || regText.uz);
+        return;
+      }
+
+      const info = await this.streakService.getStreakInfo(userId);
+      const badgeProgress = await this.badgeService.getBadgeProgress(userId);
+
+      const stateEmoji: Record<string, string> = {
+        inactive: '⚪',
+        active: '🟢',
+        at_risk: '🟡',
+        frozen: '🥶',
+        broken: '🔴',
+      };
+
+      const stateLabels: Record<string, string> = {
+        inactive: 'Boshlanmagan',
+        active: 'Faol',
+        at_risk: 'Xavf ostida!',
+        frozen: 'Muzlatilgan',
+        broken: 'Uzilgan',
+      };
+
+      let message =
+        `<b>🔥 Streak: ${info.currentStreak} kun</b>\n` +
+        `${stateEmoji[info.state] || '⚪'} Holat: ${stateLabels[info.state] || info.state}\n\n` +
+        `📈 Eng uzun streak: ${info.longestStreak} kun\n` +
+        `📅 Faol kunlar: ${info.totalActiveDays}\n` +
+        `🧊 Freeze qoldi: ${info.freezesRemaining}\n`;
+
+      if (info.milestones.length > 0) {
+        message += '\n<b>🏅 Milestonelar:</b>\n';
+        for (const m of info.milestones) {
+          message += `  ✅ ${m.days} kun\n`;
+        }
+      }
+
+      if (badgeProgress.earned > 0) {
+        message += `\n<b>🎖 Badgelar:</b> ${badgeProgress.earned}/${badgeProgress.total}\n`;
+        const earned = badgeProgress.badges.filter((b) => b.earned);
+        message += earned.map((b) => `${b.emoji} ${b.name}`).join(' | ') + '\n';
+      } else {
+        message += `\n<b>🎖 Badgelar:</b> 0/${badgeProgress.total}\n`;
+        message += `Birinchi badge uchun streakni boshlang!\n`;
+      }
+
+      message += `\n/tasks — Bugungi vazifalar`;
+      await ctx.reply(message, { parse_mode: 'HTML' });
+    } catch (error: any) {
+      this.logger.error(`Streak menu handler failed: ${error.message}`);
+      await ctx.reply('Streak ma\'lumotlarini yuklashda xatolik. Qayta urinib ko\'ring.');
+    }
   }
 
   /**
@@ -1087,6 +1202,16 @@ ${planEmoji[plan]} Plan: <b>${planNames[plan]?.en || plan}</b>
 
       // Set user ID in session
       ctx.session.userId = (user as any).id?.toString() || (user as any)._id?.toString();
+
+      // Link anonymous IRS tests to this new user (if they took tests before registering)
+      try {
+        await this.readinessTestService.linkAnonymousTests(
+          telegramId,
+          ctx.session.userId as string,
+        );
+      } catch (linkError: any) {
+        this.logger.warn(`Failed to link anonymous IRS tests: ${linkError.message}`);
+      }
 
       const welcomeText: Record<string, string> = {
         uz: `🎉 <b>Xush kelibsiz, ${user.firstName || user.telegramUsername || 'foydalanuvchi'}!</b>
@@ -1386,15 +1511,15 @@ Let's get started! 🚀`,
 
           const blockedText: Record<string, string> = isTrialExpired
             ? {
-                uz: `⏰ <b>Bepul sinov muddatingiz tugagan</b>\n\nCV tahlili xizmatidan foydalanish uchun tarifga o'ting.\n\n💎 STARTER — $10/oy (5 ta CV tahlili)\n🚀 PRO — $20/oy (15 ta CV tahlili)\n👑 ELITE — $30/oy (cheksiz)`,
-                ru: `⏰ <b>Ваш пробный период истёк</b>\n\nДля использования анализа CV перейдите на платный тариф.\n\n💎 STARTER — $10/мес (5 анализов CV)\n🚀 PRO — $20/мес (15 анализов CV)\n👑 ELITE — $30/мес (безлимитно)`,
-                en: `⏰ <b>Your free trial has expired</b>\n\nUpgrade to continue using CV analysis.\n\n💎 STARTER — $10/mo (5 CV analyses)\n🚀 PRO — $20/mo (15 CV analyses)\n👑 ELITE — $30/mo (unlimited)`,
+                uz: `⏰ <b>Bepul sinov muddatingiz tugagan</b>\n\nCV tahlili xizmatidan foydalanish uchun tarifga o'ting.\n\n💎 STARTER — $5/oy (5 ta CV tahlili)\n🚀 PRO — $15/oy (15 ta CV tahlili)\n👑 ELITE — $30/oy (cheksiz)`,
+                ru: `⏰ <b>Ваш пробный период истёк</b>\n\nДля использования анализа CV перейдите на платный тариф.\n\n💎 STARTER — $5/мес (5 анализов CV)\n🚀 PRO — $15/мес (15 анализов CV)\n👑 ELITE — $30/мес (безлимитно)`,
+                en: `⏰ <b>Your free trial has expired</b>\n\nUpgrade to continue using CV analysis.\n\n💎 STARTER — $5/mo (5 CV analyses)\n🚀 PRO — $15/mo (15 CV analyses)\n👑 ELITE — $30/mo (unlimited)`,
               }
             : isLimitReached
               ? {
-                  uz: `📊 <b>CV tahlili limiti tugadi</b>\n\nBu oylik CV tahlili limitingiz tugagan. Yuqori tarifga o'tib davom eting.\n\n🚀 PRO — $20/oy (15 ta CV tahlili)\n👑 ELITE — $30/oy (cheksiz)`,
-                  ru: `📊 <b>Лимит анализа CV исчерпан</b>\n\nВаш месячный лимит анализа CV исчерпан. Перейдите на более высокий тариф.\n\n🚀 PRO — $20/мес (15 анализов CV)\n👑 ELITE — $30/мес (безлимитно)`,
-                  en: `📊 <b>CV analysis limit reached</b>\n\nYour monthly CV analysis limit is exhausted. Upgrade to continue.\n\n🚀 PRO — $20/mo (15 CV analyses)\n👑 ELITE — $30/mo (unlimited)`,
+                  uz: `📊 <b>CV tahlili limiti tugadi</b>\n\nBu oylik CV tahlili limitingiz tugagan. Yuqori tarifga o'tib davom eting.\n\n🚀 PRO — $15/oy (15 ta CV tahlili)\n👑 ELITE — $30/oy (cheksiz)`,
+                  ru: `📊 <b>Лимит анализа CV исчерпан</b>\n\nВаш месячный лимит анализа CV исчерпан. Перейдите на более высокий тариф.\n\n🚀 PRO — $15/мес (15 анализов CV)\n👑 ELITE — $30/мес (безлимитно)`,
+                  en: `📊 <b>CV analysis limit reached</b>\n\nYour monthly CV analysis limit is exhausted. Upgrade to continue.\n\n🚀 PRO — $15/mo (15 CV analyses)\n👑 ELITE — $30/mo (unlimited)`,
                 }
               : {
                   uz: `⚠️ <b>CV tahlili mavjud emas</b>\n\n${uploadError.message}\n\nTarifga o'tish uchun tugmani bosing.`,
@@ -2398,7 +2523,7 @@ ${answerInstructions}
       const registrationText: Record<string, string> = {
         uz: `Ajoyib tanlov! 🎯
 
-<b>InterviewAI Pro</b> — sizning shaxsiy AI karriera yordamchingiz.
+<b>Jobi</b> — sizning shaxsiy AI karriera yordamchingiz.
 
 Ish izlayapsizmi, pozitsiyangizni ko'tarmoqchimisiz yoki sohangizdagi bilimlaringizni chuqurlashtirmoqchimisiz — farqi yo'q, men sizga yordam beraman.
 
@@ -2421,7 +2546,7 @@ Ro'yxatdan o'tish uchun telefon raqamingizni tasdiqlang 👇`,
 
         ru: `Отличный выбор! 🎯
 
-<b>InterviewAI Pro</b> — ваш персональный AI-помощник для карьерного роста.
+<b>Jobi</b> — ваш персональный AI-помощник для карьерного роста.
 
 Ищете работу, хотите повысить позицию или углубить знания в своей области — неважно, я помогу.
 
@@ -2444,7 +2569,7 @@ Ro'yxatdan o'tish uchun telefon raqamingizni tasdiqlang 👇`,
 
         en: `Great choice! 🎯
 
-<b>InterviewAI Pro</b> — your personal AI career growth assistant.
+<b>Jobi</b> — your personal AI career growth assistant.
 
 Whether you're job hunting, aiming for a promotion, or looking to deepen your expertise — I'm here to help.
 
@@ -2496,8 +2621,17 @@ To register, verify your phone number 👇`,
         case 'interview':
           await this.handleInterview(ctx);
           break;
+        case 'irs':
+          await this.telegramReadinessService.handleIRSStart(ctx);
+          break;
         case 'tasks':
           await this.handleTasks(ctx);
+          break;
+        case 'streak':
+          await this.handleStreakFromMenu(ctx);
+          break;
+        case 'leaderboard':
+          await this.leaderboardUIService.handleLeaderboardCommand(ctx);
           break;
         case 'cv':
           await this.handleAnalyzeCv(ctx);
@@ -2522,6 +2656,9 @@ To register, verify your phone number 👇`,
       const type = callbackData.replace('interview_', '');
 
       if (type === 'cancel') {
+        // FIX TG-24: Clear all interview session state before showing main menu
+        this.clearInterviewSessionState(ctx);
+
         // Cancel interview selection - go back to main menu
         const telegramId = ctx.from?.id as number;
         const user = await this.usersService.findByTelegramId(telegramId);
@@ -2535,98 +2672,22 @@ To register, verify your phone number 👇`,
 
       if (type === 'mock') {
         // ================================================================
-        // CV-FIRST MOCK INTERVIEW FLOW
+        // PHASE 3: MOCK TYPE SELECTION → CV-FIRST FLOW
         // ================================================================
-        // Instead of asking domain → technology → duration manually,
-        // we first check if user has an analyzed CV.  If yes, we use the
-        // CV profile (domain, techStack, position) and skip the manual
-        // wizard steps entirely.  If no CV exists, we ask user to upload.
+        // 1. Show mock interview type selection (6 types)
+        // 2. If company_specific → company template selection (Elite only)
+        // 3. Then proceed to CV-first flow (or manual wizard)
         // ================================================================
         ctx.session.interviewMode = 'mock';
 
-        const telegramId = ctx.from?.id as number;
-        const user = await this.usersService.findByTelegramId(telegramId);
-        if (!user) {
-          await ctx.reply('Please register first using /start');
-          return;
-        }
-        const userId = (user as any).id || (user as any)._id?.toString();
+        const isEnhanced = this.configService.get<boolean>('features.mockEnhancedEnabled');
 
-        try {
-          const latestCv = await this.cvService.getUserLatestCv(userId);
-
-          if (!latestCv) {
-            // ── NO CV: Ask user to upload CV first ──
-            const noCvText: Record<string, string> = {
-              uz: `🎯 <b>Mock Intervyu</b>\n\nIntervyu savollarini sizning ko'nikmalaringizga moslash uchun avval CV yuklashingiz kerak.\n\nCV tahlili orqali biz:\n- Texnologiyalaringizni aniqlaymiz\n- Darajangizni (Junior/Middle/Senior) belgilaymiz\n- Ish yo'nalishingizni (Frontend/Backend/...) aniqlaymiz\n\n📎 <i>CV faylini (PDF/DOCX) shu yerga yuboring</i>`,
-              ru: `🎯 <b>Mock Интервью</b>\n\nДля персонализации вопросов интервью необходимо сначала загрузить CV.\n\nЧерез анализ CV мы:\n- Определим ваши технологии\n- Определим уровень (Junior/Middle/Senior)\n- Определим направление (Frontend/Backend/...)\n\n📎 <i>Отправьте файл CV (PDF/DOCX) сюда</i>`,
-              en: `🎯 <b>Mock Interview</b>\n\nTo personalize interview questions, please upload your CV first.\n\nThrough CV analysis we will:\n- Identify your technologies\n- Determine your level (Junior/Middle/Senior)\n- Identify your domain (Frontend/Backend/...)\n\n📎 <i>Send your CV file (PDF/DOCX) here</i>`,
-            };
-
-            const noCvKeyboard = new InlineKeyboard()
-              .text(
-                lang === 'uz' ? '📎 CV yuklash' : lang === 'ru' ? '📎 Загрузить CV' : '📎 Upload CV',
-                'cv_upload_for_interview',
-              )
-              .row()
-              .text('❌ Bekor qilish', 'interview_cancel');
-
-            await ctx.reply(noCvText[lang] || noCvText.en, {
-              parse_mode: 'HTML',
-              reply_markup: noCvKeyboard,
-            });
-            // Mark that after CV upload, user wants to start interview
-            ctx.session.interviewStep = 'waiting_cv';
-            return;
-          }
-
-          if (latestCv.analysisStatus !== 'completed' || !latestCv.analysis) {
-            // ── CV EXISTS but NOT ANALYZED: Auto-analyze ──
-            const analyzingText: Record<string, string> = {
-              uz: `🎯 <b>Mock Intervyu</b>\n\nCV topildi, lekin hali tahlil qilinmagan.\n\n🔄 <b>CV tahlil qilinmoqda...</b> Iltimos, kuting.`,
-              ru: `🎯 <b>Mock Интервью</b>\n\nCV найден, но ещё не проанализирован.\n\n🔄 <b>Анализируем CV...</b> Пожалуйста, подождите.`,
-              en: `🎯 <b>Mock Interview</b>\n\nCV found but not yet analyzed.\n\n🔄 <b>Analyzing CV...</b> Please wait.`,
-            };
-            const analyzeMsg = await ctx.reply(analyzingText[lang] || analyzingText.en, {
-              parse_mode: 'HTML',
-            });
-
-            try {
-              await this.cvService.analyzeCv(userId, (latestCv as any).id, {
-                language: lang,
-              });
-              // Delete analyzing message
-              try {
-                if (ctx.chat?.id) await ctx.api.deleteMessage(ctx.chat.id, analyzeMsg.message_id);
-              } catch { /* silent */ }
-
-              // Re-fetch to get updated analysis + profile
-              const analyzedCv = await this.cvService.getUserLatestCv(userId);
-              const updatedUser = await this.usersService.findByTelegramId(telegramId);
-              if (analyzedCv?.analysis && updatedUser) {
-                await this.showCvInterviewConfirmation(ctx, updatedUser, analyzedCv, lang);
-              } else {
-                // Analysis succeeded but something went wrong
-                await this.showManualDomainSelection(ctx, lang);
-              }
-            } catch (analyzeError: any) {
-              this.logger.error(`CV auto-analyze failed: ${analyzeError.message}`);
-              try {
-                if (ctx.chat?.id) await ctx.api.deleteMessage(ctx.chat.id, analyzeMsg.message_id);
-              } catch { /* silent */ }
-              // Fallback to manual wizard
-              await this.showManualDomainSelection(ctx, lang);
-            }
-            return;
-          }
-
-          // ── CV EXISTS and ANALYZED: Show confirmation ──
-          await this.showCvInterviewConfirmation(ctx, user, latestCv, lang);
-
-        } catch (cvError: any) {
-          this.logger.error(`CV check failed for mock interview: ${cvError.message}`);
-          // Fallback to manual wizard
-          await this.showManualDomainSelection(ctx, lang);
+        if (isEnhanced) {
+          // Phase 3: Show mock type selection first
+          await this.showMockTypeSelection(ctx, lang);
+        } else {
+          // Legacy flow: skip type selection, go straight to CV-first
+          await this.startCvFirstFlow(ctx, lang);
         }
         return;
       }
@@ -2742,6 +2803,65 @@ To register, verify your phone number 👇`,
         await ctx.reply('❌ Failed to update position');
       }
 
+      return;
+    }
+
+    // ============================================================
+    // PHASE 3: MOCK TYPE SELECTION
+    // ============================================================
+    if (callbackData.startsWith('mock_type_')) {
+      const selectedType = callbackData.replace('mock_type_', '') as MockInterviewType;
+      ctx.session.interviewMockType = selectedType;
+
+      const telegramId = ctx.from?.id as number;
+      const user = await this.usersService.findByTelegramId(telegramId);
+      if (!user) {
+        await ctx.reply('Please register first using /start');
+        return;
+      }
+
+      // company_specific requires Elite plan + company template selection
+      if (selectedType === 'company_specific') {
+        const plan = user.subscription?.plan || 'free_trial';
+        if (plan !== 'elite') {
+          const eliteOnlyText: Record<string, string> = {
+            uz: `🔒 <b>Kompaniyaga mos intervyu</b> faqat Elite tarifida mavjud.\n\nElite tarifiga o'tish uchun /upgrade buyrug'idan foydalaning.`,
+            ru: `🔒 <b>Интервью под компанию</b> доступно только на тарифе Elite.\n\nИспользуйте /upgrade для перехода на Elite.`,
+            en: `🔒 <b>Company-specific interview</b> is available only on Elite plan.\n\nUse /upgrade to switch to Elite.`,
+          };
+          await ctx.reply(eliteOnlyText[lang] || eliteOnlyText.en, { parse_mode: 'HTML' });
+          // Re-show type selection
+          await this.showMockTypeSelection(ctx, lang);
+          return;
+        }
+
+        // Show company template selection
+        await this.showCompanyTemplateSelection(ctx, lang);
+        return;
+      }
+
+      // For all other types, proceed to CV-first flow
+      await this.startCvFirstFlow(ctx, lang);
+      return;
+    }
+
+    // ============================================================
+    // PHASE 3: COMPANY TEMPLATE SELECTION (Elite only)
+    // ============================================================
+    if (callbackData.startsWith('mock_company_')) {
+      const companyId = callbackData.replace('mock_company_', '');
+      const template = COMPANY_TEMPLATES.find((t) => t.id === companyId);
+
+      if (!template) {
+        await ctx.reply('Unknown company template');
+        return;
+      }
+
+      ctx.session.interviewCompanyTemplate = companyId;
+      ctx.session.interviewCompany = template.name;
+
+      // Proceed to CV-first flow with company context
+      await this.startCvFirstFlow(ctx, lang);
       return;
     }
 
@@ -2901,10 +3021,30 @@ To register, verify your phone number 👇`,
         return;
       }
 
-      // Check mock interview limit
+      // Check mock interview limit (total per month)
       const canProceed = await this.subscriptionService.checkMockInterviewLimit(ctx, user, lang);
       if (!canProceed) {
         return; // Limit reached, error message already sent
+      }
+
+      // Phase 3: Check per-type limit
+      const selectedMockType = ctx.session.interviewMockType as MockInterviewType | undefined;
+      if (selectedMockType) {
+        try {
+          const userIdForCheck = (user as any).id || (user as any)._id?.toString();
+          await this.interviewsService.checkPerTypeLimit(userIdForCheck, selectedMockType);
+        } catch (limitError: any) {
+          if (limitError instanceof ForbiddenException) {
+            const limitMsg: Record<string, string> = {
+              uz: `🔒 ${MOCK_TYPE_CONFIG[selectedMockType]?.labelUz || selectedMockType} intervyu limiti tugadi. Tarifingizni oshiring.`,
+              ru: `🔒 Лимит интервью "${MOCK_TYPE_CONFIG[selectedMockType]?.labelRu || selectedMockType}" исчерпан. Обновите тариф.`,
+              en: `🔒 ${MOCK_TYPE_CONFIG[selectedMockType]?.label || selectedMockType} interview limit reached. Upgrade your plan.`,
+            };
+            await ctx.reply(limitMsg[lang] || limitMsg.en, { parse_mode: 'HTML' });
+            return;
+          }
+          throw limitError;
+        }
       }
 
       // Get user position (for difficulty level)
@@ -2974,16 +3114,48 @@ To register, verify your phone number 👇`,
       }
 
       // Prepare StartInterviewDto
-      const startDto = {
-        type: 'technical',
-        difficulty: this.mapPositionToInterviewDifficulty(position), // Map position to interview difficulty
+      // Phase 3: Resolve mockType → category mapping for the `type` field
+      const mockType = ctx.session.interviewMockType as MockInterviewType | undefined;
+      const mockTypeConfig = mockType ? MOCK_TYPE_CONFIG[mockType] : undefined;
+      const interviewCategory = mockTypeConfig?.category || 'technical';
+      const numQuestionsOverride = mockTypeConfig?.questionCount;
+
+      const startDto: any = {
+        type: interviewCategory,
+        difficulty: this.mapPositionToInterviewDifficulty(position),
         domain: selectedDomain,
         technology: selectedTech,
         interviewDuration: duration,
-        mode: 'text', // Default to text mode
+        mode: 'text',
         language: lang,
-        cvContext, // FIX #45: Pass CV data for personalized questions
+        cvContext,
+        // Phase 3 fields
+        mockType: mockType || 'quick_technical',
+        company: ctx.session.interviewCompany,
+        companyTemplateId: ctx.session.interviewCompanyTemplate,
       };
+
+      // Override numQuestions from mockType config if available
+      if (numQuestionsOverride) {
+        startDto.numQuestions = numQuestionsOverride;
+      }
+
+      // FIX P3-H4: Guard against starting a new interview while one is active.
+      // Complete any existing active session to prevent orphaned sessions.
+      if (ctx.session.currentInterviewSessionId) {
+        try {
+          await this.interviewsService.completeSession(userId, ctx.session.currentInterviewSessionId);
+          this.logger.warn(
+            `Auto-completed orphaned session ${ctx.session.currentInterviewSessionId} for user ${userId}`,
+          );
+        } catch {
+          // Ignore — session might already be completed or invalid
+        }
+        ctx.session.currentInterviewSessionId = undefined;
+        ctx.session.interviewStep = undefined;
+        ctx.session.pendingFollowUpQuestion = undefined;
+        ctx.session.followUpQuestionStartedAt = undefined;
+      }
 
       // Show loading message while questions are being generated
       const loadingText: Record<string, string> = {
@@ -3055,12 +3227,20 @@ Or select a different domain/technology.`,
 
         const firstQuestion = questions[0];
 
+        // Phase 3: Show enhanced interview info with mock type
+        const typeLabel = mockTypeConfig
+          ? (lang === 'uz' ? mockTypeConfig.labelUz : lang === 'ru' ? mockTypeConfig.labelRu : mockTypeConfig.label)
+          : '';
+        const typeEmoji = mockTypeConfig?.emoji || '🎯';
+        const companyLine = ctx.session.interviewCompany ? `\n• ${lang === 'uz' ? 'Kompaniya' : lang === 'ru' ? 'Компания' : 'Company'}: ${ctx.session.interviewCompany}` : '';
+        const typeLine = typeLabel ? `\n• ${lang === 'uz' ? 'Turi' : lang === 'ru' ? 'Тип' : 'Type'}: ${typeEmoji} ${typeLabel}` : '';
+
         const startText: Record<string, string> = {
           uz: `🎯 <b>Mock Intervyu Boshlandi!</b>
 
 📋 Intervyu ma'lumotlari:
 • Soha: ${ctx.session.interviewDomain}
-• Texnologiya: ${ctx.session.interviewTechnology}
+• Texnologiya: ${ctx.session.interviewTechnology}${typeLine}${companyLine}
 • Davomiyligi: ${duration === 'quick' ? 'Tez' : duration === 'standard' ? 'Standart' : 'Chuqur'}
 • Savollar soni: ${session.numQuestions}
 
@@ -3068,17 +3248,16 @@ Or select a different domain/technology.`,
 
 <b>Savol ${session.currentQuestionIndex + 1}/${session.numQuestions}:</b>
 
-${firstQuestion.question || firstQuestion.text || 'Savol yuklanmoqda...'}
+${this.escapeHtml(firstQuestion.question || firstQuestion.text || 'Savol yuklanmoqda...')}
 
-${firstQuestion.codeSnippet || firstQuestion.sampleAnswer ? `\n\`\`\`\n${firstQuestion.codeSnippet || firstQuestion.sampleAnswer}\n\`\`\`\n` : ''}
-
+${firstQuestion.codeSnippet || firstQuestion.sampleAnswer ? `\n<code>${this.escapeHtml(firstQuestion.codeSnippet || firstQuestion.sampleAnswer)}</code>\n` : ''}
 💡 <i>Javobingizni yozing yoki ovozli xabar yuboring</i>`,
 
           ru: `🎯 <b>Mock Интервью Начато!</b>
 
 📋 Информация об интервью:
 • Область: ${ctx.session.interviewDomain}
-• Технология: ${ctx.session.interviewTechnology}
+• Технология: ${ctx.session.interviewTechnology}${typeLine}${companyLine}
 • Продолжительность: ${duration === 'quick' ? 'Быстрое' : duration === 'standard' ? 'Стандартное' : 'Глубокое'}
 • Количество вопросов: ${session.numQuestions}
 
@@ -3086,17 +3265,16 @@ ${firstQuestion.codeSnippet || firstQuestion.sampleAnswer ? `\n\`\`\`\n${firstQu
 
 <b>Вопрос ${session.currentQuestionIndex + 1}/${session.numQuestions}:</b>
 
-${firstQuestion.question || firstQuestion.text || 'Вопрос загружается...'}
+${this.escapeHtml(firstQuestion.question || firstQuestion.text || 'Вопрос загружается...')}
 
-${firstQuestion.codeSnippet || firstQuestion.sampleAnswer ? `\n\`\`\`\n${firstQuestion.codeSnippet || firstQuestion.sampleAnswer}\n\`\`\`\n` : ''}
-
+${firstQuestion.codeSnippet || firstQuestion.sampleAnswer ? `\n<code>${this.escapeHtml(firstQuestion.codeSnippet || firstQuestion.sampleAnswer)}</code>\n` : ''}
 💡 <i>Напишите ответ или отправьте голосовое сообщение</i>`,
 
           en: `🎯 <b>Mock Interview Started!</b>
 
 📋 Interview Details:
 • Domain: ${ctx.session.interviewDomain}
-• Technology: ${ctx.session.interviewTechnology}
+• Technology: ${ctx.session.interviewTechnology}${typeLine}${companyLine}
 • Duration: ${duration === 'quick' ? 'Quick' : duration === 'standard' ? 'Standard' : 'Deep Dive'}
 • Questions: ${session.numQuestions}
 
@@ -3104,10 +3282,9 @@ ${firstQuestion.codeSnippet || firstQuestion.sampleAnswer ? `\n\`\`\`\n${firstQu
 
 <b>Question ${session.currentQuestionIndex + 1}/${session.numQuestions}:</b>
 
-${firstQuestion.question || firstQuestion.text || 'Loading question...'}
+${this.escapeHtml(firstQuestion.question || firstQuestion.text || 'Loading question...')}
 
-${firstQuestion.codeSnippet || firstQuestion.sampleAnswer ? `\n\`\`\`\n${firstQuestion.codeSnippet || firstQuestion.sampleAnswer}\n\`\`\`\n` : ''}
-
+${firstQuestion.codeSnippet || firstQuestion.sampleAnswer ? `\n<code>${this.escapeHtml(firstQuestion.codeSnippet || firstQuestion.sampleAnswer)}</code>\n` : ''}
 💡 <i>Type your answer or send a voice message</i>`,
         };
 
@@ -3123,9 +3300,16 @@ ${firstQuestion.codeSnippet || firstQuestion.sampleAnswer ? `\n\`\`\`\n${firstQu
           reply_markup: answerKeyboard,
         });
 
+        // FIX P3-M8: Track when first question was shown
+        ctx.session.questionStartedAt = Date.now();
+
         this.logger.log(`Mock interview started: session ${session.id} for user ${userId}`);
       } catch (error: any) {
         this.logger.error(`Failed to start mock interview: ${error.message}`);
+
+        // FIX TG-5/TG-6: Clear ALL session state on interview start failure
+        // Previously only 2 of ~10 fields were cleared, leaving user stuck in interview flow
+        this.clearInterviewSessionState(ctx);
 
         const errorText: Record<string, string> = {
           uz: `❌ Intervyu boshlanmadi. Iltimos, qaytadan urinib ko'ring.
@@ -3151,6 +3335,8 @@ ${error.message || 'Unknown error'}`,
     // SKIP QUESTION HANDLER
     // ============================================================
     if (callbackData.startsWith('skip_question_')) {
+      // FIX TG-2: Removed duplicate answerCallbackQuery() — already answered by telegram.service.ts handleCallbackQuery
+
       const sessionId = callbackData.replace('skip_question_', '');
       const telegramId = ctx.from?.id as number;
       const user = await this.usersService.findByTelegramId(telegramId);
@@ -3162,7 +3348,22 @@ ${error.message || 'Unknown error'}`,
 
       const userId = (user as any).id || (user as any)._id?.toString();
 
+      // FIX P3-H7: Verify session is still active (prevents double-click race)
+      if (ctx.session.currentInterviewSessionId !== sessionId) {
+        return; // Session already ended or changed
+      }
+
       try {
+        // Phase 3: If user is in follow-up mode, clear it and move to next question
+        if (ctx.session.interviewStep === 'answering_followup') {
+          ctx.session.interviewStep = 'answering';
+          ctx.session.pendingFollowUpQuestion = undefined;
+          ctx.session.followUpQuestionStartedAt = undefined;
+          // Skip follow-up → show next main question
+          await this.showNextQuestionOrFinish(ctx, user, userId, sessionId, lang);
+          return;
+        }
+
         // Get current session and question
         const currentSession = await this.interviewsService.getSession(userId, sessionId);
         const currentQuestion = (currentSession.questions as any)[
@@ -3181,34 +3382,7 @@ ${error.message || 'Unknown error'}`,
         const session = await this.interviewsService.getSession(userId, sessionId);
 
         if (session.status === 'completed') {
-          const finishText: Record<string, string> = {
-            uz: `🎉 <b>Mock Intervyu Yakunlandi!</b>
-
-Tabriklaymiz! Siz barcha savollarga javob berdingiz.
-
-📊 Natijalaringizni ko'rish uchun /profile buyrug'idan foydalaning.`,
-
-            ru: `🎉 <b>Mock Интервью Завершено!</b>
-
-Поздравляем! Вы ответили на все вопросы.
-
-📊 Используйте /profile чтобы посмотреть результаты.`,
-
-            en: `🎉 <b>Mock Interview Completed!</b>
-
-Congratulations! You've completed all questions.
-
-📊 Use /profile to view your results.`,
-          };
-
-          await ctx.reply(finishText[lang] || finishText.en, { parse_mode: 'HTML' });
-
-          // Clear session
-          ctx.session.interviewStep = undefined;
-          ctx.session.currentInterviewSessionId = undefined;
-          ctx.session.currentQuestionIndex = undefined;
-
-          await this.showMainMenu(ctx, user);
+          await this.showInterviewCompletion(ctx, user, session, lang);
           return;
         }
 
@@ -3219,8 +3393,9 @@ Congratulations! You've completed all questions.
         ctx.session.currentQuestionIndex = sessionAfterSkip.currentQuestionIndex;
 
         // FIX #113: Use .question (schema field), fallback to .text
-        const qText = nextQuestion.question || nextQuestion.text || '';
-        const cBlock = nextQuestion.codeSnippet ? `\n<code>${nextQuestion.codeSnippet}</code>\n` : '';
+        // FIX TG-10: Escape HTML to prevent Telegram parse errors with <, >, & in questions
+        const qText = this.escapeHtml(nextQuestion.question || nextQuestion.text || '');
+        const cBlock = nextQuestion.codeSnippet ? `\n<code>${this.escapeHtml(nextQuestion.codeSnippet)}</code>\n` : '';
 
         const skipText: Record<string, string> = {
           uz: `⏭️ <b>Savol o'tkazib yuborildi</b>
@@ -3256,6 +3431,9 @@ ${cBlock}`,
           parse_mode: 'HTML',
           reply_markup: keyboard,
         });
+
+        // FIX TG-4: Reset questionStartedAt so next answer's duration is calculated correctly
+        ctx.session.questionStartedAt = Date.now();
       } catch (error: any) {
         this.logger.error(`Failed to skip question: ${error.message}`);
         await ctx.reply('❌ Error skipping question');
@@ -3268,6 +3446,8 @@ ${cBlock}`,
     // END INTERVIEW HANDLER
     // ============================================================
     if (callbackData.startsWith('end_interview_')) {
+      // FIX TG-2: Removed duplicate answerCallbackQuery() — already answered by telegram.service.ts handleCallbackQuery
+
       const sessionId = callbackData.replace('end_interview_', '');
       const telegramId = ctx.from?.id as number;
       const user = await this.usersService.findByTelegramId(telegramId);
@@ -3278,6 +3458,11 @@ ${cBlock}`,
       }
 
       const userId = (user as any).id || (user as any)._id?.toString();
+
+      // FIX P3-H7: Verify session is still active (prevents double-click race)
+      if (ctx.session.currentInterviewSessionId !== sessionId) {
+        return; // Session already ended or changed
+      }
 
       try {
         // End the interview session
@@ -3299,13 +3484,8 @@ Interview session has been ended. Use /profile to view your results.`,
 
         await ctx.reply(endText[lang] || endText.en, { parse_mode: 'HTML' });
 
-        // Clear session state
-        ctx.session.interviewStep = undefined;
-        ctx.session.currentInterviewSessionId = undefined;
-        ctx.session.currentQuestionIndex = undefined;
-        ctx.session.interviewDomain = undefined;
-        ctx.session.interviewTechnology = undefined;
-        ctx.session.interviewDuration = undefined;
+        // FIX TG-8/TG-9: Use centralized clearInterviewSessionState to ensure ALL fields are cleared
+        this.clearInterviewSessionState(ctx);
 
         // Show main menu
         await this.showMainMenu(ctx, user);
@@ -3345,7 +3525,8 @@ Interview session has been ended. Use /profile to view your results.`,
             parse_mode: 'HTML',
           });
 
-          await ctx.answerCallbackQuery();
+          // FIX TG-3: Removed duplicate answerCallbackQuery() — already answered by telegram.service.ts
+          // The original call here would throw "query is too old" since it was already answered.
 
           // Optional: show main menu after a small delay
           setTimeout(async () => {
@@ -3382,20 +3563,14 @@ Interview session has been ended. Use /profile to view your results.`,
   }
 
   /**
-   * Handle text messages in different contexts
+   * FIX TG-7: This method was dead code that sent placeholder text "Interview flow handling..."
+   * to users. Removed the misleading body — now routes to the default help message.
+   * The actual text routing is done by telegram.service.ts handleTextMessage().
    */
   async handleTextMessage(ctx: BotContext) {
-    const text = ctx.message?.text;
-    if (!text) return;
-
-    // Check if in interview flow
-    if (ctx.session?.interviewStep) {
-      // Handle interview flow text
-      await ctx.reply('Interview flow handling...');
-      return;
-    }
-
-    // Default: show help
+    // This method should not be called directly anymore.
+    // All text routing is done by telegram.service.ts → handleTextMessage().
+    // If somehow reached, show the default unknown command message.
     const lang = ctx.session?.language || 'en';
     const unknownText: Record<string, string> = {
       uz: `❓ Tushunarsiz buyruq. /help orqali yordam oling.`,
@@ -3498,7 +3673,7 @@ Interview session has been ended. Use /profile to view your results.`,
   }
 
   /**
-   * Handle interview text flow
+   * Handle interview text flow (Phase 3 enhanced: supports follow-ups)
    */
   async handleInterviewText(ctx: BotContext): Promise<void> {
     const lang = ctx.session?.language || 'en';
@@ -3508,7 +3683,135 @@ Interview session has been ended. Use /profile to view your results.`,
       return;
     }
 
-    // Check if user is currently answering a mock interview question
+    // ── Phase 3: Handle follow-up answer ──
+    if (
+      ctx.session?.interviewStep === 'answering_followup' &&
+      ctx.session?.currentInterviewSessionId &&
+      ctx.session?.pendingFollowUpQuestion
+    ) {
+      const telegramId = ctx.from?.id as number;
+      const user = await this.usersService.findByTelegramId(telegramId);
+      if (!user) {
+        await ctx.reply('Please register first using /start');
+        return;
+      }
+
+      const userId = (user as any).id || (user as any)._id?.toString();
+      const sessionId = ctx.session.currentInterviewSessionId;
+
+      try {
+        const startedAt = ctx.session.followUpQuestionStartedAt || Date.now();
+        const answerTime = Math.round((Date.now() - startedAt) / 1000);
+
+        // Submit follow-up answer
+        await this.interviewsService.submitFollowUpAnswer(
+          userId,
+          sessionId,
+          text,
+          answerTime,
+        );
+
+        // Clear current follow-up state
+        ctx.session.pendingFollowUpQuestion = undefined;
+        ctx.session.followUpQuestionStartedAt = undefined;
+
+        // ── FIX P3-H2: Check for additional follow-up before advancing ──
+        const isEnhanced = this.configService.get<boolean>('features.mockEnhancedEnabled');
+        if (isEnhanced) {
+          const refreshedSession = await this.interviewsService.getSession(userId, sessionId);
+          if (refreshedSession.status === 'active') {
+            // Get the original question text for the current question
+            const questionIndex = refreshedSession.currentQuestionIndex - 1;
+            const originalQuestion = (refreshedSession.questions as any)?.[questionIndex];
+            const questionText = originalQuestion?.question || originalQuestion?.text || '';
+
+            const nextFollowUp = await this.interviewsService.shouldFollowUp(
+              refreshedSession,
+              questionText,
+              text, // Use the follow-up answer as context
+              undefined,
+            );
+
+            if (nextFollowUp) {
+              // Record and present the next follow-up
+              await this.interviewsService.recordFollowUp(
+                sessionId,
+                questionIndex,
+                nextFollowUp.type as any,
+                nextFollowUp.question,
+              );
+
+              ctx.session.interviewStep = 'answering_followup';
+              ctx.session.pendingFollowUpQuestion = nextFollowUp.question;
+              ctx.session.followUpQuestionStartedAt = Date.now();
+
+              const fuTypeLabel: Record<string, Record<string, string>> = {
+                expand: { uz: 'Batafsil tushuntiring', ru: 'Расскажите подробнее', en: 'Please elaborate' },
+                redirect: { uz: 'Qaytadan o\'ylang', ru: 'Подумайте ещё раз', en: 'Let me rephrase' },
+                deep_dive: { uz: 'Chuqurroq', ru: 'Глубже', en: 'Going deeper' },
+              };
+              const fuLabel = fuTypeLabel[nextFollowUp.type]?.[lang] || fuTypeLabel[nextFollowUp.type]?.en || '';
+
+              const fuText: Record<string, string> = {
+                uz: `🔄 <b>${fuLabel}</b>
+
+${nextFollowUp.question}
+
+💡 <i>Javobingizni yozing</i>`,
+                ru: `🔄 <b>${fuLabel}</b>
+
+${nextFollowUp.question}
+
+💡 <i>Напишите ваш ответ</i>`,
+                en: `🔄 <b>${fuLabel}</b>
+
+${nextFollowUp.question}
+
+💡 <i>Type your answer</i>`,
+              };
+
+              const fuKeyboard = new InlineKeyboard()
+                .text(
+                  lang === 'uz' ? "⏭️ O'tkazish" : lang === 'ru' ? '⏭️ Пропустить' : '⏭️ Skip',
+                  `skip_question_${sessionId}`,
+                )
+                .text(
+                  lang === 'uz' ? '🛑 Tugatish' : lang === 'ru' ? '🛑 Завершить' : '🛑 End Interview',
+                  `end_interview_${sessionId}`,
+                );
+
+              await ctx.reply(fuText[lang] || fuText.en, {
+                parse_mode: 'HTML',
+                reply_markup: fuKeyboard,
+              });
+              return;
+            }
+          }
+        }
+
+        // No additional follow-up → advance to next question
+        ctx.session.interviewStep = 'answering';
+        await this.showNextQuestionOrFinish(ctx, user, userId, sessionId, lang);
+      } catch (error: any) {
+        this.logger.error(`Failed to submit follow-up answer: ${error.message}`);
+        // Recover: go back to answering state
+        ctx.session.interviewStep = 'answering';
+        ctx.session.pendingFollowUpQuestion = undefined;
+        // FIX TG-11: Clear followUpQuestionStartedAt on error recovery
+        ctx.session.followUpQuestionStartedAt = undefined;
+        await ctx.reply(
+          lang === 'uz'
+            ? '❌ Follow-up javob xatoligi. Keyingi savolga o\'tamiz.'
+            : lang === 'ru'
+              ? '❌ Ошибка follow-up ответа. Переходим к следующему вопросу.'
+              : '❌ Follow-up answer error. Moving to next question.',
+        );
+        await this.showNextQuestionOrFinish(ctx, user, userId, sessionId, lang);
+      }
+      return;
+    }
+
+    // ── Main answer submission ──
     if (ctx.session?.interviewStep === 'answering' && ctx.session?.currentInterviewSessionId) {
       const telegramId = ctx.from?.id as number;
       const user = await this.usersService.findByTelegramId(telegramId);
@@ -3522,117 +3825,101 @@ Interview session has been ended. Use /profile to view your results.`,
       const sessionId = ctx.session.currentInterviewSessionId;
 
       try {
-        // FIX #115: Removed misleading "analyzing" message — answers are stored immediately,
-        // AI feedback is generated at the end of interview (batch). No need to show "analyzing".
-
         // Get current session and question
         const currentSession = await this.interviewsService.getSession(userId, sessionId);
         const currentQuestion = (currentSession.questions as any)[
           currentSession.currentQuestionIndex
         ];
 
+        // FIX P3-M8: Calculate actual answer duration instead of hardcoded 60s
+        const questionStart = ctx.session.questionStartedAt || Date.now();
+        const actualDuration = Math.round((Date.now() - questionStart) / 1000);
+
         // Submit the answer
         await this.interviewsService.submitAnswer(userId, sessionId, {
           questionId: currentQuestion._id?.toString() || currentQuestion.id?.toString(),
           answerText: text,
           answerType: 'text',
-          duration: 60, // Default 60 seconds for text answers
+          duration: actualDuration,
         });
 
-        // Get next question or finish interview
-        const session = await this.interviewsService.getSession(userId, sessionId);
+        // Touch session for idle timeout tracking
+        await this.interviewsService.touchSession(sessionId);
 
-        if (session.status === 'completed') {
-          // Interview finished
-          const finishText: Record<string, string> = {
-            uz: `🎉 <b>Mock Intervyu Yakunlandi!</b>
+        // ── Phase 3: Check for follow-up question ──
+        const isEnhanced = this.configService.get<boolean>('features.mockEnhancedEnabled');
+        if (isEnhanced) {
+          const refreshedSession = await this.interviewsService.getSession(userId, sessionId);
+          // Only check follow-up if session is still active (not auto-completed by submitAnswer)
+          if (refreshedSession.status === 'active') {
+            const questionText = currentQuestion.question || currentQuestion.text || '';
+            const followUp = await this.interviewsService.shouldFollowUp(
+              refreshedSession,
+              questionText,
+              text,
+              undefined, // Score not available yet (batch scoring)
+            );
 
-Tabriklaymiz! Siz barcha savollarga javob berdingiz.
+            if (followUp) {
+              // Record the follow-up on the session
+              await this.interviewsService.recordFollowUp(
+                sessionId,
+                refreshedSession.currentQuestionIndex - 1, // The question we just answered
+                followUp.type as any,
+                followUp.question,
+              );
 
-📊 Natijalaringizni ko'rish uchun /profile buyrug'idan foydalaning.`,
+              // Set follow-up state in Telegram session
+              ctx.session.interviewStep = 'answering_followup';
+              ctx.session.pendingFollowUpQuestion = followUp.question;
+              ctx.session.followUpQuestionStartedAt = Date.now();
 
-            ru: `🎉 <b>Mock Интервью Завершено!</b>
+              const fuTypeLabel: Record<string, Record<string, string>> = {
+                expand: { uz: 'Batafsil tushuntiring', ru: 'Расскажите подробнее', en: 'Please elaborate' },
+                redirect: { uz: 'Qaytadan o\'ylang', ru: 'Подумайте ещё раз', en: 'Let me rephrase' },
+                deep_dive: { uz: 'Chuqurroq', ru: 'Глубже', en: 'Going deeper' },
+              };
+              const fuLabel = fuTypeLabel[followUp.type]?.[lang] || fuTypeLabel[followUp.type]?.en || '';
 
-Поздравляем! Вы ответили на все вопросы.
+              const fuText: Record<string, string> = {
+                uz: `🔄 <b>${fuLabel}</b>
 
-📊 Используйте /profile чтобы посмотреть результаты.`,
+${followUp.question}
 
-            en: `🎉 <b>Mock Interview Completed!</b>
+💡 <i>Javobingizni yozing</i>`,
+                ru: `🔄 <b>${fuLabel}</b>
 
-Congratulations! You've answered all questions.
+${followUp.question}
 
-📊 Use /profile to view your results.`,
-          };
+💡 <i>Напишите ваш ответ</i>`,
+                en: `🔄 <b>${fuLabel}</b>
 
-          await ctx.reply(finishText[lang] || finishText.en, {
-            parse_mode: 'HTML',
-          });
+${followUp.question}
 
-          // Clear session state
-          ctx.session.interviewStep = undefined;
-          ctx.session.currentInterviewSessionId = undefined;
-          ctx.session.currentQuestionIndex = undefined;
-          ctx.session.interviewDomain = undefined;
-          ctx.session.interviewTechnology = undefined;
-          ctx.session.interviewDuration = undefined;
+💡 <i>Type your answer</i>`,
+              };
 
-          // Show main menu
-          await this.showMainMenu(ctx, user);
-          return;
+              const fuKeyboard = new InlineKeyboard()
+                .text(
+                  lang === 'uz' ? "⏭️ O'tkazish" : lang === 'ru' ? '⏭️ Пропустить' : '⏭️ Skip',
+                  `skip_question_${sessionId}`,
+                )
+                .text(
+                  lang === 'uz' ? '🛑 Tugatish' : lang === 'ru' ? '🛑 Завершить' : '🛑 End Interview',
+                  `end_interview_${sessionId}`,
+                );
+
+              await ctx.reply(fuText[lang] || fuText.en, {
+                parse_mode: 'HTML',
+                reply_markup: fuKeyboard,
+              });
+              return;
+            }
+          }
         }
 
-        // Get next question
-        const updatedSession = await this.interviewsService.getSession(userId, sessionId);
-        const nextQuestion = (updatedSession.questions as any)[updatedSession.currentQuestionIndex];
-        ctx.session.currentQuestionIndex = updatedSession.currentQuestionIndex;
-
-        // FIX #113: Use nextQuestion.question (schema field name), fallback to .text for safety
-        const questionText = nextQuestion.question || nextQuestion.text || 'Savol yuklanmoqda...';
-        const codeBlock = nextQuestion.codeSnippet ? `\n<code>${nextQuestion.codeSnippet}</code>\n` : '';
-
-        const nextText: Record<string, string> = {
-          uz: `✅ <b>Javob qabul qilindi!</b>
-
-━━━━━━━━━━━━━━━━━━
-
-<b>Savol ${updatedSession.currentQuestionIndex + 1}/${updatedSession.numQuestions}:</b>
-
-${questionText}
-${codeBlock}
-💡 <i>Javobingizni yozing yoki ovozli xabar yuboring</i>`,
-
-          ru: `✅ <b>Ответ принят!</b>
-
-━━━━━━━━━━━━━━━━━━
-
-<b>Вопрос ${updatedSession.currentQuestionIndex + 1}/${updatedSession.numQuestions}:</b>
-
-${questionText}
-${codeBlock}
-💡 <i>Напишите ответ или отправьте голосовое сообщение</i>`,
-
-          en: `✅ <b>Answer received!</b>
-
-━━━━━━━━━━━━━━━━━━
-
-<b>Question ${updatedSession.currentQuestionIndex + 1}/${updatedSession.numQuestions}:</b>
-
-${questionText}
-${codeBlock}
-💡 <i>Type your answer or send a voice message</i>`,
-        };
-
-        // FIX #114: Localized buttons
-        const skipBtnText: Record<string, string> = { uz: "⏭️ O'tkazish", ru: '⏭️ Пропустить', en: '⏭️ Skip' };
-        const endBtnText: Record<string, string> = { uz: '🛑 Tugatish', ru: '🛑 Завершить', en: '🛑 End Interview' };
-        const answerKeyboard = new InlineKeyboard()
-          .text(skipBtnText[lang] || skipBtnText.en, `skip_question_${sessionId}`)
-          .text(endBtnText[lang] || endBtnText.en, `end_interview_${sessionId}`);
-
-        await ctx.reply(nextText[lang] || nextText.en, {
-          parse_mode: 'HTML',
-          reply_markup: answerKeyboard,
-        });
+        // No follow-up → show next question or finish
+        await this.showNextQuestionOrFinish(ctx, user, userId, sessionId, lang);
       } catch (error: any) {
         this.logger.error(`Failed to submit answer: ${error.message}`);
 
@@ -3655,6 +3942,171 @@ ${codeBlock}
       en: '⏳ Interview in progress...',
     };
     await ctx.reply(processingText[lang] || processingText.en);
+  }
+
+  /**
+   * Show next question or finish interview (extracted helper for reuse in follow-up flow).
+   */
+  /**
+   * FIX P3-C2: Check if all questions answered → auto-complete session.
+   * FIX P3-M5: Removed double session fetch.
+   */
+  private async showNextQuestionOrFinish(
+    ctx: BotContext,
+    user: any,
+    userId: string,
+    sessionId: string,
+    lang: string,
+  ): Promise<void> {
+    const session = await this.interviewsService.getSession(userId, sessionId);
+
+    if (session.status === 'completed') {
+      await this.showInterviewCompletion(ctx, user, session, lang);
+      return;
+    }
+
+    // FIX P3-C2: If currentQuestionIndex >= numQuestions, all questions answered.
+    // Auto-complete the session instead of crashing on array out-of-bounds.
+    if (session.currentQuestionIndex >= session.numQuestions) {
+      await this.interviewsService.completeSession(userId, sessionId);
+      const completedSession = await this.interviewsService.getSession(userId, sessionId);
+      await this.showInterviewCompletion(ctx, user, completedSession, lang);
+      return;
+    }
+
+    // Get next question (FIX P3-M5: reuse `session`, no double fetch)
+    const nextQuestion = (session.questions as any)[session.currentQuestionIndex];
+    ctx.session.currentQuestionIndex = session.currentQuestionIndex;
+
+    // FIX TG-10: Escape HTML to prevent Telegram parse errors with <, >, & in questions
+    const questionText = this.escapeHtml(nextQuestion.question || nextQuestion.text || 'Loading...');
+    const codeBlock = nextQuestion.codeSnippet ? `\n<code>${this.escapeHtml(nextQuestion.codeSnippet)}</code>\n` : '';
+
+    const nextText: Record<string, string> = {
+      uz: `✅ <b>Javob qabul qilindi!</b>
+
+━━━━━━━━━━━━━━━━━━
+
+<b>Savol ${session.currentQuestionIndex + 1}/${session.numQuestions}:</b>
+
+${questionText}
+${codeBlock}
+💡 <i>Javobingizni yozing yoki ovozli xabar yuboring</i>`,
+
+      ru: `✅ <b>Ответ принят!</b>
+
+━━━━━━━━━━━━━━━━━━
+
+<b>Вопрос ${session.currentQuestionIndex + 1}/${session.numQuestions}:</b>
+
+${questionText}
+${codeBlock}
+💡 <i>Напишите ответ или отправьте голосовое сообщение</i>`,
+
+      en: `✅ <b>Answer received!</b>
+
+━━━━━━━━━━━━━━━━━━
+
+<b>Question ${session.currentQuestionIndex + 1}/${session.numQuestions}:</b>
+
+${questionText}
+${codeBlock}
+💡 <i>Type your answer or send a voice message</i>`,
+    };
+
+    const skipBtnText: Record<string, string> = { uz: "⏭️ O'tkazish", ru: '⏭️ Пропустить', en: '⏭️ Skip' };
+    const endBtnText: Record<string, string> = { uz: '🛑 Tugatish', ru: '🛑 Завершить', en: '🛑 End Interview' };
+    const answerKeyboard = new InlineKeyboard()
+      .text(skipBtnText[lang] || skipBtnText.en, `skip_question_${sessionId}`)
+      .text(endBtnText[lang] || endBtnText.en, `end_interview_${sessionId}`);
+
+    await ctx.reply(nextText[lang] || nextText.en, {
+      parse_mode: 'HTML',
+      reply_markup: answerKeyboard,
+    });
+
+    // FIX P3-M8: Track when question was shown for actual duration calculation
+    ctx.session.questionStartedAt = Date.now();
+  }
+
+  /**
+   * Show interview completion message (Phase 3: enhanced with report preview).
+   */
+  private async showInterviewCompletion(
+    ctx: BotContext,
+    user: any,
+    session: any,
+    lang: string,
+  ): Promise<void> {
+    const isEnhanced = this.configService.get<boolean>('features.mockEnhancedEnabled');
+
+    if (isEnhanced) {
+      // Show enhanced completion with scoring notice
+      const mockType = (session as any).mockType || 'quick_technical';
+      const typeConfig = MOCK_TYPE_CONFIG[mockType as MockInterviewType];
+      const typeLabel = typeConfig
+        ? (lang === 'uz' ? typeConfig.labelUz : lang === 'ru' ? typeConfig.labelRu : typeConfig.label)
+        : '';
+      const actualDuration = (session as any).actualDuration || 0;
+
+      const finishText: Record<string, string> = {
+        uz: `🎉 <b>Mock Intervyu Yakunlandi!</b>
+
+📊 <b>Intervyu xulosasi:</b>
+• Turi: ${typeLabel}
+• Davomiyligi: ${actualDuration} daqiqa
+• Savollar: ${session.numQuestions}
+${session.company ? `• Kompaniya: ${session.company}` : ''}
+
+⏳ <b>Natijalaringiz tahlil qilinmoqda...</b>
+AI hisobotingiz 1-2 daqiqada tayyor bo'ladi.
+
+📊 Batafsil hisobotni ko'rish uchun /profile buyrug'idan foydalaning.`,
+
+        ru: `🎉 <b>Mock Интервью Завершено!</b>
+
+📊 <b>Итоги интервью:</b>
+• Тип: ${typeLabel}
+• Длительность: ${actualDuration} мин
+• Вопросов: ${session.numQuestions}
+${session.company ? `• Компания: ${session.company}` : ''}
+
+⏳ <b>Ваши результаты анализируются...</b>
+AI-отчёт будет готов через 1-2 минуты.
+
+📊 Используйте /profile для просмотра подробного отчёта.`,
+
+        en: `🎉 <b>Mock Interview Completed!</b>
+
+📊 <b>Interview Summary:</b>
+• Type: ${typeLabel}
+• Duration: ${actualDuration} min
+• Questions: ${session.numQuestions}
+${session.company ? `• Company: ${session.company}` : ''}
+
+⏳ <b>Your results are being analyzed...</b>
+Your AI report will be ready in 1-2 minutes.
+
+📊 Use /profile to view the detailed report.`,
+      };
+
+      await ctx.reply(finishText[lang] || finishText.en, { parse_mode: 'HTML' });
+    } else {
+      // Legacy completion message
+      const finishText: Record<string, string> = {
+        uz: `🎉 <b>Mock Intervyu Yakunlandi!</b>\n\nTabriklaymiz! Siz barcha savollarga javob berdingiz.\n\n📊 Natijalaringizni ko'rish uchun /profile buyrug'idan foydalaning.`,
+        ru: `🎉 <b>Mock Интервью Завершено!</b>\n\nПоздравляем! Вы ответили на все вопросы.\n\n📊 Используйте /profile чтобы посмотреть результаты.`,
+        en: `🎉 <b>Mock Interview Completed!</b>\n\nCongratulations! You've answered all questions.\n\n📊 Use /profile to view your results.`,
+      };
+
+      await ctx.reply(finishText[lang] || finishText.en, { parse_mode: 'HTML' });
+    }
+
+    // Clear all session state
+    this.clearInterviewSessionState(ctx);
+
+    // Show main menu
+    await this.showMainMenu(ctx, user);
   }
 
   /**
@@ -3889,5 +4341,191 @@ ${codeBlock}
       parse_mode: 'HTML',
       reply_markup: domainKeyboard,
     });
+  }
+
+  // ================================================================
+  // PHASE 3: MOCK TYPE SELECTION & COMPANY TEMPLATES
+  // ================================================================
+
+  /**
+   * Show mock interview type selection screen (Phase 3).
+   * 6 types: quick_technical, full_technical, behavioral, system_design, company_specific, full_stack
+   */
+  private async showMockTypeSelection(ctx: BotContext, lang: string): Promise<void> {
+    ctx.session.interviewStep = 'mock_type';
+
+    const headerText: Record<string, string> = {
+      uz: `🎯 <b>Intervyu turini tanlang</b>\n\nQaysi turdagi mock intervyuni o'tmoqchisiz?`,
+      ru: `🎯 <b>Выберите тип интервью</b>\n\nКакой тип mock-интервью хотите пройти?`,
+      en: `🎯 <b>Select Interview Type</b>\n\nWhich type of mock interview would you like to take?`,
+    };
+
+    const keyboard = new InlineKeyboard();
+
+    for (const mockType of MOCK_INTERVIEW_TYPES) {
+      const config = MOCK_TYPE_CONFIG[mockType];
+      const label = lang === 'uz' ? config.labelUz : lang === 'ru' ? config.labelRu : config.label;
+      const duration = config.duration;
+      const qCount = config.questionCount;
+      const btnText = `${config.emoji} ${label} (${duration}m, ${qCount}q)`;
+      keyboard.text(btnText, `mock_type_${mockType}`).row();
+    }
+
+    keyboard.text(
+      lang === 'uz' ? '❌ Bekor qilish' : lang === 'ru' ? '❌ Отмена' : '❌ Cancel',
+      'interview_cancel',
+    );
+
+    await ctx.reply(headerText[lang] || headerText.en, {
+      parse_mode: 'HTML',
+      reply_markup: keyboard,
+    });
+  }
+
+  /**
+   * Show company template selection screen (Phase 3, Elite only).
+   */
+  private async showCompanyTemplateSelection(ctx: BotContext, lang: string): Promise<void> {
+    ctx.session.interviewStep = 'mock_company';
+
+    const headerText: Record<string, string> = {
+      uz: `🏢 <b>Kompaniyani tanlang</b>\n\nQaysi kompaniya formatida intervyu o'tmoqchisiz?`,
+      ru: `🏢 <b>Выберите компанию</b>\n\nВ формате какой компании хотите пройти интервью?`,
+      en: `🏢 <b>Select Company</b>\n\nWhich company format would you like to practice?`,
+    };
+
+    const keyboard = new InlineKeyboard();
+
+    for (const template of COMPANY_TEMPLATES) {
+      const desc = lang === 'uz' ? template.descriptionUz : template.description;
+      const btnText = `${template.emoji} ${template.name} (${template.rounds} rounds)`;
+      keyboard.text(btnText, `mock_company_${template.id}`).row();
+    }
+
+    keyboard.text(
+      lang === 'uz' ? '⬅️ Orqaga' : lang === 'ru' ? '⬅️ Назад' : '⬅️ Back',
+      'interview_mock',
+    );
+
+    await ctx.reply(headerText[lang] || headerText.en, {
+      parse_mode: 'HTML',
+      reply_markup: keyboard,
+    });
+  }
+
+  /**
+   * CV-first interview flow (Phase 3 refactor).
+   * Extracted from the old interview_mock handler for reuse after mock type selection.
+   */
+  private async startCvFirstFlow(ctx: BotContext, lang: string): Promise<void> {
+    const telegramId = ctx.from?.id as number;
+    const user = await this.usersService.findByTelegramId(telegramId);
+    if (!user) {
+      await ctx.reply('Please register first using /start');
+      return;
+    }
+    const userId = (user as any).id || (user as any)._id?.toString();
+
+    try {
+      const latestCv = await this.cvService.getUserLatestCv(userId);
+
+      if (!latestCv) {
+        // ── NO CV: Ask user to upload CV first ──
+        const noCvText: Record<string, string> = {
+          uz: `🎯 <b>Mock Intervyu</b>\n\nIntervyu savollarini sizning ko'nikmalaringizga moslash uchun avval CV yuklashingiz kerak.\n\nCV tahlili orqali biz:\n- Texnologiyalaringizni aniqlaymiz\n- Darajangizni (Junior/Middle/Senior) belgilaymiz\n- Ish yo'nalishingizni (Frontend/Backend/...) aniqlaymiz\n\n📎 <i>CV faylini (PDF/DOCX) shu yerga yuboring</i>`,
+          ru: `🎯 <b>Mock Интервью</b>\n\nДля персонализации вопросов интервью необходимо сначала загрузить CV.\n\nЧерез анализ CV мы:\n- Определим ваши технологии\n- Определим уровень (Junior/Middle/Senior)\n- Определим направление (Frontend/Backend/...)\n\n📎 <i>Отправьте файл CV (PDF/DOCX) сюда</i>`,
+          en: `🎯 <b>Mock Interview</b>\n\nTo personalize interview questions, please upload your CV first.\n\nThrough CV analysis we will:\n- Identify your technologies\n- Determine your level (Junior/Middle/Senior)\n- Identify your domain (Frontend/Backend/...)\n\n📎 <i>Send your CV file (PDF/DOCX) here</i>`,
+        };
+
+        const noCvKeyboard = new InlineKeyboard()
+          .text(
+            lang === 'uz' ? '📎 CV yuklash' : lang === 'ru' ? '📎 Загрузить CV' : '📎 Upload CV',
+            'cv_upload_for_interview',
+          )
+          .row()
+          .text('❌ Bekor qilish', 'interview_cancel');
+
+        await ctx.reply(noCvText[lang] || noCvText.en, {
+          parse_mode: 'HTML',
+          reply_markup: noCvKeyboard,
+        });
+        ctx.session.interviewStep = 'waiting_cv';
+        return;
+      }
+
+      if (latestCv.analysisStatus !== 'completed' || !latestCv.analysis) {
+        // ── CV EXISTS but NOT ANALYZED: Auto-analyze ──
+        const analyzingText: Record<string, string> = {
+          uz: `🎯 <b>Mock Intervyu</b>\n\nCV topildi, lekin hali tahlil qilinmagan.\n\n🔄 <b>CV tahlil qilinmoqda...</b> Iltimos, kuting.`,
+          ru: `🎯 <b>Mock Интервью</b>\n\nCV найден, но ещё не проанализирован.\n\n🔄 <b>Анализируем CV...</b> Пожалуйста, подождите.`,
+          en: `🎯 <b>Mock Interview</b>\n\nCV found but not yet analyzed.\n\n🔄 <b>Analyzing CV...</b> Please wait.`,
+        };
+        const analyzeMsg = await ctx.reply(analyzingText[lang] || analyzingText.en, {
+          parse_mode: 'HTML',
+        });
+
+        try {
+          await this.cvService.analyzeCv(userId, (latestCv as any).id, {
+            language: lang,
+          });
+          try {
+            if (ctx.chat?.id) await ctx.api.deleteMessage(ctx.chat.id, analyzeMsg.message_id);
+          } catch { /* silent */ }
+
+          const analyzedCv = await this.cvService.getUserLatestCv(userId);
+          const updatedUser = await this.usersService.findByTelegramId(telegramId);
+          if (analyzedCv?.analysis && updatedUser) {
+            await this.showCvInterviewConfirmation(ctx, updatedUser, analyzedCv, lang);
+          } else {
+            await this.showManualDomainSelection(ctx, lang);
+          }
+        } catch (analyzeError: any) {
+          this.logger.error(`CV auto-analyze failed: ${analyzeError.message}`);
+          try {
+            if (ctx.chat?.id) await ctx.api.deleteMessage(ctx.chat.id, analyzeMsg.message_id);
+          } catch { /* silent */ }
+          await this.showManualDomainSelection(ctx, lang);
+        }
+        return;
+      }
+
+      // ── CV EXISTS and ANALYZED: Show confirmation ──
+      await this.showCvInterviewConfirmation(ctx, user, latestCv, lang);
+
+    } catch (cvError: any) {
+      this.logger.error(`CV check failed for mock interview: ${cvError.message}`);
+      await this.showManualDomainSelection(ctx, lang);
+    }
+  }
+
+  /**
+   * Clear all interview-related session state (Phase 3 helper).
+   */
+  /**
+   * FIX TG-10: Escape HTML special characters in text before sending with parse_mode: 'HTML'.
+   * Programming questions very likely contain <, >, & which cause Telegram parse errors.
+   */
+  private escapeHtml(text: string): string {
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  private clearInterviewSessionState(ctx: BotContext): void {
+    ctx.session.interviewStep = undefined;
+    ctx.session.currentInterviewSessionId = undefined;
+    ctx.session.currentQuestionIndex = undefined;
+    ctx.session.interviewDomain = undefined;
+    ctx.session.interviewTechnology = undefined;
+    ctx.session.interviewDuration = undefined;
+    ctx.session.interviewMockType = undefined;
+    ctx.session.interviewCompanyTemplate = undefined;
+    ctx.session.interviewCompany = undefined;
+    ctx.session.pendingFollowUpQuestion = undefined;
+    ctx.session.followUpQuestionStartedAt = undefined;
+    ctx.session.interviewMode = undefined;
+    // FIX TG-9/TG-12: Clear questionStartedAt to prevent stale duration calculations
+    ctx.session.questionStartedAt = undefined;
   }
 }

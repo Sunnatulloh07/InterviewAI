@@ -7,7 +7,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: sunnatulloh07/interviewai
+  IMAGE_NAME: sunnatulloh07/jobi
 
 jobs:
   build-and-push:
@@ -98,14 +98,14 @@ jobs:
             set -e
             echo "🚀 Starting deployment..."
             
-            mkdir -p ~/interviewai-pro && cd ~/interviewai-pro
+            mkdir -p ~/jobi && cd ~/jobi
             
             echo "📝 Creating .env..."
             cat > .env << 'EOF'
             NODE_ENV=production
             PORT=3000
             TZ=UTC
-            ALLOWED_ORIGINS=https://interviewai.pro,https://www.interviewai.pro
+            ALLOWED_ORIGINS=https://getjobi.app,https://www.getjobi.app
             
             MONGODB_URI=mongodb://${{ secrets.MONGODB_ROOT_USERNAME }}:${{ secrets.MONGODB_ROOT_PASSWORD }}@mongodb:27017/${{ secrets.MONGODB_DB_NAME }}?authSource=admin
             MONGODB_DB_NAME=${{ secrets.MONGODB_DB_NAME }}
@@ -148,8 +148,8 @@ jobs:
             cat > docker-compose.prod.yml << 'COMPOSE_EOF'
             services:
               api:
-                image: ghcr.io/sunnatulloh07/interviewai:latest
-                container_name: interviewai-api
+                image: ghcr.io/sunnatulloh07/jobi:latest
+                container_name: jobi-api
                 restart: unless-stopped
                 ports:
                   - '3000:3000'
@@ -169,7 +169,7 @@ jobs:
             
               mongodb:
                 image: mongo:7.0
-                container_name: interviewai-mongodb
+                container_name: jobi-mongodb
                 restart: unless-stopped
                 environment:
                   MONGO_INITDB_ROOT_USERNAME: ${MONGODB_ROOT_USERNAME}
@@ -184,7 +184,7 @@ jobs:
             
               redis:
                 image: redis:7-alpine
-                container_name: interviewai-redis
+                container_name: jobi-redis
                 restart: unless-stopped
                 command: redis-server --requirepass ${REDIS_PASSWORD}
                 ports:
@@ -221,9 +221,9 @@ jobs:
             echo "✅ Checking status..."
             docker ps
             
-            if ! docker ps | grep -q interviewai-api; then
+            if ! docker ps | grep -q jobi-api; then
               echo "❌ API container failed!"
-              docker logs interviewai-api --tail 100
+              docker logs jobi-api --tail 100
               exit 1
             fi
             

@@ -311,9 +311,9 @@ export class AdminBotService implements OnModuleInit {
         // User callbacks
         if (data === 'upgrade_request') {
           const keyboard = new InlineKeyboard()
-            .text('💼 Starter ($10)', 'request_plan_starter')
+            .text('💼 Starter ($5)', 'request_plan_starter')
             .row()
-            .text('🚀 Pro ($20)', 'request_plan_pro')
+            .text('🚀 Pro ($15)', 'request_plan_pro')
             .row()
             .text('👑 Elite ($30)', 'request_plan_elite');
 
@@ -459,7 +459,7 @@ export class AdminBotService implements OnModuleInit {
     }
 
     await ctx.reply(
-      `👋 <b>InterviewAI Support</b>\n\n` +
+      `👋 <b>Jobi Support</b>\n\n` +
         `Sizga qanday yordam bera olamiz?${userInfo}\n\n` +
         `Quyidagi tugmalardan birini tanlang yoki xabar yozing (matn, rasm, sticker):`,
       { parse_mode: 'HTML', reply_markup: keyboard },

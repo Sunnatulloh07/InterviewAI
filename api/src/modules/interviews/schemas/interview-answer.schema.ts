@@ -55,6 +55,23 @@ export class InterviewAnswer {
     pacingFeedback?: string;
   };
 
+  /**
+   * Enhanced per-answer evaluation (Phase 3).
+   * Detailed scoring breakdown with ideal answer.
+   */
+  @Prop({ type: Object })
+  evaluation?: {
+    correctness: number;     // 0-10
+    completeness: number;    // 0-10
+    structure: number;       // 0-10
+    communication: number;   // 0-10
+    depth: number;           // 0-10
+    timeManagement: number;  // 0-10
+    overallScore: number;    // Weighted 0-100
+    feedback: string;        // 2-3 sentence evaluation
+    idealAnswer: string;     // What a good answer looks like
+  };
+
   @Prop({ type: String })
   aiModel?: string;
 

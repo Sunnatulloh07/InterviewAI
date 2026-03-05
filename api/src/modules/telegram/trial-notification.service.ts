@@ -186,8 +186,8 @@ Sizning bepul sinov muddatingiz tugaydi. Yetarlicha mashq qildingizmi?
 
 💡 <b>Hoziroq yangilang va o'z yo'lingizni davom ettiring:</b>
 
-💎 STARTER — $10/oy
-🚀 PRO — $20/oy  
+💎 STARTER — $5/oy
+🚀 PRO — $15/oy  
 👑 ELITE — $30/oy
 
 📞 @interviewai_support_bot`,
@@ -196,7 +196,7 @@ Sizning bepul sinov muddatingiz tugaydi. Yetarlicha mashq qildingizmi?
 Ertaga sinov muddatingiz tugaydi. Tayyorgarligingizni uzatmang.
 
 💡 <b>Hoziroq yangilang:</b>
-💎 STARTER — $10 | 🚀 PRO — $20 | 👑 ELITE — $30
+💎 STARTER — $5 | 🚀 PRO — $15 | 👑 ELITE — $30
 
 📞 @interviewai_support_bot`,
         1: `🚨 <b>Bugun so'ngi kun!</b>
@@ -204,7 +204,7 @@ Ertaga sinov muddatingiz tugaydi. Tayyorgarligingizni uzatmang.
 Sinov muddatingiz bugun tugaydi. Yangilashni unutmang!
 
 ⚡ <b>Hoziroq yangilang va davom eting:</b>
-💎 STARTER — $10 | 🚀 PRO — $20 | 👑 ELITE — $30
+💎 STARTER — $5 | 🚀 PRO — $15 | 👑 ELITE — $30
 
 📞 @interviewai_support_bot`,
       },
@@ -215,8 +215,8 @@ Sinov muddatingiz bugun tugaydi. Yangilashni unutmang!
 
 💡 <b>Обновитесь сейчас и продолжайте свой путь:</b>
 
-💎 STARTER — $10/мес
-🚀 PRO — $20/мес
+💎 STARTER — $5/мес
+🚀 PRO — $15/мес
 👑 ELITE — $30/мес
 
 📞 @interviewai_support_bot`,
@@ -225,7 +225,7 @@ Sinov muddatingiz bugun tugaydi. Yangilashni unutmang!
 Завтра заканчивается пробный период. Не прерывайте подготовку.
 
 💡 <b>Обновитесь сейчас:</b>
-💎 STARTER — $10 | 🚀 PRO — $20 | 👑 ELITE — $30
+💎 STARTER — $5 | 🚀 PRO — $15 | 👑 ELITE — $30
 
 📞 @interviewai_support_bot`,
         1: `🚨 <b>Последний день!</b>
@@ -233,7 +233,7 @@ Sinov muddatingiz bugun tugaydi. Yangilashni unutmang!
 Пробный период заканчивается сегодня. Не забудьте обновиться!
 
 ⚡ <b>Обновитесь сейчас и продолжайте:</b>
-💎 STARTER — $10 | 🚀 PRO — $20 | 👑 ELITE — $30
+💎 STARTER — $5 | 🚀 PRO — $15 | 👑 ELITE — $30
 
 📞 @interviewai_support_bot`,
       },
@@ -244,8 +244,8 @@ Your trial is ending. Have you practiced enough?
 
 💡 <b>Upgrade now and continue your journey:</b>
 
-💎 STARTER — $10/mo
-🚀 PRO — $20/mo
+💎 STARTER — $5/mo
+🚀 PRO — $15/mo
 👑 ELITE — $30/mo
 
 📞 @interviewai_support_bot`,
@@ -254,7 +254,7 @@ Your trial is ending. Have you practiced enough?
 Trial ends tomorrow. Don't stop your preparation.
 
 💡 <b>Upgrade now:</b>
-💎 STARTER — $10 | 🚀 PRO — $20 | 👑 ELITE — $30
+💎 STARTER — $5 | 🚀 PRO — $15 | 👑 ELITE — $30
 
 📞 @interviewai_support_bot`,
         1: `🚨 <b>Last day!</b>
@@ -262,7 +262,7 @@ Trial ends tomorrow. Don't stop your preparation.
 Trial ends today. Don't forget to upgrade!
 
 ⚡ <b>Upgrade now and continue:</b>
-💎 STARTER — $10 | 🚀 PRO — $20 | 👑 ELITE — $30
+💎 STARTER — $5 | 🚀 PRO — $15 | 👑 ELITE — $30
 
 📞 @interviewai_support_bot`,
       },
@@ -316,11 +316,11 @@ Siz sinov davrida ${activityText} ishlatdingiz — juda yaxshi natija! ⭐
 Agar bu imkoniyatdan to'liq foydalangan bo'lsangiz, tayyorgarligingizni uzatishni xohlamaysiz, to'g'rimi?
 
 💡 <b>STARTER tarifi bilan davom eting:</b>
-• 10 ta mock intervyu/oy
+• 2 ta mock intervyu/oy
 • 10 daqiqa ovozli yordam
 • CV tahlili va kunlik vazifalar
 
-💎 Faqat <b>$10/oy</b> — bir kofe narxi!
+💎 Faqat <b>$5/oy</b> — bir kofe narxi!
 
 👇 Tariflarni ko'rish uchun tugmani bosing:`,
         2: `⚡ ${firstName}, sinov muddatingiz ertaga tugaydi!
@@ -334,8 +334,8 @@ Yangilash orqali:
 ✅ Professional AI yordamchisi
 ✅ Karyerangizda yangi bosqich
 
-💎 STARTER — $10/oy
-🚀 PRO — $20/oy  
+💎 STARTER — $5/oy
+🚀 PRO — $15/oy  
 
 👇 Hoziroq yangilang:`,
         1: `🚨 ${firstName}, BUGUN so'ngi kun!
@@ -347,8 +347,8 @@ Sinov muddatingiz bugun soat 23:59 da tugaydi.
 Siz allaqachon ${activityText} ishlatdingiz — endi bu imkoniyatlarni yo'qotishni xohlamaysiz.
 
 ⚡ <b>Hoziroq yangilang:</b>
-• STARTER — $10
-• PRO — $20
+• STARTER — $5
+• PRO — $15
 • ELITE — $30
 
 📞 Savollar bormi? @interviewai_support_bot
@@ -365,11 +365,11 @@ Siz allaqachon ${activityText} ishlatdingiz — endi bu imkoniyatlarni yo'qotish
 Если вы уже ощутили пользу платформы, не хотите же прерывать подготовку?
 
 💡 <b>Продолжите с тарифом STARTER:</b>
-• 10 mock-интервью/мес
+• 2 mock-интервью/мес
 • 10 минут голосовой помощи
 • Анализ резюме и ежедневные задания
 
-💎 Всего <b>$10/мес</b> — цена одного кофе!
+💎 Всего <b>$5/мес</b> — цена одного кофе!
 
 👇 Нажмите кнопку для просмотра тарифов:`,
         2: `⚡ ${firstName}, пробный период заканчивается завтра!
@@ -383,8 +383,8 @@ Siz allaqachon ${activityText} ishlatdingiz — endi bu imkoniyatlarni yo'qotish
 ✅ Профессиональный AI-помощник
 ✅ Новый уровень карьеры
 
-💎 STARTER — $10/мес
-🚀 PRO — $20/мес
+💎 STARTER — $5/мес
+🚀 PRO — $15/мес
 
 👇 Обновитесь сейчас:`,
         1: `🚨 ${firstName}, СЕГОДНЯ последний день!
@@ -396,8 +396,8 @@ Siz allaqachon ${activityText} ishlatdingiz — endi bu imkoniyatlarni yo'qotish
 Вы уже использовали ${activityText} — не теряйте эти возможности.
 
 ⚡ <b>Обновитесь сейчас:</b>
-• STARTER — $10
-• PRO — $20
+• STARTER — $5
+• PRO — $15
 • ELITE — $30
 
 📞 Вопросы? @interviewai_support_bot
@@ -414,11 +414,11 @@ During your trial, you used ${activityText} — great progress! ⭐
 If you've already experienced the value, you don't want to stop your preparation, right?
 
 💡 <b>Continue with STARTER:</b>
-• 10 mock interviews/month
+• 2 mock interviews/month
 • 10 minutes voice assistance
 • CV analysis & daily tasks
 
-💎 Only <b>$10/mo</b> — price of a coffee!
+💎 Only <b>$5/mo</b> — price of a coffee!
 
 👇 Click to view plans:`,
         2: `⚡ ${firstName}, your trial ends tomorrow!
@@ -432,8 +432,8 @@ With upgrade:
 ✅ Professional AI assistant
 ✅ New career level
 
-💎 STARTER — $10/mo
-🚀 PRO — $20/mo
+💎 STARTER — $5/mo
+🚀 PRO — $15/mo
 
 👇 Upgrade now:`,
         1: `🚨 ${firstName}, TODAY is the last day!
@@ -445,8 +445,8 @@ Your trial ends today at 23:59.
 You've already used ${activityText} — don't lose these opportunities.
 
 ⚡ <b>Upgrade now:</b>
-• STARTER — $10
-• PRO — $20
+• STARTER — $5
+• PRO — $15
 • ELITE — $30
 
 📞 Questions? @interviewai_support_bot

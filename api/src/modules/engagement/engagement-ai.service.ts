@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
 import { NotificationTrigger } from './schemas/notification-log.schema';
 import { EngagementUserContext, GeneratedMessage } from './dto/engagement.dto';
+import { buildEngagementSystemPrompt } from '@common/constants/ai-prompts.constant';
 
 /**
  * Configuration constants
@@ -85,40 +86,7 @@ Qisqa motivatsiya ber: mock interview yoki skill oshirishga undov.
 MAKSIMUM 2 jumla! G'ayratli, lekin bosim o'tkazmasdan.`,
 };
 
-/**
- * System prompts per language (internationalized)
- */
-const SYSTEM_PROMPTS: Record<string, string> = {
-  uz: `Siz InterviewAI Pro botining do'stona, samimiy assistentisiz. Faqat O'ZBEK tilida javob bering.
-
-QOIDALAR:
-1. Faqat xabar matnini yoz, boshqa hech narsa yo'q
-2. Xabarlaringiz qisqa bo'lsin (2-3 jumla)
-3. 1-2 ta emoji ishlat (haddan tashqari ko'p emas)
-4. Spam yoki reklama kabi ko'rinmasin
-5. Shaxsiylashtirilgan bo'lsin (ismni ishlat)
-6. Har safar BOSHQACHA uslubda yoz - ba'zan hazil, ba'zan jiddiy, ba'zan do'stona`,
-
-  ru: `Вы дружелюбный ассистент бота InterviewAI Pro. Отвечайте ТОЛЬКО на РУССКОМ языке.
-
-ПРАВИЛА:
-1. Пишите только текст сообщения, ничего лишнего
-2. Сообщения должны быть короткими (2-3 предложения)
-3. Используйте 1-2 эмодзи (не больше)
-4. Не должно выглядеть как спам или реклама
-5. Персонализируйте (используйте имя)
-6. Каждый раз пишите в РАЗНОМ стиле - иногда шутливо, иногда серьёзно, иногда дружелюбно`,
-
-  en: `You are a friendly assistant of InterviewAI Pro bot. Reply ONLY in ENGLISH.
-
-RULES:
-1. Write only the message text, nothing else
-2. Keep messages short (2-3 sentences)
-3. Use 1-2 emojis (not too many)
-4. Don't sound like spam or advertising
-5. Personalize (use their name)
-6. Write in a DIFFERENT style each time - sometimes humorous, sometimes serious, sometimes friendly`,
-};
+// System prompts moved to centralized ai-prompts.constant.ts → buildEngagementSystemPrompt(language)
 
 /**
  * EngagementAiService
@@ -152,7 +120,7 @@ export class EngagementAiService {
       timeout: AI_CONFIG.TIMEOUT_MS,
       maxRetries: 0, // We handle retries manually for better control
       defaultHeaders: isOpenRouter
-        ? { 'HTTP-Referer': 'https://interviewai.pro', 'X-Title': 'InterviewAI Pro' }
+        ? { 'HTTP-Referer': 'https://getjobi.app', 'X-Title': 'Jobi' }
         : undefined,
     });
 
@@ -209,7 +177,7 @@ export class EngagementAiService {
     trigger: NotificationTrigger,
     context: EngagementUserContext,
   ): Promise<GeneratedMessage> {
-    const systemPrompt = SYSTEM_PROMPTS[context.language] || SYSTEM_PROMPTS.uz;
+    const systemPrompt = buildEngagementSystemPrompt(context.language);
     const userPrompt = this.buildUserPrompt(trigger, context);
 
     const startTime = Date.now();
@@ -310,40 +278,40 @@ Shaxsiylashtirilgan, qisqa (2-3 jumla) xabar yoz:`;
   ): GeneratedMessage {
     const templates: Record<string, Record<NotificationTrigger, string>> = {
       uz: {
-        [NotificationTrigger.INCOMPLETE_INTERVIEW]: `Salom, ${context.firstName}! 👋 Intervyungiz hali tugallanmagan. Davom ettirishni xohlaysizmi?`,
-        [NotificationTrigger.LONG_ABSENCE]: `Salom, ${context.firstName}! 🌟 Sizni sog'indik. Intervyu mashqlarini davom ettirishga tayyormisiz?`,
-        [NotificationTrigger.SCORE_DECLINE]: `${context.firstName}, mashq qilish - mukammallik kaliti! 💪 Keyingi intervyuda yanada yaxshiroq natija ko'rsatishingizga ishonaman.`,
-        [NotificationTrigger.ACHIEVEMENT]: `Tabriklaymiz, ${context.firstName}! 🎉 Siz ajoyib natijaga erishdingiz!`,
-        [NotificationTrigger.WEEKLY_PROGRESS]: `Haftalik xulosangiz tayyor, ${context.firstName}! 📊 O'rtacha ballingiz: ${context.averageScore}%`,
-        [NotificationTrigger.FIRST_INTERVIEW]: `Ajoyib, ${context.firstName}! 🚀 Birinchi intervyungizni muvaffaqiyatli tugatdingiz!`,
+        [NotificationTrigger.INCOMPLETE_INTERVIEW]: `${context.firstName}, intervyungiz hali tugallanmagan. Davom ettirasizmi? /interview`,
+        [NotificationTrigger.LONG_ABSENCE]: `${context.firstName}, intervyu mashqlarini davom ettirishga tayyormisiz? /interview`,
+        [NotificationTrigger.SCORE_DECLINE]: `${context.firstName}, doimiy mashq natijani yaxshilaydi. Yana bir intervyu sinab ko'ring. /interview`,
+        [NotificationTrigger.ACHIEVEMENT]: `${context.firstName}, ajoyib natijaga erishdingiz! Davom eting. /stats`,
+        [NotificationTrigger.WEEKLY_PROGRESS]: `${context.firstName}, haftalik xulosangiz tayyor. O'rtacha ball: ${context.averageScore}%. /stats`,
+        [NotificationTrigger.FIRST_INTERVIEW]: `${context.firstName}, birinchi intervyuni tugatdingiz! Natijani ko'ring: /stats`,
         [NotificationTrigger.TRIAL_ENDING]: '', // Disabled: handled by trial-notification.service.ts
-        [NotificationTrigger.ONBOARDING_SURVEY]: `Salom, ${context.firstName}! 🎯 Sizga bir savol: hozirda faol ish izlayapsizmi, tayyorgarlik ko'rayapsizmi yoki bilimlaringizni oshirayapsizmi?`,
-        [NotificationTrigger.PROFILE_INCOMPLETE]: `${context.firstName}, lavozimingizni aniqlaymizmi? 🎯 Hozirgi, oldingi yoki o'qigan joyingizdagi lavozim qaysi edi?`,
-        [NotificationTrigger.JOBSEEKER_INACTIVE]: `${context.firstName}, ish izlash jarayonida doimiy mashq muhim! 💪 Bugun bir mock intervyu o'tkazib ko'ring.`,
+        [NotificationTrigger.ONBOARDING_SURVEY]: `${context.firstName}, bir savol: hozirda faol ish izlayapsizmi, tayyorgarlik ko'rayapsizmi yoki bilimlaringizni oshirayapsizmi?`,
+        [NotificationTrigger.PROFILE_INCOMPLETE]: `${context.firstName}, lavozimingizni aniqlaymizmi? Bu sizga mos savollar berish uchun muhim. /set_position`,
+        [NotificationTrigger.JOBSEEKER_INACTIVE]: `${context.firstName}, doimiy mashq muhim. Bugun intervyu o'tkazib ko'ring. /interview`,
       },
       ru: {
-        [NotificationTrigger.INCOMPLETE_INTERVIEW]: `Привет, ${context.firstName}! 👋 Ваше интервью ещё не завершено. Хотите продолжить?`,
-        [NotificationTrigger.LONG_ABSENCE]: `Привет, ${context.firstName}! 🌟 Мы скучали. Готовы продолжить практику?`,
-        [NotificationTrigger.SCORE_DECLINE]: `${context.firstName}, практика - ключ к совершенству! 💪 Уверен, в следующий раз будет лучше.`,
-        [NotificationTrigger.ACHIEVEMENT]: `Поздравляю, ${context.firstName}! 🎉 Отличный результат!`,
-        [NotificationTrigger.WEEKLY_PROGRESS]: `Ваш еженедельный отчёт готов, ${context.firstName}! 📊`,
-        [NotificationTrigger.FIRST_INTERVIEW]: `Отлично, ${context.firstName}! 🚀 Первое интервью пройдено!`,
+        [NotificationTrigger.INCOMPLETE_INTERVIEW]: `${context.firstName}, ваше интервью не завершено. Продолжить? /interview`,
+        [NotificationTrigger.LONG_ABSENCE]: `${context.firstName}, готовы продолжить практику? /interview`,
+        [NotificationTrigger.SCORE_DECLINE]: `${context.firstName}, регулярная практика улучшает результат. Попробуйте ещё раз. /interview`,
+        [NotificationTrigger.ACHIEVEMENT]: `${context.firstName}, отличный результат! Продолжайте в том же духе. /stats`,
+        [NotificationTrigger.WEEKLY_PROGRESS]: `${context.firstName}, еженедельный отчёт готов. Средний балл: ${context.averageScore}%. /stats`,
+        [NotificationTrigger.FIRST_INTERVIEW]: `${context.firstName}, первое интервью пройдено! Посмотрите результат: /stats`,
         [NotificationTrigger.TRIAL_ENDING]: '', // Disabled: handled by trial-notification.service.ts
-        [NotificationTrigger.ONBOARDING_SURVEY]: `Привет, ${context.firstName}! 🎯 Один вопрос: вы сейчас активно ищете работу, готовитесь к собеседованиям или учитесь?`,
-        [NotificationTrigger.PROFILE_INCOMPLETE]: `${context.firstName}, давайте уточним вашу должность? 🎯 На какой позиции вы работаете/работали или учились?`,
-        [NotificationTrigger.JOBSEEKER_INACTIVE]: `${context.firstName}, в поиске работы важна регулярная практика! 💪 Попробуйте mock-интервью сегодня.`,
+        [NotificationTrigger.ONBOARDING_SURVEY]: `${context.firstName}, один вопрос: вы сейчас активно ищете работу, готовитесь к собеседованиям или учитесь?`,
+        [NotificationTrigger.PROFILE_INCOMPLETE]: `${context.firstName}, уточним вашу должность? Это важно для подбора вопросов. /set_position`,
+        [NotificationTrigger.JOBSEEKER_INACTIVE]: `${context.firstName}, регулярная практика важна. Попробуйте интервью сегодня. /interview`,
       },
       en: {
-        [NotificationTrigger.INCOMPLETE_INTERVIEW]: `Hey ${context.firstName}! 👋 Your interview is still in progress. Want to continue?`,
-        [NotificationTrigger.LONG_ABSENCE]: `Hey ${context.firstName}! 🌟 We missed you. Ready to practice?`,
-        [NotificationTrigger.SCORE_DECLINE]: `${context.firstName}, practice makes perfect! 💪 I believe you'll do better next time.`,
-        [NotificationTrigger.ACHIEVEMENT]: `Congratulations, ${context.firstName}! 🎉 Amazing achievement!`,
-        [NotificationTrigger.WEEKLY_PROGRESS]: `Your weekly report is ready, ${context.firstName}! 📊`,
-        [NotificationTrigger.FIRST_INTERVIEW]: `Awesome, ${context.firstName}! 🚀 First interview completed!`,
+        [NotificationTrigger.INCOMPLETE_INTERVIEW]: `${context.firstName}, your interview is not finished. Continue? /interview`,
+        [NotificationTrigger.LONG_ABSENCE]: `${context.firstName}, ready to continue practicing? /interview`,
+        [NotificationTrigger.SCORE_DECLINE]: `${context.firstName}, regular practice improves results. Try again. /interview`,
+        [NotificationTrigger.ACHIEVEMENT]: `${context.firstName}, great result! Keep it up. /stats`,
+        [NotificationTrigger.WEEKLY_PROGRESS]: `${context.firstName}, weekly report ready. Average score: ${context.averageScore}%. /stats`,
+        [NotificationTrigger.FIRST_INTERVIEW]: `${context.firstName}, first interview completed! See results: /stats`,
         [NotificationTrigger.TRIAL_ENDING]: '', // Disabled: handled by trial-notification.service.ts
-        [NotificationTrigger.ONBOARDING_SURVEY]: `Hey ${context.firstName}! 🎯 Quick question: are you actively job hunting, preparing for interviews, or learning?`,
-        [NotificationTrigger.PROFILE_INCOMPLETE]: `${context.firstName}, let's clarify your position? 🎯 What position do you have/had at your current or previous job (or learned)?`,
-        [NotificationTrigger.JOBSEEKER_INACTIVE]: `${context.firstName}, consistent practice is key in job search! 💪 Try a mock interview today.`,
+        [NotificationTrigger.ONBOARDING_SURVEY]: `${context.firstName}, quick question: are you actively job hunting, preparing for interviews, or learning?`,
+        [NotificationTrigger.PROFILE_INCOMPLETE]: `${context.firstName}, let's set your position. This helps us provide relevant questions. /set_position`,
+        [NotificationTrigger.JOBSEEKER_INACTIVE]: `${context.firstName}, regular practice matters. Try an interview today. /interview`,
       },
     };
 

@@ -20,6 +20,7 @@ import { openaiConfig } from './config/openai.config';
 import { stripeConfig } from './config/stripe.config';
 import { awsConfig } from './config/aws.config';
 import { telegramConfig } from './config/telegram.config';
+import { featuresConfig } from './config/features.config';
 
 // Common modules
 import { DatabaseModule } from './database/database.module';
@@ -51,6 +52,10 @@ import { AdminModule } from './modules/admin/admin.module';
 import { EngagementModule } from './modules/engagement/engagement.module';
 import { TasksModule } from './modules/tasks/tasks.module';
 import { VoiceModule } from './modules/voice/voice.module';
+import { ReadinessTestModule } from './modules/readiness-test/readiness-test.module';
+import { StreakModule } from './modules/streak/streak.module';
+import { LeaderboardModule } from './modules/leaderboard/leaderboard.module';
+import { GamificationModule } from './modules/gamification/gamification.module';
 
 @Module({
   imports: [
@@ -66,6 +71,7 @@ import { VoiceModule } from './modules/voice/voice.module';
         stripeConfig,
         awsConfig,
         telegramConfig,
+        featuresConfig,
       ],
       validationSchema: Joi.object({
         // Application
@@ -153,6 +159,29 @@ import { VoiceModule } from './modules/voice/voice.module';
         ENABLE_VOICE_MESSAGES: Joi.boolean().default(true),
         ENABLE_STEALTH_MODE: Joi.boolean().default(true),
         ENABLE_OFFLINE_MODE: Joi.boolean().default(false),
+
+        // Growth Feature Flags
+        FEATURE_IRS_ENABLED: Joi.boolean().default(true),
+        FEATURE_STREAK_ENABLED: Joi.boolean().default(true),
+        FEATURE_LEADERBOARD_ENABLED: Joi.boolean().default(true),
+        FEATURE_MOCK_ENHANCED_ENABLED: Joi.boolean().default(false),
+        FEATURE_BADGES_ENABLED: Joi.boolean().default(true),
+
+        // IRS Config
+        IRS_MAX_DAILY_TESTS: Joi.number().default(3),
+        IRS_AI_MODEL: Joi.string().default('z-ai/glm-4-32b'),
+        IRS_SESSION_TIMEOUT_MINUTES: Joi.number().default(10),
+
+        // Streak Config
+        STREAK_TIMEZONE: Joi.string().default('Asia/Tashkent'),
+        STREAK_CHECK_BUFFER_MINUTES: Joi.number().default(5),
+
+        // Leaderboard Config
+        LB_RECALC_INTERVAL_MINUTES: Joi.number().default(15),
+        LB_DAILY_POINT_CAP: Joi.number().default(35),
+
+        // Mock Enhanced Config
+        MOCK_IDLE_TIMEOUT_SECONDS: Joi.number().default(900),
       }),
       validationOptions: {
         abortEarly: false,
@@ -302,14 +331,14 @@ import { VoiceModule } from './modules/voice/voice.module';
     // Schedule Module (Cron jobs)
     ScheduleModule.forRoot(),
 
-    // Event Emitter
+    // Event Emitter (used for cross-module communication: streak, leaderboard, badges)
     EventEmitterModule.forRoot({
       wildcard: false,
       delimiter: '.',
       newListener: false,
       removeListener: false,
-      maxListeners: 10,
-      verboseMemoryLeak: false,
+      maxListeners: 20, // Increased for growth feature event listeners
+      verboseMemoryLeak: true, // Help detect listener leaks in dev
       ignoreErrors: false,
     }),
 
@@ -345,6 +374,10 @@ import { VoiceModule } from './modules/voice/voice.module';
     EngagementModule,
     TasksModule,
     VoiceModule,
+    ReadinessTestModule,
+    StreakModule,
+    LeaderboardModule,
+    GamificationModule,
   ],
   controllers: [AppController],
   providers: [AppService, RedisService, HttpCacheInterceptor],

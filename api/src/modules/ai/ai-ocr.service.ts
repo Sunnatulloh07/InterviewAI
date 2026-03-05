@@ -1,6 +1,7 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
+import { buildOcrSystemPrompt } from '@common/constants/ai-prompts.constant';
 
 /**
  * AI OCR Service
@@ -106,12 +107,7 @@ export class AiOcrService {
           messages: [
             {
               role: 'system',
-              content:
-                language === 'uz'
-                  ? 'You are an expert OCR specialist. Extract ALL text from this image with perfect accuracy. Include numbers, letters, symbols, and code. Be thorough.'
-                  : language === 'ru'
-                    ? 'Вы экспертный OCR-специалист. Извлеките ВСЕ текст из изображения с идеальной точностью. Включайте цифры, буквы, символы и код. Будьте тщательны.'
-                    : 'You are an expert OCR specialist. Extract ALL text from this image with perfect accuracy. Include numbers, letters, symbols, and code. Be thorough.',
+              content: buildOcrSystemPrompt(language),
             },
             {
               role: 'user',
@@ -132,7 +128,7 @@ export class AiOcrService {
         {
           headers: {
             Authorization: `Bearer ${this.openrouterApiKey}`,
-            'HTTP-Referer': 'https://interviewai.pro',
+            'HTTP-Referer': 'https://getjobi.app',
             'Content-Type': 'application/json',
           },
           timeout: 30000, // 30 second timeout

@@ -33,7 +33,7 @@ export class AuthController {
         message: { type: 'string', example: 'OTP sent to your Telegram account' },
         telegramBotUrl: {
           type: 'string',
-          example: 'https://t.me/InterviewAIProBot?start=register_xxx',
+          example: 'https://t.me/jobi_it_bot?start=register_xxx',
         },
       },
     },

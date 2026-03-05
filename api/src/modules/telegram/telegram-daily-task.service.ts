@@ -86,12 +86,12 @@ export class TelegramDailyTaskService {
 
 🎯 <b>Premium bilan nimalar olasiz:</b>
 
-💎 <b>STARTER ($10/oy):</b>
+💎 <b>STARTER ($5/oy):</b>
 • Har kuni 1 ta professional savol
 • 📊 Oylik AI tahlil va feedback
 • 🎤 Voice va 🖼 image javoblar
 
-🚀 <b>PRO ($20/oy):</b>
+🚀 <b>PRO ($15/oy):</b>
 • Har kuni 1 ta savol + kunlik progress
 • 📈 Haftalik AI tavsiyalar
 • Kengaytirilgan statistika
@@ -109,12 +109,12 @@ export class TelegramDailyTaskService {
 
 🎯 <b>Что вы получите с Premium:</b>
 
-💎 <b>STARTER ($10/мес):</b>
+💎 <b>STARTER ($5/мес):</b>
 • 1 профессиональный вопрос в день
 • 📊 Месячный AI отчет и feedback
 • 🎤 Голосовые и 🖼 ответы фото
 
-🚀 <b>PRO ($20/мес):</b>
+🚀 <b>PRO ($15/мес):</b>
 • 1 вопрос в день + ежедневный прогресс
 • 📈 Еженедельные AI рекомендации
 • Расширенная статистика
@@ -132,12 +132,12 @@ export class TelegramDailyTaskService {
 
 🎯 <b>What you get with Premium:</b>
 
-💎 <b>STARTER ($10/month):</b>
+💎 <b>STARTER ($5/month):</b>
 • 1 professional question per day
 • 📊 Monthly AI report & feedback
 • 🎤 Voice & 🖼 image answers
 
-🚀 <b>PRO ($20/month):</b>
+🚀 <b>PRO ($15/month):</b>
 • 1 question/day + daily progress
 • 📈 Weekly AI recommendations
 • Advanced statistics

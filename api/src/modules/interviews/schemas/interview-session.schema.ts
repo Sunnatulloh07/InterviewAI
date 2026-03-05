@@ -1,5 +1,12 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Schema as MongooseSchema } from 'mongoose';
+import {
+  MOCK_INTERVIEW_TYPES,
+  MOCK_STATES,
+  type MockInterviewType,
+  type MockState,
+  type InterviewVerdict,
+} from '../constants/mock-interview.constants';
 
 export type InterviewSessionDocument = InterviewSession & Document;
 
@@ -12,12 +19,26 @@ export class InterviewSession {
   })
   userId: MongooseSchema.Types.ObjectId;
 
+  /** Legacy type field — kept for backward compatibility */
   @Prop({
     type: String,
     enum: ['technical', 'behavioral', 'case_study', 'mixed'],
     required: true,
   })
   type: string;
+
+  /**
+   * Enhanced interview type (Phase 3).
+   * Maps to MOCK_INTERVIEW_TYPES: quick_technical, full_technical, behavioral,
+   * system_design, company_specific, full_stack.
+   * Falls back to 'quick_technical' for legacy sessions.
+   */
+  @Prop({
+    type: String,
+    enum: [...MOCK_INTERVIEW_TYPES],
+    default: 'quick_technical',
+  })
+  mockType?: string;
 
   @Prop({
     type: String,
@@ -31,6 +52,14 @@ export class InterviewSession {
 
   @Prop({ type: [String], default: [] })
   technology: string[];
+
+  /** Company name for company_specific interviews (Elite only) */
+  @Prop({ type: String })
+  company?: string;
+
+  /** Company template ID (google, amazon, meta, epam, startup) */
+  @Prop({ type: String })
+  companyTemplateId?: string;
 
   @Prop({ required: true })
   numQuestions: number;
@@ -64,6 +93,10 @@ export class InterviewSession {
   @Prop({ type: Date })
   expiresAt?: Date; // When interview auto-expires
 
+  /** Last user activity timestamp — for idle timeout detection */
+  @Prop({ type: Date })
+  lastActivityAt?: Date;
+
   @Prop({
     type: String,
     enum: ['active', 'paused', 'completed', 'abandoned'],
@@ -72,8 +105,23 @@ export class InterviewSession {
   })
   status: string;
 
+  /**
+   * Enhanced state machine (Phase 3).
+   * States: created → intro → questioning → follow_up → wrap_up → scoring → completed / cancelled
+   */
+  @Prop({
+    type: String,
+    enum: [...MOCK_STATES],
+    default: 'created',
+  })
+  mockState?: string;
+
   @Prop({ default: 0 })
   currentQuestionIndex: number;
+
+  /** Current follow-up count for the active question (max 2) */
+  @Prop({ default: 0 })
+  currentFollowUpCount?: number;
 
   @Prop({ type: [{ type: MongooseSchema.Types.ObjectId, ref: 'InterviewQuestion' }], default: [] })
   questions: MongooseSchema.Types.ObjectId[];
@@ -81,11 +129,41 @@ export class InterviewSession {
   @Prop({ type: [{ type: MongooseSchema.Types.ObjectId, ref: 'InterviewAnswer' }], default: [] })
   answers: MongooseSchema.Types.ObjectId[];
 
+  /**
+   * Follow-up Q&A pairs, stored inline for simplicity.
+   * Each entry: { questionIndex, type, question, answer?, answerTime? }
+   */
+  @Prop({
+    type: [
+      {
+        questionIndex: { type: Number, required: true },
+        type: { type: String, enum: ['expand', 'redirect', 'deep_dive'] },
+        question: { type: String, required: true },
+        answer: { type: String },
+        answerTime: { type: Number }, // seconds
+        answeredAt: { type: Date },
+      },
+    ],
+    default: [],
+  })
+  followUps: Array<{
+    questionIndex: number;
+    type: string;
+    question: string;
+    answer?: string;
+    answerTime?: number;
+    answeredAt?: Date;
+  }>;
+
   @Prop({ type: Date, default: () => Date.now() })
   startedAt: Date;
 
   @Prop({ type: Date })
   completedAt?: Date;
+
+  /** Actual duration in minutes (computed at completion) */
+  @Prop({ default: 0 })
+  actualDuration?: number;
 
   @Prop({ type: Number })
   overallScore?: number;
@@ -111,18 +189,50 @@ export class InterviewSession {
     recommendations: string[];
   };
 
+  /**
+   * Enhanced report (Phase 3).
+   * Full structured report with verdict, category breakdown, action plan.
+   */
+  @Prop({ type: Object })
+  report?: {
+    /** Overall score 0-100 */
+    totalScore: number;
+    /** HIRE / MAYBE / NO_HIRE / STRONG_HIRE */
+    verdict: string;
+    /** Category scores: technical, communication, problemSolving, behavioral, systemDesign */
+    categoryScores: Record<string, number>;
+    /** Top 3 strengths */
+    strengths: string[];
+    /** Top 3 weaknesses */
+    weaknesses: string[];
+    /** Actionable recommendations */
+    recommendations: string[];
+    /** Comparison text ("Siz top 30% middle dasiz") */
+    comparison: string;
+    /** Week/month action plan */
+    actionPlan: string[];
+    /** Position readiness percentage */
+    positionReadiness: number;
+  };
+
   @Prop({ type: String })
   aiSessionId?: string;
+
+  /** User's language at interview start (for report generation) */
+  @Prop({ type: String, default: 'uz' })
+  language?: string;
 }
 
 export const InterviewSessionSchema = SchemaFactory.createForClass(InterviewSession);
 
 // Indexes
-// Note: userId and status already have index: true in @Prop
-// Only add composite indexes here
 InterviewSessionSchema.index({ userId: 1, createdAt: -1 });
-// Removed duplicate: InterviewSessionSchema.index({ status: 1 });
 InterviewSessionSchema.index({ type: 1, difficulty: 1 });
+InterviewSessionSchema.index({ mockType: 1, status: 1 });
+InterviewSessionSchema.index(
+  { status: 1, lastActivityAt: 1 },
+  { name: 'idle_timeout_check_idx' },
+);
 
 // Transform to JSON
 InterviewSessionSchema.set('toJSON', {

@@ -11,11 +11,11 @@ export class AppService {
 
   getInfo() {
     return {
-      name: 'InterviewAI Pro API',
+      name: 'Jobi API',
       version: '1.0.0',
       description: 'AI-powered interview preparation platform',
       environment: this.configService.get<string>('NODE_ENV'),
-      message: 'Welcome to InterviewAI Pro API',
+      message: 'Welcome to Jobi API',
       documentation: '/api/docs',
       status: 'operational',
     };

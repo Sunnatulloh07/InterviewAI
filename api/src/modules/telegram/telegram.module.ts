@@ -21,6 +21,10 @@ import { PaymentsModule } from '../payments/payments.module';
 import { EngagementModule } from '../engagement/engagement.module';
 import { VoiceModule } from '../voice/voice.module';
 import { TasksModule } from '../tasks/tasks.module';
+import { ReadinessTestModule } from '../readiness-test/readiness-test.module';
+import { StreakModule } from '../streak/streak.module';
+import { LeaderboardModule } from '../leaderboard/leaderboard.module';
+import { GamificationModule } from '../gamification/gamification.module';
 
 @Module({
   imports: [
@@ -39,6 +43,10 @@ import { TasksModule } from '../tasks/tasks.module';
     forwardRef(() => EngagementModule),
     VoiceModule,
     forwardRef(() => TasksModule),
+    ReadinessTestModule,
+    StreakModule,
+    LeaderboardModule,
+    GamificationModule,
   ],
   controllers: [TelegramController],
   providers: [

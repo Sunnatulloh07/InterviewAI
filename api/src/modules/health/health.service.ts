@@ -49,7 +49,7 @@ export class HealthService {
   getSystemInfo() {
     return {
       application: {
-        name: 'InterviewAI Pro',
+        name: 'Jobi',
         version: process.env.npm_package_version || '1.0.0',
         environment: process.env.NODE_ENV || 'development',
         uptime: this.getUptime(),
